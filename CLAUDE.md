@@ -7,6 +7,10 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + zero-dependency Node 22 companion (`co
 - End every message that delivers changes with the ZIP download link for the branch that was pushed:
   `https://github.com/adelrio3/streamer-app/archive/refs/heads/<branch>.zip`
   They install the addon by copying `addon/Chronicler` from that ZIP into `Interface\AddOns\`.
+- Whenever you mention a file, say where it is or how to open it: a GitHub link for files in this repo
+  (`https://github.com/adelrio3/streamer-app/blob/<branch>/<path>`), the full Windows path for files on their PC
+  (e.g. `C:\Program Files (x86)\World of Warcraft\_classic_era_\WTF\Account\<ACCOUNT>\SavedVariables\Chronicler.lua`),
+  or the web address / menu path for external services (Supabase, Netlify). Don't say "the schema file" or "the README" bare.
 - They play Classic Era (interface 11509 as of 1.15.9) and record with OBS on a separate PC, editing in Premiere Pro.
 
 ## Checks
