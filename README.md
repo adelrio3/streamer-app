@@ -21,7 +21,7 @@ You don't need a scout run or hand-written notes. The Codex fills itself as you 
 
 Requires [Node.js](https://nodejs.org) 22 or newer. There are no other dependencies.
 
-1. **Install the addon.** Copy `addon/Chronicler` into `World of Warcraft\_classic_era_\Interface\AddOns\` (or `_anniversary_`, `_classic_`, `_retail_`). If the character screen says the addon is out of date, tick *Load out of date AddOns*. The `.toc` lists the interface versions known at the time of writing.
+1. **Install the addon.** Copy `addon/Chronicler` into `World of Warcraft\_classic_era_\Interface\AddOns\` (or `_anniversary_`, `_classic_`, `_retail_`). The `.toc` covers Classic Era 1.15.9 (interface 11509) and the next few patches. After a bigger patch, check the number in game with `/dump select(4, GetBuildInfo())`, run `npm run add-interface -- <number>` and copy the folder again (or tick *Load out of date AddOns* in the meantime).
 2. **Bind the mark keys.** Open Game Menu › Key Bindings › AddOns › Chronicler.
 3. **Start the companion.** Double-click `start.cmd` (Windows) or run `./start.sh`. From a terminal you can run `npm run open`. It opens <http://127.0.0.1:4050>.
 4. **Setup page.** Enter your WoW folder and your OBS recordings folder. Optionally enable the OBS connection: in OBS, go to Tools › WebSocket Server Settings and enable the server, then enter its port and password here.

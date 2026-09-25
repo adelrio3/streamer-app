@@ -10,7 +10,7 @@ The addon logs everything and the companion ties it to footage. No scout pass an
 
 The addon was built against the documented WoW API and tested in a simulated client, not in the live game. On your first Classic Era session:
 
-1. Log in with the addon enabled. If WoW says it is out of date, check your interface number with `/dump select(4, GetBuildInfo())` and add it to the `## Interface:` line in `Chronicler.toc`.
+1. Log in with the addon enabled. If WoW says it is out of date, check your interface number with `/dump select(4, GetBuildInfo())` and run `npm run add-interface -- <number>`.
 2. Pick up a quest, kill a few mobs, loot, talk to an NPC, read a plaque, and press each mark key once.
 3. Type `/chron`. The event count should be climbing and the clock should say *calibrated*.
 4. `/reload`, then check the Sessions page. Every one of those actions should be there. Anything missing is a client API difference to fix in the addon. Note which ones.

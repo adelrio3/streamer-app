@@ -84,3 +84,10 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
 
   assert.equal(events.find((e) => e.e === 'death').x, undefined, 'no coordinates when the map has none');
 });
+
+test('the .toc loads on the current Classic Era client (1.15.9)', () => {
+  const toc = fs.readFileSync(path.join(root, 'addon/Chronicler/Chronicler.toc'), 'utf8');
+  const versions = /^## Interface:(.*)$/m.exec(toc)[1].split(',').map((s) => Number(s.trim()));
+  assert.ok(versions.includes(11509));
+  assert.ok(/^Boot\.lua\s*$/m.test(toc) && toc.indexOf('Boot.lua') < toc.indexOf('Chronicler.lua'));
+});

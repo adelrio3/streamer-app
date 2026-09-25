@@ -4,12 +4,15 @@
   "private": true,
   "description": "WoW addon + companion app that logs quests, lore, kills and loot while you play and lines them up with your OBS recordings.",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node companion/server.js",
     "open": "node companion/server.js --open",
     "ingest": "node companion/server.js ingest",
     "export": "node companion/server.js export",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "add-interface": "node tools/add-interface.js"
   }
 }
