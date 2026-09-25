@@ -1,0 +1,8 @@
+## Interface: 11507, 11508, 20505, 30405, 40402, 50500, 50501, 110200, 110205, 120000, 120001
+## Title: Chronicler
+## Notes: Logs quest text, NPC dialogue, books, kills, loot and zone changes with precise timestamps so the Chronicler companion can line them up with your recordings.
+## Author: Chronicler
+## Version: 0.1.0
+## SavedVariables: ChroniclerDB
+
+Chronicler.lua

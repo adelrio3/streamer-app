@@ -1,0 +1,17 @@
+<Bindings>
+	<Binding name="CHRONICLER_MARK_LORE" header="CHRONICLER" category="ADDONS">
+		Chronicler_Mark("lore")
+	</Binding>
+	<Binding name="CHRONICLER_MARK_SHOT" category="ADDONS">
+		Chronicler_Mark("shot")
+	</Binding>
+	<Binding name="CHRONICLER_MARK_FUNNY" category="ADDONS">
+		Chronicler_Mark("funny")
+	</Binding>
+	<Binding name="CHRONICLER_MARK_REDO" category="ADDONS">
+		Chronicler_Mark("redo")
+	</Binding>
+	<Binding name="CHRONICLER_MARK" category="ADDONS">
+		Chronicler_Mark("mark")
+	</Binding>
+</Bindings>
