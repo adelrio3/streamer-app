@@ -28,6 +28,13 @@ function hooksecurefunc(name, fn)
 	_G[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end
 end
 SlashCmdList = {}
+WorldFrame = {}
+STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+SOUNDKIT = { RAID_WARNING = 8959 }
+date = os.date
+local sounds, timers = {}, {}
+function PlaySound(id, channel) sounds[#sounds + 1] = { id, channel } end
+C_Timer = { After = function(delay, fn) timers[#timers + 1] = fn end }
 
 -- Frames ----------------------------------------------------------------------
 local frames = {}
@@ -38,6 +45,16 @@ function CreateFrame()
 		self.events[e] = true
 	end
 	function f:SetScript(name, fn) self.scripts[name] = fn end
+	local noop = function() end
+	f.SetFrameStrata, f.SetAllPoints, f.SetPoint = noop, noop, noop
+	function f:Show() self.shown = true end
+	function f:Hide() self.shown = false end
+	function f:CreateTexture()
+		return { SetAllPoints = noop, SetColorTexture = noop }
+	end
+	function f:CreateFontString()
+		return { SetFont = noop, SetTextColor = noop, SetPoint = noop, SetText = function(fs, text) fs.text = text end }
+	end
 	frames[#frames + 1] = f
 	return f
 end
@@ -115,10 +132,13 @@ ERR_ZONE_EXPLORED = "Discovered: %s"
 ERR_ZONE_EXPLORED_XP = "Discovered %s: %d experience gained"
 
 -- Load the addon ------------------------------------------------------------
+assert(loadfile(addonDir .. "/Boot.lua"))("Chronicler", {})
+local bootSlash = SlashCmdList.CHRONICLER
 local chunk = assert(loadfile(addonDir .. "/Chronicler.lua"))
 chunk("Chronicler", {})
 
 -- Scenario ------------------------------------------------------------------
+assert(SlashCmdList.CHRONICLER ~= bootSlash, "main file should replace the boot fallback")
 fire("ADDON_LOADED", "Chronicler")
 fire("PLAYER_LOGIN")
 frameTick(0.8) -- 0.25 + 0.8 crosses a whole second, so the clock calibrates
@@ -183,6 +203,9 @@ state.zone, state.sub, state.x, state.y = "Elwynn Forest", "Goldshire", 0.42, 0.
 fire("ZONE_CHANGED")
 fire("ZONE_CHANGED") -- no actual change, no event
 fire("UI_INFO_MESSAGE", 0, "Discovered Goldshire: 20 experience gained")
+SlashCmdList.CHRONICLER("sync")
+assert(#sounds == 1 and sounds[1][1] == 8959 and sounds[1][2] == "Master", "sync plays a sound")
+for _, fn in ipairs(timers) do fn() end
 Chronicler_Mark("lore", nil)
 SlashCmdList.CHRONICLER("mark shot sunset over the lake")
 SlashCmdList.CHRONICLER("note wolf pathing weird")

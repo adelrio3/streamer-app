@@ -73,7 +73,7 @@ export class App {
   // recordings folder changes.
   derived() {
     const cfg = this.store.config();
-    const recordings = scanRecordings(cfg.recordingsDir, { pattern: cfg.filenamePattern, obsLog: this.store.obsRecordings() });
+    const recordings = scanRecordings(cfg.recordingsDir, { pattern: cfg.filenamePattern, obsLog: this.store.obsRecordings(), overrides: this.store.overrides() });
     const key = `${this.store.version}|${cfg.clockOffset}|${recordings.map((r) => `${r.id}:${r.start}:${r.end}`).join(',')}`;
     if (this.cache.key !== key) {
       const sessions = this.store.sessions();
@@ -151,15 +151,48 @@ export class App {
       const { recordings, timelines } = this.derived();
       return json(res, 200, recordings.map((r) => summary(r, timelines.get(r.id))).reverse());
     }
-    if (req.method === 'GET' && route === 'recordings' && id) {
+    if (route === 'recordings' && id) {
       const { recordings, timelines } = this.derived();
       const r = recordings.find((x) => x.id === id);
       if (!r) return json(res, 404, { error: 'No such recording' });
       if (sub === 'export') return this.exportFile(res, r, timelines.get(r.id), format, url.searchParams.get('only'));
-      return json(res, 200, { ...summary(r, timelines.get(r.id)), events: timelines.get(r.id) });
+      if (sub === 'sync-candidates') return json(res, 200, this.syncCandidates(r, Number(url.searchParams.get('at') || 0)));
+      if (req.method === 'POST' && sub === 'sync') {
+        const { t, videoTime } = await readBody(req);
+        if (!Number.isFinite(t) || !Number.isFinite(videoTime)) return json(res, 400, { error: 'Need t and videoTime' });
+        // The recording started videoTime seconds before the flash appeared.
+        const start = Math.round((t + this.store.config().clockOffset - videoTime) * 1000);
+        return json(res, 200, this.store.setOverride(r.name, { start, syncT: t, videoTime }));
+      }
+      if (req.method === 'DELETE' && sub === 'sync') {
+        return json(res, 200, this.store.setOverride(r.name, { start: null, syncT: null, videoTime: null }));
+      }
+      if (req.method === 'POST' && sub === 'duration') {
+        const { duration } = await readBody(req);
+        if (!(duration > 0)) return json(res, 400, { error: 'Need a duration' });
+        // Only worth saving when the file dates were off (copied without them).
+        if (Math.abs(duration - r.duration) < 1) return json(res, 200, { unchanged: true });
+        return json(res, 200, this.store.setOverride(r.name, { duration }));
+      }
+      if (req.method === 'GET' && !sub) return json(res, 200, { ...summary(r, timelines.get(r.id)), events: timelines.get(r.id) });
+      return json(res, 404, { error: 'Unknown recording route' });
     }
     if (req.method === 'POST' && route === 'export-all') return json(res, 200, this.exportAll());
     return json(res, 404, { error: 'Unknown API route' });
+  }
+
+  // Sync flashes near where this point of the video probably is, closest
+  // first. The estimate uses the recording's uncorrected clock, so it can be
+  // off by the very clock gap being measured; hence several candidates.
+  syncCandidates(r, at) {
+    const estimate = r.rawStart / 1000 + at;
+    const out = [];
+    for (const s of this.store.sessions()) {
+      for (const e of s.events) {
+        if (e.e === 'sync') out.push({ t: e.t, session: s.id, char: s.char?.name ?? null, zone: e.z ?? null, distance: e.t - estimate });
+      }
+    }
+    return out.sort((a, b) => Math.abs(a.distance) - Math.abs(b.distance)).slice(0, 8);
   }
 
   renderExport(r, events, format, only) {
@@ -249,6 +282,7 @@ function summary(r, events = []) {
   for (const e of events) counts[e.cat] = (counts[e.cat] || 0) + 1;
   return {
     id: r.id, name: r.name, file: r.file, size: r.size, start: r.start, end: r.end, duration: r.duration, source: r.source,
+    syncedFrom: r.syncedFrom ?? null,
     events: events.length, counts, zones: [...new Set(events.map((e) => e.z).filter(Boolean))],
   };
 }

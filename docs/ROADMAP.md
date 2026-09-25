@@ -14,7 +14,7 @@ The addon was built against the documented WoW API and tested in a simulated cli
 2. Pick up a quest, kill a few mobs, loot, talk to an NPC, read a plaque, and press each mark key once.
 3. Type `/chron`. The event count should be climbing and the clock should say *calibrated*.
 4. `/reload`, then check the Sessions page. Every one of those actions should be there. Anything missing is a client API difference to fix in the addon. Note which ones.
-5. Record a minute in OBS while doing the above, then open that recording in the companion and click a few events. The video should land within a second of each. If it is off by a constant amount, use the clock correction.
+5. Record a minute in OBS while doing the above, pressing the Sync key right after you start recording if OBS is on another PC. Line the recording up with the flash on its page in the companion, then click a few events. The video should land within a frame or two of each.
 6. Import that recording's `.xml` into Premiere and confirm the markers appear. If they don't, the `.srt` import is the fallback.
 
 ## Phase 2: the guide (completion without a scout)

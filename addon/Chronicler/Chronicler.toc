@@ -2,7 +2,8 @@
 ## Title: Chronicler
 ## Notes: Logs quest text, NPC dialogue, books, kills, loot and zone changes with precise timestamps so the Chronicler companion can line them up with your recordings.
 ## Author: Chronicler
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: ChroniclerDB
 
+Boot.lua
 Chronicler.lua

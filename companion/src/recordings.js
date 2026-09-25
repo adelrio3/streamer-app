@@ -57,17 +57,34 @@ export function recordingId(file) {
 }
 
 // All recordings, oldest first: { id, file, name, start, end, duration, source }.
-// Times are epoch milliseconds.
-export function scanRecordings(dir, { pattern, obsLog = [] } = {}) {
+// Times are epoch milliseconds on the game PC's clock.
+//
+// Where a recording's start comes from, best first:
+//   sync           a sync flash was lined up in this recording
+//   obs            the companion was connected to OBS when it started
+//   sync-inferred  file name time, corrected by the clock gap measured by the
+//                  nearest synced recording (recording on a second PC)
+//   filename       the time in the file name
+//   file-dates     the file's creation time
+//
+// overrides: { [lowercase file name]: { start?, duration? } } from the sync
+// tool and from the browser reporting a video's real length.
+export function scanRecordings(dir, { pattern, obsLog = [], overrides = {} } = {}) {
+  // OBS on another PC reports its own paths (D:\Recordings\x.mkv) while this
+  // PC sees a share or a copy, so fall back to matching by file name.
   const byPath = new Map();
+  const byName = new Map();
   for (const entry of obsLog) {
-    if (entry.path) byPath.set(path.resolve(entry.path).toLowerCase(), entry);
+    if (!entry.path) continue;
+    byPath.set(path.resolve(entry.path).toLowerCase(), entry);
+    byName.set(baseName(entry.path), entry);
   }
   const out = [];
   for (const file of listVideos(dir)) {
     let stat;
     try { stat = fs.statSync(file); } catch { continue; }
-    const obs = byPath.get(file.toLowerCase());
+    const name = path.basename(file);
+    const obs = byPath.get(file.toLowerCase()) ?? byName.get(name.toLowerCase());
     let start = obs?.start ?? startFromName(file, pattern);
     let end = obs?.end ?? stat.mtimeMs;
     let source = obs?.start ? 'obs' : 'filename';
@@ -77,18 +94,46 @@ export function scanRecordings(dir, { pattern, obsLog = [] } = {}) {
       source = 'file-dates';
     }
     if (start == null || end <= start) continue;
+    const rawStart = start;
+    const rawSource = source;
+    let duration = (end - start) / 1000;
+    const o = overrides[name.toLowerCase()];
+    if (o?.duration > 0) duration = o.duration;
+    if (o?.start != null) {
+      start = o.start;
+      source = 'sync';
+    }
     out.push({
-      id: recordingId(file),
-      file,
-      name: path.basename(file),
-      size: stat.size,
-      start,
-      end,
-      duration: (end - start) / 1000,
-      source,
+      id: recordingId(file), file, name, size: stat.size,
+      start, end: start + duration * 1000, duration, source, rawSource, rawStart,
     });
   }
+  // Recordings named by the recording PC's clock borrow the clock gap from
+  // the nearest synced recording that was also named by that clock.
+  const synced = out.filter((r) => r.source === 'sync' && r.rawSource !== 'obs');
+  if (synced.length) {
+    for (const r of out) {
+      if (r.source !== 'filename' && r.source !== 'file-dates') continue;
+      let best = null;
+      for (const s of synced) {
+        if (!best || Math.abs(s.rawStart - r.rawStart) < Math.abs(best.rawStart - r.rawStart)) best = s;
+      }
+      if (Math.abs(best.rawStart - r.rawStart) > INFER_WINDOW_MS) continue;
+      const skew = best.start - best.rawStart;
+      r.start += skew;
+      r.end += skew;
+      r.source = 'sync-inferred';
+      r.syncedFrom = best.name;
+    }
+  }
   return out.sort((a, b) => a.start - b.start);
+}
+
+// PC clocks drift, so a measured gap is only reused within a few days.
+const INFER_WINDOW_MS = 3 * 24 * 3600 * 1000;
+
+function baseName(p) {
+  return String(p).split(/[\\/]/).pop().toLowerCase();
 }
 
 function listVideos(dir) {

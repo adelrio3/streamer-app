@@ -50,7 +50,7 @@ test('ingest, align and export through the HTTP API', async (t) => {
   const ingest = await (await fetch(`${base}/api/ingest`, { method: 'POST' })).json();
   assert.equal(ingest.files.length, 1);
   assert.equal(ingest.files[0].added, 1);
-  assert.equal(ingest.files[0].events, 25);
+  assert.equal(ingest.files[0].events, 26);
 
   // Ingesting the same file again changes nothing.
   const again = await (await fetch(`${base}/api/ingest`, { method: 'POST' })).json();
@@ -78,7 +78,7 @@ test('ingest, align and export through the HTTP API', async (t) => {
   assert.equal(codex.characters[0].level, 2);
 
   const recs = await getJSON('/api/recordings');
-  assert.equal(recs[0].events, 25);
+  assert.equal(recs[0].events, 26);
   assert.equal(recs[0].source, 'filename');
   const rec = await getJSON(`/api/recordings/${recs[0].id}`);
   assert.equal(rec.events[0].e, 'session_start');
@@ -88,9 +88,9 @@ test('ingest, align and export through the HTTP API', async (t) => {
   assert.equal(xml.status, 200);
   assert.match(xml.headers.get('content-disposition'), /\.xml"/);
   assert.match(xml.text, /<timebase>30<\/timebase>/);
-  assert.equal((xml.text.match(/<marker>/g) || []).length, 25);
+  assert.equal((xml.text.match(/<marker>/g) || []).length, 26);
   const onlyMarks = await get(`/api/recordings/${recs[0].id}/export/xml?only=mark`);
-  assert.equal((onlyMarks.text.match(/<marker>/g) || []).length, 3);
+  assert.equal((onlyMarks.text.match(/<marker>/g) || []).length, 4, 'three marks and the sync flash');
   assert.match((await get(`/api/recordings/${recs[0].id}/export/srt`)).text, /^1\n00:00:10,000 --> /);
   assert.match((await get(`/api/recordings/${recs[0].id}/export/kills`)).text, /Kobold Vermin,6,2,2,2/);
   assert.match((await get(`/api/recordings/${recs[0].id}/export/chapters`)).text, /^00:00:00 Elwynn Forest/);
@@ -121,4 +121,74 @@ test('a shorter copy of a session in the addon never loses stored events', async
   assert.equal(app.store.putSession({ ...base, events: [{ name: 'A', t: 1, e: 'kill' }] }), 'unchanged', 'key order does not matter');
   assert.equal(app.store.putSession({ ...base, events: [{ e: 'kill', t: 3, name: 'C' }] }), 'updated');
   assert.deepEqual(app.store.session('R-C-1').events.map((e) => e.name), ['A', 'B', 'C']);
+});
+
+test('recording on a second PC: sync flash lines up footage and carries over', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chron-sync-'));
+  const wow = path.join(tmp, 'wow');
+  const svDir = path.join(wow, '_classic_era_', 'WTF', 'Account', 'A', 'SavedVariables');
+  fs.mkdirSync(svDir, { recursive: true });
+  const fixture = fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8');
+  fs.writeFileSync(path.join(svDir, 'Chronicler.lua'), fixture);
+  const { parseSavedVariables } = await import('../companion/src/luasv.js');
+  const syncT = parseSavedVariables(fixture).ChroniclerDB.sessions[0].events.find((e) => e.e === 'sync').t;
+
+  // The recording PC's clock runs 10 minutes behind the game PC, and the capture
+  // pipeline adds 0.2 s. Recording truly started 20 s before login.
+  const skew = -600_000;
+  const trueStart = (1790000000 - 20) * 1000;
+  const videos = path.join(tmp, 'Videos');
+  fs.mkdirSync(videos);
+  const mk = (startMs, lengthMs) => {
+    const file = path.join(videos, obsName(startMs + skew));
+    fs.writeFileSync(file, 'x');
+    fs.utimesSync(file, new Date(startMs + skew + lengthMs), new Date(startMs + skew + lengthMs));
+    return file;
+  };
+  mk(trueStart, 120_000);
+  mk(trueStart + 3_600_000, 60_000); // a later recording, never synced
+
+  const app = new App({ dataDir: path.join(tmp, 'data') });
+  app.store.saveConfig({ wowPaths: [wow], recordingsDir: videos });
+  app.ingest();
+  const server = http.createServer((req, res) => app.handle(req, res));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => { app.stop(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (p, opts) => (await fetch(base + p, opts)).json();
+
+  let recs = await call('/api/recordings');
+  const first = recs.sort((a, b) => a.start - b.start)[0];
+  assert.equal(first.source, 'filename');
+  assert.equal(first.events, 0, 'with a 10 minute clock gap nothing lines up yet');
+
+  // Where the flash shows in the video: true offset plus capture latency.
+  const flashAt = (syncT * 1000 - trueStart + 200) / 1000;
+  const candidates = await call(`/api/recordings/${first.id}/sync-candidates?at=${flashAt}`);
+  assert.equal(candidates[0].t, syncT);
+  assert.ok(Math.abs(candidates[0].distance - 600) < 1, 'distance shows the clock gap');
+
+  await call(`/api/recordings/${first.id}/sync`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: syncT, videoTime: flashAt }),
+  });
+  recs = (await call('/api/recordings')).sort((a, b) => a.start - b.start);
+  assert.equal(recs[0].source, 'sync');
+  assert.equal(recs[1].source, 'sync-inferred');
+  assert.equal(recs[1].start - recs[0].start, 3_600_000, 'same clock gap applied to the later recording');
+
+  const synced = await call(`/api/recordings/${recs[0].id}`);
+  assert.equal(synced.events.length, 26);
+  const syncEvent = synced.events.find((e) => e.e === 'sync');
+  assert.ok(Math.abs(syncEvent.offset - flashAt) < 0.001, 'the flash event sits exactly on the flash frame');
+  assert.equal(syncEvent.label, 'Sync flash');
+  // Session start was at 1790000000: 20 s in, plus the 0.2 s pipeline delay.
+  assert.ok(Math.abs(synced.events[0].offset - 20.2) < 0.001);
+
+  // The browser reports the real length when file dates were lost in a copy.
+  await call(`/api/recordings/${recs[0].id}/duration`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration: 300 }) });
+  assert.equal((await call(`/api/recordings/${recs[0].id}`)).duration, 300);
+
+  await call(`/api/recordings/${recs[0].id}/sync`, { method: 'DELETE' });
+  recs = await call('/api/recordings');
+  assert.ok(recs.every((r) => r.source === 'filename'));
 });

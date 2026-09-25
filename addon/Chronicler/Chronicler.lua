@@ -15,6 +15,7 @@ BINDING_NAME_CHRONICLER_MARK_SHOT = "Mark: beautiful shot"
 BINDING_NAME_CHRONICLER_MARK_FUNNY = "Mark: funny moment"
 BINDING_NAME_CHRONICLER_MARK_REDO = "Mark: needs a redo"
 BINDING_NAME_CHRONICLER_MARK = "Mark: generic"
+BINDING_NAME_CHRONICLER_SYNC = "Sync flash (press after starting a recording)"
 
 local frame = CreateFrame("Frame")
 local session          -- the session table events are appended to
@@ -201,6 +202,42 @@ function Chronicler_Mark(kind, note)
 	if e then say(MARK_KINDS[kind] .. " marked" .. (e.note and (": " .. e.note) or "")) end
 end
 
+-- Sync flash ----------------------------------------------------------------
+--
+-- For recording on a second PC: a full-screen white frame and a raid-warning
+-- sound, logged with the exact moment they appeared. Find the flash in the
+-- footage and the companion knows how the video lines up with the game clock.
+
+local flash
+local function buildFlash()
+	-- No parent, so it still shows with the UI hidden (Alt+Z).
+	flash = CreateFrame("Frame", nil, nil)
+	flash:SetFrameStrata("TOOLTIP")
+	flash:SetAllPoints(WorldFrame)
+	local tex = flash:CreateTexture(nil, "BACKGROUND")
+	tex:SetAllPoints(flash)
+	tex:SetColorTexture(1, 1, 1, 1)
+	flash.text = flash:CreateFontString(nil, "OVERLAY")
+	flash.text:SetFont(STANDARD_TEXT_FONT, 42, "OUTLINE")
+	flash.text:SetTextColor(0, 0, 0, 1)
+	flash.text:SetPoint("CENTER", flash, "CENTER")
+	flash:Hide()
+end
+
+function Chronicler_Sync()
+	if not session then return end
+	if not flash then buildFlash() end
+	local t = now()
+	local ms = math.floor((t % 1) * 1000 + 0.5) % 1000
+	flash.text:SetText(string.format("CHRONICLER SYNC  %s.%03d", date("%H:%M:%S", math.floor(t)), ms))
+	flash:Show()
+	PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
+	local e = record("sync")
+	if e then e.t = t end
+	local hide = function() flash:Hide() end
+	if C_Timer and C_Timer.After then C_Timer.After(0.25, hide) else hide() end
+end
+
 -- Event handlers ----------------------------------------------------------
 
 local handlers = {}
@@ -217,6 +254,7 @@ end
 function handlers.PLAYER_LOGIN()
 	calibrate()
 	startSession()
+	print("|cffd4a017Chronicler|r is logging. |cffffffff/chron|r for status.")
 end
 
 function handlers.PLAYER_LOGOUT()
@@ -479,6 +517,7 @@ local function help()
 	print("  /chron status - what has been logged")
 	print("  /chron mark [lore|shot|funny|redo] [note] - mark this moment")
 	print("  /chron note <text> - a mark with a note")
+	print("  /chron sync - sync flash and sound, for lining up recordings made on another PC")
 	print("  /chron silent - toggle chat feedback for marks")
 	print("  /chron clear - forget all logged sessions (after the companion has ingested them)")
 end
@@ -501,6 +540,8 @@ SlashCmdList.CHRONICLER = function(input)
 		end
 	elseif cmd == "note" then
 		Chronicler_Mark("mark", rest)
+	elseif cmd == "sync" then
+		Chronicler_Sync()
 	elseif cmd == "silent" then
 		ChroniclerDB.settings.silent = not ChroniclerDB.settings.silent
 		print("|cffd4a017Chronicler|r mark feedback " .. (ChroniclerDB.settings.silent and "off" or "on"))

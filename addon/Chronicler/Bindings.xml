@@ -14,4 +14,7 @@
 	<Binding name="CHRONICLER_MARK" category="ADDONS">
 		Chronicler_Mark("mark")
 	</Binding>
+	<Binding name="CHRONICLER_SYNC" category="ADDONS">
+		Chronicler_Sync()
+	</Binding>
 </Bindings>

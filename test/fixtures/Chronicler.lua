@@ -283,6 +283,16 @@ ChroniclerDB = {
 					["z"] = "Elwynn Forest",
 				}, -- [19]
 				{
+					["e"] = "sync",
+					["lvl"] = 2,
+					["m"] = 1429,
+					["sz"] = "Goldshire",
+					["t"] = 1790000042.1,
+					["x"] = 42,
+					["y"] = 65,
+					["z"] = "Elwynn Forest",
+				}, -- [20]
+				{
 					["e"] = "mark",
 					["kind"] = "lore",
 					["lvl"] = 2,
@@ -292,7 +302,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [20]
+				}, -- [21]
 				{
 					["e"] = "mark",
 					["kind"] = "shot",
@@ -304,7 +314,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [21]
+				}, -- [22]
 				{
 					["e"] = "mark",
 					["kind"] = "mark",
@@ -316,7 +326,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [22]
+				}, -- [23]
 				{
 					["e"] = "quest_abandon",
 					["lvl"] = 2,
@@ -327,7 +337,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [23]
+				}, -- [24]
 				{
 					["e"] = "death",
 					["lvl"] = 2,
@@ -335,7 +345,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000042.1,
 					["z"] = "Elwynn Forest",
-				}, -- [24]
+				}, -- [25]
 				{
 					["e"] = "session_end",
 					["lvl"] = 2,
@@ -343,7 +353,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000042.1,
 					["z"] = "Elwynn Forest",
-				}, -- [25]
+				}, -- [26]
 			},
 			["id"] = "Mankrik-Aldric-1790000000",
 			["schema"] = 1,

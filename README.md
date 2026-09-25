@@ -28,6 +28,15 @@ Requires [Node.js](https://nodejs.org) 22 or newer. There are no other dependenc
 
 WoW only writes addon data to disk when you log out or `/reload`. The companion watches the file and ingests on its own a few seconds later. There is also an **Ingest** button.
 
+## Recording on a second PC
+
+If OBS runs on a separate streaming/recording PC, the two machines' clocks disagree and the capture chain adds a small delay. Two ways to line things up, and you can use both:
+
+1. **Sync flash (always works).** Start recording, then press your **Sync** key (or `/chron sync`). The screen flashes white for a quarter second with a raid-warning sound, and the addon logs the exact moment. It still shows with the UI hidden (Alt+Z). In the companion, open the recording, pause on the first white frame (use the frame-step buttons, or type the time from your editor), and press **Line up with sync flash**. That measures both the clock gap and the capture delay. Other recordings from the same days that you didn't flash reuse the measured gap automatically (*sync-inferred*), but flashing after every start is the most exact.
+2. **OBS over your network (automatic).** Run the companion on the **gaming PC**, enable OBS's WebSocket server on the recording PC, and put the recording PC's IP address as the OBS host on the Setup page. The companion then timestamps each start and stop with the gaming PC's clock. Recordings are matched to OBS by file name, so the recordings folder can be a network share or a copy.
+
+The recordings folder just has to be reachable from wherever the companion runs: a network share of the recording PC's output folder is simplest.
+
 ## In game
 
 | Command | What it does |
@@ -35,10 +44,17 @@ WoW only writes addon data to disk when you log out or `/reload`. The companion 
 | `/chron` | How much has been logged, and whether the clock is calibrated |
 | `/chron mark lore <note>` | Mark a lore beat. Other kinds: `shot`, `funny`, `redo`, or leave the kind out |
 | `/chron note <text>` | A mark with a note |
+| `/chron sync` | Sync flash and sound, for recordings made on another PC (also a key binding) |
 | `/chron silent` | Stop marks from printing to chat (so it stays out of footage) |
 | `/chron clear` | Empty the addon's log once the companion has ingested it, to keep the SavedVariables file small |
 
 The companion keeps its own copy of everything it has ingested, in `data/`. Clearing the addon never loses anything the companion has already seen.
+
+## If `/chron` does nothing
+
+- **Nothing at all** means WoW didn't load the addon. Check that the path is exactly `Interface\AddOns\Chronicler\Chronicler.toc` (the GitHub ZIP adds extra folders around it), that it is ticked in the character screen's AddOns list, and that *Load out of date AddOns* is ticked if it is marked out of date.
+- **"installed but its main file failed to load"** means a Lua error. Type `/console scriptErrors 1`, `/reload`, and copy the error.
+- When it works, you see *Chronicler is logging* in chat after logging in.
 
 ## Recording tips
 

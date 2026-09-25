@@ -35,6 +35,7 @@ export function describe(e) {
     case 'cinematic_start': return 'Cinematic';
     case 'cinematic_stop': return 'Cinematic ended';
     case 'movie': return 'Movie';
+    case 'sync': return 'Sync flash';
     case 'mark': return `${MARK_NAMES[e.kind] ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`;
     default: return e.e;
   }
@@ -48,7 +49,7 @@ export function category(e) {
   if (['gossip', 'speech', 'book', 'cinematic_start', 'cinematic_stop', 'movie'].includes(e.e)) return 'lore';
   if (e.e === 'kill' || e.e === 'death') return 'combat';
   if (e.e === 'loot') return 'loot';
-  if (e.e === 'mark') return 'mark';
+  if (e.e === 'mark' || e.e === 'sync') return 'mark';
   if (['zone', 'explore', 'session_start', 'session_end'].includes(e.e)) return 'travel';
   return 'progress';
 }

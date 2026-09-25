@@ -37,3 +37,18 @@ test('finds a covering recording even when a later one overlaps', () => {
   ];
   assert.equal(aligner(recs)(7000).recording.id, 'long');
 });
+
+test('OBS on another PC is matched by file name', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { scanRecordings } = await import('../companion/src/recordings.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chron-rec-'));
+  const file = path.join(dir, 'custom name.mkv');
+  fs.writeFileSync(file, 'x');
+  const recs = scanRecordings(dir, { obsLog: [{ path: 'D:\\Recordings\\Custom Name.mkv', start: 5000, end: 9000 }] });
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].source, 'obs');
+  assert.equal(recs[0].start, 5000);
+  assert.equal(recs[0].duration, 4);
+});

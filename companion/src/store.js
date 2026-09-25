@@ -3,6 +3,7 @@
 //   data/config.json          settings from the Setup page
 //   data/sessions/<id>.json   one file per play session ingested from the addon
 //   data/obs-recordings.json  exact start/stop times reported by OBS
+//   data/recording-overrides.json  sync-flash corrections per recording
 //   data/exports/...          files written by "Export all"
 
 import fs from 'node:fs';
@@ -105,6 +106,21 @@ export class Store {
     this._sessions = null;
     this.version++;
     return existing ? 'updated' : 'added';
+  }
+
+  // Per-recording corrections keyed by lowercase file name: { start, duration,
+  // syncT, videoTime }.
+  overrides() { return this.readJSON('recording-overrides.json', {}); }
+
+  setOverride(fileName, patch) {
+    const all = this.overrides();
+    const key = fileName.toLowerCase();
+    const next = { ...(all[key] || {}), ...patch };
+    for (const k of Object.keys(next)) if (next[k] == null) delete next[k];
+    if (Object.keys(next).length) all[key] = next; else delete all[key];
+    this.writeJSON('recording-overrides.json', all);
+    this.version++;
+    return next;
   }
 
   obsRecordings() { return this.readJSON('obs-recordings.json', []); }

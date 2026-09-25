@@ -30,7 +30,7 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
   assert.deepEqual(kinds, [
     'session_start', 'quest_detail', 'quest_accept', 'kill', 'kill', 'objective', 'loot', 'loot', 'speech',
     'gossip', 'book', 'quest_progress', 'quest_complete', 'quest_turnin', 'level', 'learn', 'skill',
-    'zone', 'explore', 'mark', 'mark', 'mark', 'quest_abandon', 'death', 'session_end',
+    'zone', 'explore', 'sync', 'mark', 'mark', 'mark', 'quest_abandon', 'death', 'session_end',
   ]);
 
   // Timestamps are calibrated to sub-second precision after the first tick
@@ -78,6 +78,9 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
 
   const marks = events.filter((e) => e.e === 'mark');
   assert.deepEqual(marks.map((m) => [m.kind, m.note]), [['lore', undefined], ['shot', 'sunset over the lake'], ['mark', 'wolf pathing weird']]);
+
+  const sync = events.find((e) => e.e === 'sync');
+  assert.ok(sync.t % 1 !== 0, 'sync has sub-second precision');
 
   assert.equal(events.find((e) => e.e === 'death').x, undefined, 'no coordinates when the map has none');
 });

@@ -388,6 +388,7 @@ pages.recording = async (id, params) => {
       <div>
         <video id="video" controls preload="metadata" src="/media/${r.id}"></video>
         <p class="muted small" id="videoNote"></p>
+        ${syncPanel(r)}
         <div class="panel">
           <h3>Export for editing</h3>
           <div class="filters" id="exportCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" checked><span class="cat cat-${c}"></span>${CAT_NAMES[c]} <span class="muted">${r.counts[c] ?? 0}</span></label>`).join('')}</div>
@@ -408,11 +409,95 @@ pages.recording = async (id, params) => {
     </div>`;
 };
 
+const TIMING = {
+  sync: 'Lined up with a sync flash in this recording.',
+  'sync-inferred': 'Using the clock gap measured by the sync flash in',
+  obs: 'Start and stop times reported by OBS.',
+  filename: 'Start time from the file name. If this was recorded on another PC, line it up with a sync flash.',
+  'file-dates': 'Start time guessed from the file date. Line it up with a sync flash.',
+};
+
+function syncPanel(r) {
+  const note = r.source === 'sync-inferred' ? `${TIMING[r.source]} <code>${esc(r.syncedFrom)}</code>.` : TIMING[r.source] ?? '';
+  return `<div class="panel" id="syncPanel">
+    <div class="row spread"><h3>Timing</h3><span class="chip">${esc(r.source)}</span></div>
+    <p class="small">${note}</p>
+    <div class="row">
+      <button data-step="-1">« 1s</button><button data-step="-f">‹ frame</button><button data-step="f">frame ›</button><button data-step="1">1s »</button>
+      <label class="check" style="margin:0"><span class="muted small">Flash at</span><input type="text" id="flashAt" size="12" placeholder="0:00.000"></label>
+      <button class="primary" id="findSync">Line up with sync flash</button>
+      ${r.source === 'sync' ? '<button id="clearSync">Remove sync</button>' : ''}
+    </div>
+    <p class="muted small">Pause on the first frame where the screen turns white (the audio spike is right there too), or type the time from your editor, then press Line up.</p>
+    <div id="syncChoices"></div>
+  </div>`;
+}
+
+function parseTime(text) {
+  const parts = String(text).trim().split(':').map(Number);
+  if (!parts.length || parts.some((n) => !Number.isFinite(n))) return null;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+function wireSync(r, video) {
+  const input = document.getElementById('flashAt');
+  const fmt = (sec) => `${tc(sec)}.${String(Math.round((sec % 1) * 1000)).padStart(3, '0')}`;
+  video.addEventListener('pause', () => { input.value = fmt(video.currentTime); });
+  video.addEventListener('seeked', () => { if (video.paused) input.value = fmt(video.currentTime); });
+  for (const b of document.querySelectorAll('[data-step]')) {
+    b.addEventListener('click', () => {
+      video.pause();
+      const step = b.dataset.step === 'f' ? 1 / status.config.fps : b.dataset.step === '-f' ? -1 / status.config.fps : Number(b.dataset.step);
+      video.currentTime = Math.max(0, video.currentTime + step);
+    });
+  }
+  document.getElementById('clearSync')?.addEventListener('click', async () => {
+    await api(`recordings/${r.id}/sync`, { method: 'DELETE' });
+    codexCache = null;
+    route();
+  });
+  document.getElementById('findSync').addEventListener('click', async () => {
+    const at = parseTime(input.value || fmt(video.currentTime));
+    const box = document.getElementById('syncChoices');
+    if (at == null || at < 0 || at > r.duration + 1) { box.innerHTML = '<p class="small" style="color:var(--red)">Type the flash time, within this recording, as seconds or h:mm:ss.ms.</p>'; return; }
+    const list = await api(`recordings/${r.id}/sync-candidates?at=${at}`);
+    if (!list.length) {
+      box.innerHTML = '<p class="small">No sync flashes logged yet. In game, press your Sync key (or type <code>/chron sync</code>) right after starting a recording, then log out or /reload so the companion gets it.</p>';
+      return;
+    }
+    box.innerHTML = `<p class="small">Which flash is at <b>${fmt(at)}</b>? Closest first.</p><table><tbody>${list.map((c, i) => `<tr>
+      <td>${esc(new Date(c.t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' }))}</td>
+      <td class="muted">${esc(c.char ?? '')} ${esc(c.zone ?? '')}</td>
+      <td class="muted small">${Math.abs(c.distance) < 90 ? `${c.distance >= 0 ? '+' : '−'}${Math.abs(c.distance).toFixed(1)}s` : `${c.distance >= 0 ? '+' : '−'}${duration(Math.abs(c.distance))}`} from file clock</td>
+      <td><button data-pick="${i}" class="${i === 0 ? 'primary' : ''}">Use this</button></td></tr>`).join('')}</tbody></table>`;
+    for (const b of box.querySelectorAll('[data-pick]')) {
+      b.addEventListener('click', async () => {
+        await api(`recordings/${r.id}/sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ t: list[Number(b.dataset.pick)].t, videoTime: at }),
+        });
+        codexCache = null;
+        toast('Synced. Every event in this recording now lines up with the flash.');
+        location.hash = `#/recording/${r.id}?t=${at.toFixed(3)}`;
+        route();
+      });
+    }
+  });
+}
+
 function wirePlayer(r, start) {
   const video = document.getElementById('video');
   const tl = document.getElementById('timeline');
   if (!video || !tl) return;
-  video.addEventListener('loadedmetadata', () => { if (start) video.currentTime = start; }, { once: true });
+  video.addEventListener('loadedmetadata', () => {
+    if (start) video.currentTime = start;
+    // File dates can be lost when copying between PCs; the video knows its length.
+    if (Number.isFinite(video.duration) && Math.abs(video.duration - r.duration) >= 1) {
+      api(`recordings/${r.id}/duration`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration: video.duration }) })
+        .then(() => { codexCache = null; }).catch(() => {});
+    }
+  }, { once: true });
+  wireSync(r, video);
   video.addEventListener('error', () => {
     document.getElementById('videoNote').textContent = 'Your browser cannot play this file. MKV often fails: set OBS to record Hybrid MP4, or use File › Remux Recordings. Timestamps and exports still work.';
   });
