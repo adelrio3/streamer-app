@@ -742,7 +742,7 @@ function renderLogin(message = '') {
   document.getElementById('nav').hidden = true;
   main.innerHTML = `<div class="panel" style="max-width:420px;margin:40px auto">
     <h1>Chronicler</h1>
-    <p class="muted">Log in with the same account on your gaming PC and your recording computer.</p>
+    <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team.</p>
     ${message ? `<div class="notice">${message}</div>` : ''}
     <form id="login">
       <label><span>Email</span><input type="email" name="email" required autocomplete="username" style="width:100%"></label>
@@ -754,9 +754,11 @@ function renderLogin(message = '') {
     const f = new FormData(ev.target);
     const creds = { email: f.get('email'), password: f.get('password') };
     const auth = state.client.auth;
-    const { data, error } = ev.submitter?.value === 'up' ? await auth.signUp(creds) : await auth.signInWithPassword(creds);
+    const { data, error } = ev.submitter?.value === 'up'
+      ? await auth.signUp({ ...creds, options: { emailRedirectTo: location.origin + location.pathname } })
+      : await auth.signInWithPassword(creds);
     if (error) return renderLogin(esc(error.message));
-    if (!data.session) return renderLogin('Account created. Supabase sent you a confirmation email: click the link in it (the page it opens may not load; that is fine), then come back here and log in.');
+    if (!data.session) return renderLogin('Account created. Supabase sent you a confirmation email (from Supabase Auth, check spam too): click <b>Confirm your mail</b> in it. If the page it opens does not load, that is fine: your account is confirmed anyway. Then come back here and log in.');
     startApp(data.session.user);
   });
 }
