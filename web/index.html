@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chronicler</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 4h16l4 4v20H6z' fill='%23d4a017'/%3E%3Cpath d='M10 12h12M10 17h12M10 22h8' stroke='%231a1712' stroke-width='2'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="top">
     <a class="brand" href="#/">Chronicler</a>
-    <nav id="nav">
+    <nav id="nav" hidden>
       <a href="#/quests">Quests</a>
       <a href="#/creatures">Creatures</a>
       <a href="#/npcs">NPCs</a>
@@ -20,11 +20,11 @@
       <a href="#/marks">Marks</a>
       <a href="#/sessions">Sessions</a>
       <a href="#/recordings">Recordings</a>
-      <a href="#/setup">Setup</a>
+      <a href="#/setup">This computer</a>
     </nav>
     <div class="status" id="status"></div>
   </header>
   <main id="main"><p class="muted">Loading…</p></main>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toSRT, toChapters, toKillsCSV, toFCPXML, toCSV, fileURL, timecode } from '../companion/src/exports.js';
+import { toSRT, toChapters, toKillsCSV, toFCPXML, toCSV, fileURL, timecode } from '../web/lib/exports.js';
 
 const ev = (offset, e, extra = {}) => ({ offset, t: 1790000000 + offset, e, label: `${e} at ${offset}`, cat: 'quest', ...extra });
 
@@ -38,7 +38,7 @@ test('CSV escapes quotes and commas', () => {
 });
 
 test('Premiere XML has a clip and frame-accurate markers', () => {
-  const rec = { name: '2026-09-25 20-15-42.mkv', file: 'C:\\Videos\\2026-09-25 20-15-42.mkv', duration: 120 };
+  const rec = { name: '2026-09-25 20-15-42.mkv', path: 'C:\\Videos\\2026-09-25 20-15-42.mkv', duration: 120 };
   const xml = toFCPXML(rec, [ev(1.5, 'kill', { label: 'Killed <Kobold> & friends', cat: 'combat', z: 'Elwynn' })], { fps: 60 });
   assert.match(xml, /<xmeml version="4">/);
   assert.match(xml, /<duration>7200<\/duration>/);

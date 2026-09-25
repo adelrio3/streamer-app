@@ -4,18 +4,16 @@ The mission: every quest in the game, across every expansion, including class an
 
 ## Phase 1: capture (this release)
 
-The addon logs everything and the companion ties it to footage. No scout pass and no notes by hand.
+The addon logs everything and the web app ties it to footage across two computers. No scout pass and no notes by hand.
 
 ### First real session checklist
 
-The addon was built against the documented WoW API and tested in a simulated client, not in the live game. On your first Classic Era session:
-
-1. Log in with the addon enabled. If WoW says it is out of date, check your interface number with `/dump select(4, GetBuildInfo())` and run `npm run add-interface -- <number>`.
-2. Pick up a quest, kill a few mobs, loot, talk to an NPC, read a plaque, and press each mark key once.
-3. Type `/chron`. The event count should be climbing and the clock should say *calibrated*.
-4. `/reload`, then check the Sessions page. Every one of those actions should be there. Anything missing is a client API difference to fix in the addon. Note which ones.
-5. Record a minute in OBS while doing the above, pressing the Sync key right after you start recording if OBS is on another PC. Line the recording up with the flash on its page in the companion, then click a few events. The video should land within a frame or two of each.
-6. Import that recording's `.xml` into Premiere and confirm the markers appear. If they don't, the `.srt` import is the fallback.
+1. Gaming PC: the web app shows the WoW folder as watched and the addon as installed (This computer page).
+2. Recording Mac: the web app shows OBS as connected and the recordings folder chosen.
+3. Start recording on the Mac, press the Sync key in game, then pick up a quest, kill a few mobs, loot, talk to an NPC, read a plaque, and press a mark key.
+4. Stop recording, `/reload` in game. Within a minute the session appears on both computers (Sessions page) and the recording shows events (Recordings page).
+5. On the Mac, open the recording, line it up with the flash, click a few events: the video should land within a frame or two.
+6. Download the Premiere markers (.xml) and import them in Premiere.
 
 ## Phase 2: the guide (completion without a scout)
 
@@ -41,7 +39,7 @@ The addon was built against the documented WoW API and tested in a simulated cli
 
 ## Phase 5: every expansion
 
-The addon and companion already carry the client version on every session, and the Codex groups by expansion. What each new era needs:
+The addon and web app already carry the client version on every session, and the Codex groups by expansion. What each new era needs:
 
 - The quest database for that expansion (Phase 2).
 - Chromie Time and level-scaling awareness for retail, where the same zone can be played at any level.

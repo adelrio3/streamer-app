@@ -1,0 +1,12 @@
+# Netlify builds the site from this repository on every push.
+[build]
+  publish = "web"
+  command = "node tools/build-web.js"
+
+[functions]
+  directory = "netlify/functions"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-cache"

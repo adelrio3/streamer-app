@@ -1,14 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { authString, ObsLink } from '../companion/src/obs.js';
-import { Store } from '../companion/src/store.js';
+import { authString, ObsLink } from '../web/lib/obs.js';
 
-test('auth string matches the obs-websocket protocol example', () => {
+test('auth string matches the obs-websocket protocol example', async () => {
   assert.equal(
-    authString('supersecretpassword', 'lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=', '+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY='),
+    await authString('supersecretpassword', 'lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=', '+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY='),
     '1Ct943GAT+6YQUUX47Ia/ncufilbe6+oD6lY+5kaCu4=',
   );
 });
@@ -16,47 +12,42 @@ test('auth string matches the obs-websocket protocol example', () => {
 class FakeSocket {
   static last;
   constructor(url) { this.url = url; this.sent = []; FakeSocket.last = this; }
-  send(text) { this.sent.push(JSON.parse(text)); }
+  send(text) {
+    const msg = JSON.parse(text);
+    this.sent.push(msg);
+    if (msg.op === 6) {
+      const data = { GetRecordDirectory: { recordDirectory: '/Users/me/Movies' }, GetRecordStatus: { outputActive: false } }[msg.d.requestType];
+      queueMicrotask(() => this.emit(7, { requestId: msg.d.requestId, responseData: data }));
+    }
+  }
   close() {}
-  emit(op, d) { this.onmessage({ data: JSON.stringify({ op, d }) }); }
+  emit(op, d) { return this.onmessage({ data: JSON.stringify({ op, d }) }); }
 }
 
-test('logs recording start, file splits and stop', () => {
-  const store = new Store(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-obs-')));
+const tick = () => new Promise((r) => setTimeout(r, 5));
+
+test('reports recording start, file splits and stop', async () => {
   let clock = 1_000_000;
-  const link = new ObsLink(store, () => ({ enabled: true, host: 'localhost', port: 4455, password: 'pw' }), { WebSocketImpl: FakeSocket, now: () => clock });
+  const events = [];
+  const link = new ObsLink({ password: 'pw', WebSocketImpl: FakeSocket, now: () => clock, onRecording: (e) => events.push(e) });
   link.start();
   const ws = FakeSocket.last;
-  assert.equal(ws.url, 'ws://localhost:4455');
-
-  ws.emit(0, { rpcVersion: 1, authentication: { salt: 's', challenge: 'c' } });
-  assert.equal(ws.sent[0].op, 1);
-  assert.equal(ws.sent[0].d.authentication, authString('pw', 's', 'c'));
-  ws.emit(2, { negotiatedRpcVersion: 1 });
+  assert.equal(ws.url, 'ws://127.0.0.1:4455');
+  await ws.emit(0, { rpcVersion: 1, authentication: { salt: 's', challenge: 'c' } });
+  assert.equal(ws.sent[0].d.authentication, await authString('pw', 's', 'c'));
+  await ws.emit(2, {});
+  await tick();
   assert.equal(link.status().state, 'connected');
+  assert.equal(link.status().recordDirectory, '/Users/me/Movies');
 
-  ws.emit(5, { eventType: 'RecordStateChanged', eventData: { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED', outputPath: '/v/a.mkv' } });
+  await ws.emit(5, { eventType: 'RecordStateChanged', eventData: { outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED', outputPath: '/m/a.mp4' } });
   clock += 60_000;
-  ws.emit(5, { eventType: 'RecordFileChanged', eventData: { newOutputPath: '/v/b.mkv' } });
+  await ws.emit(5, { eventType: 'RecordFileChanged', eventData: { newOutputPath: '/m/b.mp4' } });
   clock += 30_000;
-  ws.emit(5, { eventType: 'RecordStateChanged', eventData: { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED', outputPath: '/v/b.mkv' } });
-
-  assert.deepEqual(store.obsRecordings(), [
-    { path: '/v/a.mkv', start: 1_000_000, end: 1_060_000 },
-    { path: '/v/b.mkv', start: 1_060_000, end: 1_090_000 },
+  await ws.emit(5, { eventType: 'RecordStateChanged', eventData: { outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED', outputPath: '/m/b.mp4' } });
+  assert.deepEqual(events.map((e) => [e.type, e.path, e.at]), [
+    ['start', '/m/a.mp4', 1_000_000], ['stop', '/m/a.mp4', 1_060_000], ['start', '/m/b.mp4', 1_060_000], ['stop', '/m/b.mp4', 1_090_000],
   ]);
-  link.stop();
-});
-
-test('back-dates a recording already running when it connects', () => {
-  const store = new Store(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-obs-')));
-  const link = new ObsLink(store, () => ({ enabled: true, host: 'h', port: 1 }), { WebSocketImpl: FakeSocket, now: () => 500_000 });
-  link.start();
-  const ws = FakeSocket.last;
-  ws.emit(0, { rpcVersion: 1 });
-  assert.equal(ws.sent[0].d.authentication, undefined);
-  ws.emit(2, {});
-  ws.emit(7, { requestId: 'status', responseData: { outputActive: true, outputDuration: 120_000 } });
-  assert.equal(link.status().since, 380_000);
+  assert.equal(events[3].start, 1_060_000);
   link.stop();
 });

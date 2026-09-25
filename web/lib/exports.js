@@ -9,25 +9,7 @@
 //   chapters.txt   YouTube chapters from zone changes, for raw longplays.
 //   kills.csv      Running kill counts per creature, for counter overlays.
 
-import path from 'node:path';
-import { describe, category, place } from './describe.js';
-import { aligner } from './recordings.js';
-
-// Events of every session placed onto recordings: Map<recordingId, event[]>.
-// Each event gets `session`, `offset` (seconds into the video), `label`, `cat`.
-export function buildTimelines(sessions, recordings, clockOffset = 0) {
-  const align = aligner(recordings, clockOffset);
-  const byRec = new Map(recordings.map((r) => [r.id, []]));
-  for (const s of sessions) {
-    for (const e of s.events) {
-      const hit = align(e.t);
-      if (!hit) continue;
-      byRec.get(hit.recording.id).push({ ...e, session: s.id, offset: hit.offset, label: describe(e), cat: category(e) });
-    }
-  }
-  for (const list of byRec.values()) list.sort((a, b) => a.offset - b.offset);
-  return byRec;
-}
+import { place } from './describe.js';
 
 export function timecode(seconds, { ms = false } = {}) {
   const total = Math.max(0, seconds);
@@ -104,12 +86,13 @@ export function toKillsCSV(events, lifetimeBefore = new Map()) {
   return rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-// Kill counts per creature from every session before a given time.
-export function lifetimeKillsBefore(sessions, t) {
+// Kill counts per creature from every session before a given time (epoch
+// ms on the shared clock). toMs converts an event of a session to that clock.
+export function lifetimeKillsBefore(sessions, t, toMs = (s, e) => e.t * 1000) {
   const counts = new Map();
   for (const s of sessions) {
     for (const e of s.events) {
-      if (e.e === 'kill' && e.t < t) {
+      if (e.e === 'kill' && toMs(s, e) < t) {
         const key = e.npcId ?? e.name;
         counts.set(key, (counts.get(key) || 0) + 1);
       }
@@ -134,7 +117,7 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     `<in>${frames(e.offset)}</in><out>-1</out>`,
     '</marker>',
   ].join('')).join('\n      ');
-  const file = `<file id="file-1"><name>${name}</name><pathurl>${xml(fileURL(recording.file))}</pathurl>${rate}<duration>${duration}</duration>`
+  const file = `<file id="file-1"><name>${name}</name><pathurl>${xml(fileURL(recording.path || recording.name))}</pathurl>${rate}<duration>${duration}</duration>`
     + `<media><video><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></video>`
     + '<audio><channelcount>2</channelcount></audio></media></file>';
   const clip = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${name}</name><duration>${duration}</duration>${rate}`
@@ -143,7 +126,7 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence id="sequence-1">
-    <name>${xml(`Chronicler - ${path.parse(recording.name).name}`)}</name>
+    <name>${xml(`Chronicler - ${stem(recording.name)}`)}</name>
     <duration>${duration}</duration>
     ${rate}
     <timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode>
@@ -191,6 +174,11 @@ function xml(s) {
 function csvCell(v) {
   const s = String(v ?? '');
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// "2026-09-25 20-15-42.mkv" -> "2026-09-25 20-15-42"
+export function stem(name) {
+  return String(name).replace(/\.[^.\\/]+$/, '');
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }

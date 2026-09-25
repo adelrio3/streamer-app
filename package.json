@@ -2,16 +2,14 @@
   "name": "chronicler",
   "version": "0.1.0",
   "private": true,
-  "description": "WoW addon + companion app that logs quests, lore, kills and loot while you play and lines them up with your OBS recordings.",
+  "description": "WoW addon + cloud web app (Netlify + Supabase) that logs quests, lore, kills and loot while you play and lines them up with your OBS recordings.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "start": "node companion/server.js",
-    "open": "node companion/server.js --open",
-    "ingest": "node companion/server.js ingest",
-    "export": "node companion/server.js export",
+    "build": "node tools/build-web.js",
+    "serve": "node tools/build-web.js && node tools/serve.js",
     "test": "node --test test/*.test.js",
     "add-interface": "node tools/add-interface.js"
   }

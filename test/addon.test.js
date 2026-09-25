@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseSavedVariables } from '../companion/src/luasv.js';
+import { parseSavedVariables } from '../web/lib/luasv.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lua = ['lua5.1', 'luajit', 'lua'].find((bin) => spawnSync(bin, ['-v']).status === 0);

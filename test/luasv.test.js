@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSavedVariables } from '../companion/src/luasv.js';
+import { parseSavedVariables } from '../web/lib/luasv.js';
 
 test('parses WoW-style nested tables, arrays and comments', () => {
   const src = `
