@@ -3,10 +3,15 @@
 //
 //   node companion/server.js [--port 4050] [--host 127.0.0.1] [--data ./data] [--open]
 //   node companion/server.js ingest        ingest once and print a summary
-//   node companion/server.js export        ingest, then write every export to data/exports
+//   node companion/server.js export        ingest, then write every export to <data>/exports
+//
+// Data folder: --data, else CHRONICLER_DATA, else "Chronicler Data" in your
+// user folder (C:\Users\<you>\Chronicler Data on Windows).
 
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { App } from './src/app.js';
@@ -18,7 +23,12 @@ const flag = (name, fallback) => {
 };
 const command = args[0] && !args[0].startsWith('--') ? args[0] : 'serve';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dataDir = path.resolve(flag('data', process.env.CHRONICLER_DATA || path.join(root, 'data')));
+// Data lives outside the app folder so unpacking a newer version never
+// leaves your sessions behind. A data/ folder next to the app (older
+// versions) still wins if it exists.
+const legacyData = path.join(root, 'data');
+const defaultData = fs.existsSync(path.join(legacyData, 'config.json')) ? legacyData : path.join(os.homedir(), 'Chronicler Data');
+const dataDir = path.resolve(flag('data', process.env.CHRONICLER_DATA || defaultData));
 const app = new App({ dataDir });
 
 if (command === 'ingest' || command === 'export') {

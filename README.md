@@ -23,7 +23,7 @@ Requires [Node.js](https://nodejs.org) 22 or newer. There are no other dependenc
 
 1. **Install the addon.** Copy `addon/Chronicler` into `World of Warcraft\_classic_era_\Interface\AddOns\` (or `_anniversary_`, `_classic_`, `_retail_`). The `.toc` covers Classic Era 1.15.9 (interface 11509) and the next few patches. After a bigger patch, check the number in game with `/dump select(4, GetBuildInfo())`, run `npm run add-interface -- <number>` and copy the folder again (or tick *Load out of date AddOns* in the meantime).
 2. **Bind the mark keys.** Open Game Menu › Key Bindings › AddOns › Chronicler.
-3. **Start the companion.** Double-click `start.cmd` (Windows) or run `./start.sh`. From a terminal you can run `npm run open`. It opens <http://127.0.0.1:4050>.
+3. **Start the companion.** Extract the whole ZIP first (right-click › Extract All; running `start.cmd` from inside the ZIP does not work). Then double-click `start.cmd` (Windows) or run `./start.sh`. From a terminal you can run `npm run open`. It opens <http://127.0.0.1:4050>.
 4. **Setup page.** Enter your WoW folder and your OBS recordings folder. Optionally enable the OBS connection: in OBS, go to Tools › WebSocket Server Settings and enable the server, then enter its port and password here.
 
 WoW only writes addon data to disk when you log out or `/reload`. The companion watches the file and ingests on its own a few seconds later. There is also an **Ingest** button.
@@ -48,7 +48,7 @@ The recordings folder just has to be reachable from wherever the companion runs:
 | `/chron silent` | Stop marks from printing to chat (so it stays out of footage) |
 | `/chron clear` | Empty the addon's log once the companion has ingested it, to keep the SavedVariables file small |
 
-The companion keeps its own copy of everything it has ingested, in `data/`. Clearing the addon never loses anything the companion has already seen.
+The companion keeps its own copy of everything it has ingested, in `Chronicler Data` in your user folder (e.g. `C:\Users\<you>\Chronicler Data`), so updating the app never touches it. Clearing the addon never loses anything the companion has already seen.
 
 ## If `/chron` does nothing
 
@@ -75,7 +75,7 @@ addon/Chronicler/     the WoW addon (Lua)
 companion/server.js   entry point: serve (default), ingest, export
 companion/src/        SavedVariables parser, ingest, recordings, codex, exports, OBS link, HTTP API
 companion/public/     the web UI
-data/                 your ingested sessions, settings, OBS log and exports (not committed)
+~/Chronicler Data/    your ingested sessions, settings, OBS log and exports (outside the app folder)
 test/                 node --test suites; test/addon/harness.lua runs the addon against a fake WoW client
 ```
 

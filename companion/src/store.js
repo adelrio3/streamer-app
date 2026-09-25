@@ -1,10 +1,10 @@
-// Everything the companion keeps lives in one data folder:
+// Everything the companion keeps lives in one data folder (see server.js):
 //
-//   data/config.json          settings from the Setup page
-//   data/sessions/<id>.json   one file per play session ingested from the addon
-//   data/obs-recordings.json  exact start/stop times reported by OBS
-//   data/recording-overrides.json  sync-flash corrections per recording
-//   data/exports/...          files written by "Export all"
+//   <data>/config.json          settings from the Setup page
+//   <data>/sessions/<id>.json   one file per play session ingested from the addon
+//   <data>/obs-recordings.json  exact start/stop times reported by OBS
+//   <data>/recording-overrides.json  sync-flash corrections per recording
+//   <data>/exports/...          files written by "Export all"
 
 import fs from 'node:fs';
 import path from 'node:path';
