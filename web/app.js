@@ -1342,17 +1342,14 @@ async function characterJournal(c) {
   const d = derived();
   const db = await questDB();
   const sessions = d.sessions.filter((sess) => c.sessions.includes(sess.id));
-  const who = { raceToken: c.info.raceToken, classToken: c.info.classToken, faction: c.info.faction };
-  const { done, active } = progressSets(d.codex.quests, c.key);
-  const lines = db ? storylines(db, { who, level: c.level || 0, done, active }) : [];
   let out;
-  try { out = journalEntries({ character: c, sessions, world: d.world, codex: d.codex, storylines: lines, moment: d.moment }); } catch (err) { console.warn('journal', err); out = { entries: [] }; }
+  try { out = journalEntries({ character: c, sessions, world: d.world, codex: d.codex, db, moment: d.moment }); } catch (err) { console.warn('journal', err); out = { entries: [] }; }
   setTimeout(() => document.getElementById('journalDl')?.addEventListener('click', () => download(`${c.name.toLowerCase()}-journal.md`, 'text/markdown', narrativeText(out))));
   if (!out.entries.length) return '<p class="muted">Nothing written yet. The journal fills in as the story unfolds.</p>';
   return `<div class="journal">
     ${out.entries.slice().reverse().map((e, i) => `<article class="entry entry-${e.kind}" style="--i:${Math.min(i, 12)}">
       <div class="row spread"><h3>${esc(e.title)}</h3><span class="muted small">${esc(when(e.t))}${e.footage ? ` ${play(e)}` : ''}</span></div>
-      <p>${esc(e.text)}</p>
+      ${(e.paragraphs || [e.text]).map((p) => `<p>${esc(p)}</p>`).join('')}
     </article>`).join('')}
     <p><button class="ghost small" id="journalDl">Journal as Markdown</button></p>
   </div>`;
@@ -2229,14 +2226,14 @@ pages.lore = async (kind, params) => {
       <span class="tale-orn">✦</span>
       <b>${esc(t.title)}</b>
       <small>${esc(t.zones.join(' → '))}${t.level ? ` · level ${t.level}` : ''}</small>
-      <small class="muted">${t.total > 1 ? `${t.done} of ${t.total} chapters` : 'a single chapter'}${t.heroes.length ? ` · ${t.heroes.map((h) => esc(h.name)).join(', ')}` : ''}</small>
+      <small class="muted">${t.total > 1 ? `${t.done} of ${t.total} chapters lived` : 'a single chapter'}</small>
     </a>`;
   const pick = [...storylines(db, {}).slice(0, 400)].sort((a, b) => a.name.localeCompare(b.name));
   setTimeout(() => {
     document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
     document.getElementById('taleVoice')?.addEventListener('change', async (ev) => {
       state.settings = { ...state.settings, taleVoice: ev.target.value === 'female' ? 'female' : 'male' };
-      try { await state.store.saveSettings(state.settings); toast(`The tales now say ${ev.target.value === 'female' ? 'she' : 'he'} when the hero is not known.`); } catch (err) { toast(err.message); }
+      try { await state.store.saveSettings(state.settings); toast(`The tales now say ${ev.target.value === 'female' ? 'she' : 'he'}.`); } catch (err) { toast(err.message); }
     });
   });
   return `<div class="lore-hero">
@@ -2249,11 +2246,11 @@ pages.lore = async (kind, params) => {
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
     ${living.length ? `<h2 class="lore-h">Still being lived</h2><div class="shelf">${living.map(cover).join('')}</div>` : ''}
     ${!all.length ? '<p class="muted">The shelf is empty. Finish a storyline and its tale appears here.</p>' : ''}
-    <p class="muted small lore-pretend">The tales speak of <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select> when the hero's sex is not on record (the Journal is always in the character's own words).</p>
+    <p class="muted small lore-pretend">The tales follow an unnamed adventurer, told of as <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select>. A character's own account is the Journal on its page.</p>
     <p class="muted small lore-pretend">Hear a tale as if it were already done: <select id="pretendSel"><option value="">choose a storyline…</option>${pick.map((st) => `<option value="${st.id}">${esc(st.name)} (${esc(st.startZone ?? '')})</option>`).join('')}</select> <span class="muted">or any single quest by id: <a href="#/lore/tale?id=q4402&pretend=1">Galgar's Cactus Apple Surprise</a></span></p>`;
 };
 
-// The account's own voice for the tales: he or she when a hero's sex is not known.
+// The account's own voice for the tales: the unnamed adventurer is he or she.
 const taleVoice = () => (state.settings.taleVoice === 'female' ? 'female' : 'male');
 
 async function talePage(params) {
@@ -2274,8 +2271,7 @@ async function talePage(params) {
       : { id, kind: 'quest', title: q.n, zones: [db.zoneName(q.zone ?? q.z)].filter(Boolean), level: q.l, chapters: [{ q, state: 'ready' }], done: 0, total: 1, complete: false, heroes: [] };
   }
   if (!tale) return `${crumb('#/lore', 'Lore')}<p>No such tale.</p>`;
-  const hero = tale.heroes[0] || (pretend ? { name: characters[0]?.name ?? 'a traveler', race: characters[0]?.info.race, class: characters[0]?.info.class, sex: characters[0]?.info.sex ?? null } : null);
-  const story = tellTale(tale, { db, codex: c, world, hero, pretend: pretend || !tale.complete, defaultSex: taleVoice() });
+  const story = tellTale(tale, { db, codex: c, world, pretend: pretend || !tale.complete, defaultSex: taleVoice() });
   setTimeout(() => document.getElementById('taleDl')?.addEventListener('click', () => download(`${tale.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.md`, 'text/markdown', taleText(story))));
   return `${crumb('#/lore', 'Lore')}
     <article class="storybook">

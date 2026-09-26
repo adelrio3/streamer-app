@@ -1,4 +1,4 @@
-// The Journal: short in-character entries from a character's logged events.
+// The Journal: one first-person entry per outing, built from a character's logged events.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,60 +9,53 @@ import { readAddonLog } from '../web/lib/sessions.js';
 import { buildWorld } from '../web/lib/world.js';
 import { buildCharacters } from '../web/lib/journey.js';
 import { buildCodex } from '../web/lib/codex.js';
+import { indexDB } from '../web/lib/questdb.js';
 import { journalEntries, narrativeText } from '../web/lib/narrative.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const json = (name) => JSON.parse(fs.readFileSync(path.join(here, '..', 'web', 'data', 'classic', name), 'utf8'));
+const db = indexDB({ quests: json('quests.json').quests, npcs: json('npcs.json').npcs, objects: json('objects.json').objects, items: json('items.json').items, zones: json('zones.json').zones });
 const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8'));
 const sessions = log.sessions;
 const moment = (s, e) => ({ session: s.id, t: e.t, footage: e.e === 'session_start' ? { rec: 'take.mp4', offset: 12 } : null });
-const OUT_OF_WORLD = /\b(session|log|addon|footage|screenshot|recording|XP|note|timestamp|the game)s?\b|\d+%/i;
+const OUT_OF_WORLD = /\b(session|log|addon|footage|screenshot|recording|XP|note|timestamp|the game|quest|quests|completed)s?\b|\d+%/i;
 const sentencesOf = (text) => text.split(/(?<=[.?…]["”]?)\s+(?=[A-Z"“])/).filter(Boolean);
 const wordsOf = (s) => s.trim().split(/\s+/).length;
 
-const storyline = {
-  id: 7, name: 'The Kobold Camp', zones: ['Elwynn Forest'], done: 1, total: 1,
-  quests: [{ q: { id: 7, n: 'Kobold Camp Cleanup', l: 1, o: 'Kill 10 Kobold Vermin' }, state: 'done' }],
-};
-
-function journal(sex = 'male', storylines = [storyline]) {
+function journal(sex = 'male') {
   const world = buildWorld(sessions, log.items, moment);
   const codex = buildCodex(sessions);
   const [character] = buildCharacters(sessions, moment);
   character.info.sex = sex;
-  return { character, result: journalEntries({ character, sessions, world, codex, storylines, moment }) };
+  return { character, result: journalEntries({ character, sessions, world, codex, db, moment }) };
 }
 
-test('journal: one short session entry, in his own words, with the things that mattered', () => {
+test('journal: one entry per outing, in his own words, the errand retold and never named', () => {
   const { character, result } = journal();
   assert.equal(character.name, 'Aldric');
   assert.equal(result.title, 'The journal of Aldric');
-  const entries = result.entries.filter((e) => e.kind === 'session');
-  assert.equal(entries.length, 1, 'one entry per session');
-  const [en] = entries;
+  assert.equal(result.entries.length, 1, 'one entry per outing, nothing else');
+  const [en] = result.entries;
+  assert.equal(en.kind, 'session');
   assert.equal(en.session, sessions[0].id);
   assert.equal(en.id, `s-${sessions[0].id}`);
-  assert.ok(Number.isFinite(en.t));
   assert.deepEqual(en.footage, { rec: 'take.mp4', offset: 12 }, 'footage from the moment the entry opens on');
   assert.match(en.title, /Elwynn Forest/);
+  assert.equal(en.paragraphs.length, 1, 'a short outing is one paragraph');
   const sentences = sentencesOf(en.text);
   assert.ok(sentences.length >= 2 && sentences.length <= 5, `2 to 5 sentences: ${sentences.length}\n${en.text}`);
   assert.match(sentences[0], /Northshire Valley, Elwynn Forest/, 'opens with where he was');
-  assert.match(en.text, /Kobold Camp Cleanup/);
-  assert.match(en.text, /Deputy Willem/);
-  const death = sentences.find((s) => /Hogger/.test(s));
-  assert.ok(death, 'Hogger is named');
-  assert.match(death, /killed|fell to|got the better of/, 'in a death sentence');
-  assert.match(en.text, /reached level 2|level 2 came|enough for level 2/i);
-  assert.match(en.text, /\b(I|me|my)\b/, 'first person: his own account');
+  assert.doesNotMatch(en.text, /Kobold Camp Cleanup/, 'the errand is not named like a list entry');
+  assert.match(en.text, /For Deputy Willem I thinned ten Kobold Vermin|Deputy Willem sent me to thin ten Kobold Vermin|thinned ten Kobold Vermin for Deputy Willem/, 'the errand retold as a deed');
+  assert.match(en.text, /Hogger/, 'the death is named');
+  assert.match(en.text, /\b(I|me|my)\b/, 'first person');
   assert.doesNotMatch(en.text, /\b(he|him|his|they|their|them)\b/i, 'never about him from outside');
   assert.doesNotMatch(en.text, /!/, 'no exclamation marks');
   assert.doesNotMatch(en.text, /\$[NCRG]/, 'no raw tokens');
-  assert.match(sentences.at(-1), /Mother Fang was still out there|could wait|still waiting|still had|left .* to see to/, 'closes looking ahead');
 });
 
 test('journal: nothing from outside the world, sentences short, openers vary', () => {
   const { result } = journal();
-  assert.ok(result.entries.length >= 2);
   let prev = null;
   for (const en of result.entries) {
     assert.doesNotMatch(en.text, OUT_OF_WORLD, `${en.kind}: ${en.text}`);
@@ -74,99 +67,56 @@ test('journal: nothing from outside the world, sentences short, openers vary', (
       prev = first;
     }
   }
-});
-
-test('journal: a finished storyline gets its own entry after the session', () => {
-  const { result } = journal();
-  const kinds = result.entries.map((e) => e.kind);
-  assert.deepEqual(kinds, ['session', 'storyline']);
-  const story = result.entries[1];
-  assert.equal(story.id, 'story-7');
-  assert.equal(story.title, 'The end of The Kobold Camp');
-  assert.ok(story.t >= result.entries[0].t, 'sorted by time, newest last');
-  assert.equal(story.t, sessions[0].events.find((e) => e.e === 'quest_turnin').t, 'the time of the last turn-in');
-  const sentences = sentencesOf(story.text);
-  assert.ok(sentences.length >= 3 && sentences.length <= 6, `3 to 6 sentences: ${story.text}`);
-  assert.match(sentences[0], /began|started|took up/);
-  assert.match(sentences[0], /Northshire Valley/, 'where it began');
-  assert.match(story.text, /Deputy Willem/);
-  assert.match(story.text, /You have done well, Aldric/, 'the reward text, with the $N token filled in');
-  // An unfinished storyline has no entry.
-  const partial = journal('male', [{ ...storyline, done: 0, total: 1 }]).result;
-  assert.deepEqual(partial.entries.map((e) => e.kind), ['session']);
-});
-
-test('journal: first person whatever the sex, the NPC lines still addressed to her', () => {
-  const her = journal('female').result.entries.map((e) => e.text).join(' ');
+  const her = journal('female').result.entries[0].text;
   assert.match(her, /\b(I|me|my)\b/);
   assert.doesNotMatch(her, /\b(he|him|his|she|they|them|their)\b/i);
-  const unknown = journal(null).result.entries[0].text;
-  assert.match(unknown, /\b(I|me|my)\b/, 'the sex does not matter to a first-person account');
 });
 
-test('journal: quests carry over between days, kills fold into a count, a finished zone is noted', () => {
+test('journal: the length follows the outing; quiet days get a line, busy days a few paragraphs', () => {
   const day = 1790000000;
-  const ev = (t, extra) => ({ t: day + t, z: 'Elwynn Forest', ...extra });
-  const quest = (id, title) => `${id}:${title}`;
-  const s1 = { id: 'a', started: day, char: { name: 'Brann', realm: 'Mankrik', class: 'Warrior', sex: 3 }, events: [
-    ev(0, { e: 'session_start', sz: 'Northshire Valley' }),
-    ev(10, { e: 'kill', name: 'Kobold Vermin', npcId: 6 }),
-    ev(20, { e: 'kill', name: 'Kobold Vermin', npcId: 6 }),
-    ev(30, { e: 'kill', name: 'Kobold Vermin', npcId: 6 }),
-    ev(31, { e: 'loot', id: 1, name: 'Ornate Blade', n: 1, q: 3, src: 'loot' }),
-    ev(40, { e: 'quest_accept', qid: 12, title: 'The Forgotten Heirloom' }),
-    ev(41, { e: 'quest_accept', qid: 13, title: 'Wolves Across the Border' }),
-    ev(50, { e: 'screenshot', reason: 'level' }),
-  ] };
-  const s2 = { id: 'b', started: day + 86400, char: { name: 'Brann', realm: 'Mankrik', sex: 3 }, events: [
-    ev(86400, { e: 'session_start', sz: 'Goldshire' }),
-    ev(86401, { e: 'vendor', npc: 'Innkeeper Farley' }),
-    ev(86402, { e: 'money', delta: 150, total: 1150 }),
-    ev(86403, { e: 'mystery_event', foo: 1 }),
-  ] };
+  const ev = (t, extra) => ({ t: day + t, z: 'Durotar', ...extra });
+  const character = { key: 'Vesch-Mankrik', name: 'Vesch', realm: 'Mankrik', info: { class: 'Hunter', sex: 'male' } };
+  const quest = (t, id) => {
+    const q = db.quests.get(id);
+    return [ev(t, { e: 'quest_detail', qid: id, title: q.n, npc: db.npc(q.s?.[0])?.n, obj: q.o }), ev(t + 1, { e: 'quest_accept', qid: id, title: q.n }), ev(t + 2, { e: 'quest_complete', qid: id, title: q.n, npc: db.npc((q.e || q.s)?.[0])?.n }), ev(t + 3, { e: 'quest_turnin', qid: id, title: q.n })];
+  };
+  // A long, mostly idle outing with one errand: one paragraph.
+  const idle = { id: 'idle', started: day, char: { name: 'Vesch', realm: 'Mankrik' }, events: [ev(0, { e: 'session_start', sz: 'Valley of Trials' }), ...quest(10, 4641), ev(7200, { e: 'vendor', npc: 'Duokna' }), ev(7300, { e: 'money', delta: 150 }), ev(7400, { e: 'session_end' })] };
+  const one = journalEntries({ character, sessions: [idle], db, moment }).entries[0];
+  assert.equal(one.paragraphs.length, 1);
+  assert.ok(sentencesOf(one.text).length <= 4, one.text);
+  assert.match(one.text, /carried word to Gornek/, 'the errand as a deed');
+  // Nothing done at all: a quiet line.
+  const nothing = { id: 'nil', started: day + 86400, char: { name: 'Vesch', realm: 'Mankrik' }, events: [ev(86400, { e: 'session_start', sz: 'Razor Hill' }), ev(86500, { e: 'vendor', npc: 'Duokna' })] };
+  const none = journalEntries({ character, sessions: [nothing], db, moment }).entries[0];
+  assert.match(none.text, /Not much came of|quiet|little came of it/i);
+  assert.ok(sentencesOf(none.text).length <= 3, none.text);
+  // A busy outing: seven errands, a death and a level: up to three paragraphs, deeds grouped by who asked.
+  const events = [ev(0, { e: 'session_start', sz: 'Valley of Trials' })];
+  let t = 1;
+  for (const id of [4641, 788, 789, 4402, 3082, 6394, 6002]) { events.push(...quest(t, id)); t += 10; }
+  events.push(ev(t++, { e: 'level', level: 4 }), ev(t++, { e: 'death', killer: 'Sarkoth', sz: 'Hidden Path' }), ev(t++, { e: 'quest_detail', qid: 790, npc: 'Zureetha Fargaze' }), ev(t++, { e: 'quest_accept', qid: 790, title: 'Vile Familiars' }));
+  const busy = { id: 'busy', started: day + 2 * 86400, char: { name: 'Vesch', realm: 'Mankrik' }, events };
+  const en = journalEntries({ character, sessions: [busy], db, moment }).entries[0];
+  assert.ok(en.paragraphs.length >= 2 && en.paragraphs.length <= 3, `${en.paragraphs.length} paragraphs`);
+  assert.match(en.text, /For Gornek I|Gornek sent me to|for Gornek\.|Gornek had work for me/, 'deeds grouped by who asked');
+  assert.match(en.text, /brought back ten Scorpid Worker Tails|brought Gornek ten Scorpid Worker Tails/);
+  assert.match(en.text, /Galgar/);
+  assert.doesNotMatch(en.text, /Galgar ten Cactus Apples for Galgar/, 'no doubled name');
+  assert.doesNotMatch(en.text, /Sting of the Scorpid|Cactus Apple Surprise|Your Place In The World/, 'never a title');
+  assert.match(en.text, /Sarkoth/);
+  assert.match(en.text, /level 4/);
+  assert.match(en.paragraphs.at(-1), /Zureetha Fargaze/, 'closes on who still has work for me');
+  assert.doesNotMatch(en.text, OUT_OF_WORLD, en.text);
+  assert.equal(en.title, 'Day 1, Durotar');
+  // Kills fold into a count when no errand tells of them, and only sessions of this character count.
   const other = { id: 'c', started: day, char: { name: 'Aldric', realm: 'Mankrik' }, events: [ev(1, { e: 'kill', name: 'Wolf' })] };
-  const character = { key: 'Brann-Mankrik', name: 'Brann', realm: 'Mankrik', info: { class: 'Warrior', sex: 'female' } };
-  const result = journalEntries({ character, sessions: [other, s2, s1], moment });
-  assert.deepEqual(result.entries.map((e) => e.id), ['s-a', 's-b']);
-  const [d1, d2] = result.entries;
-  assert.equal(d1.title, 'Day 1, Elwynn Forest');
-  assert.equal(d2.title, 'Day 2, Elwynn Forest');
-  assert.match(d1.text, /three Kobold Vermin/i, 'kills fold into one count');
-  assert.equal((d1.text.match(/three Kobold Vermin/gi) || []).length, 1);
-  assert.match(d1.text, /a rare Ornate Blade/, 'a quality-3 find is worth a line');
-  assert.match(d1.text, /The Forgotten Heirloom and Wolves Across the Border/, 'the quests still to do close the entry');
-  assert.match(d2.text, /The Forgotten Heirloom and Wolves Across the Border/, 'and are still open the next day');
-  assert.match(d2.text, /Innkeeper Farley|silver/, 'a small thing is mentioned when nothing bigger happened');
-  assert.ok(!(/Innkeeper Farley/.test(d2.text) && /silver/.test(d2.text)), 'but only one of them');
-  assert.doesNotMatch(d1.text + d2.text, /Wolf\b|Aldric|mystery_event|150/);
-  assert.doesNotMatch(d1.text + d2.text, /\b(he|him|his|she|they|them|their)\b/i);
-  assert.match(d1.text + d2.text, /\b(I|me|my)\b/);
-
-  // Five quests found and all done in a zone: a zone entry, dated by the last turn-in.
-  const zoneEvents = [ev(200000, { e: 'session_start', z: 'Westfall', sz: 'Sentinel Hill' }), ev(200001, { e: 'explore', z: 'Westfall', area: 'Sentinel Hill' })];
-  for (let i = 0; i < 5; i++) {
-    zoneEvents.push(ev(200010 + i * 10, { e: 'quest_accept', z: 'Westfall', qid: 100 + i, title: `Westfall errand ${i + 1}` }));
-    zoneEvents.push(ev(200015 + i * 10, { e: 'quest_turnin', z: 'Westfall', qid: 100 + i, title: `Westfall errand ${i + 1}` }));
-  }
-  zoneEvents.push(ev(200100, { e: 'death', z: 'Westfall', killer: 'Defias Pillager' }));
-  const s3 = { id: 'd', started: day + 200000, char: { name: 'Brann', realm: 'Mankrik', sex: 3 }, events: zoneEvents };
-  const withZone = journalEntries({ character, sessions: [s1, s2, s3], moment });
-  const d3 = withZone.entries.find((e) => e.id === 's-d');
-  assert.match(d3.text, /five quests/i, 'several turn-ins fold into one sentence');
-  assert.ok(sentencesOf(d3.text).length <= 5, d3.text);
-  const zone = withZone.entries.find((e) => e.kind === 'zone');
-  assert.ok(zone, 'a zone entry');
-  assert.equal(zone.id, 'zone-westfall');
-  assert.equal(zone.t, day + 200055);
-  assert.match(zone.text, /Westfall/);
-  assert.match(zone.text, /five quests/);
-  assert.match(zone.text, /Sentinel Hill/);
-  assert.match(zone.text, /Defias Pillager/);
-  const n = sentencesOf(zone.text).length;
-  assert.ok(n >= 2 && n <= 4, zone.text);
-  assert.equal(withZone.entries.at(-1).kind, 'zone', 'after the day it was finished on... or the same time, but never before');
-  assert.ok(withZone.entries.at(-1).t >= withZone.entries.at(-2).t);
-  assert.ok(!withZone.entries.some((e) => e.kind === 'zone' && /Elwynn/.test(e.title)), 'Elwynn Forest still has quests open');
+  const hunt = { id: 'h', started: day + 3 * 86400, char: { name: 'Vesch', realm: 'Mankrik' }, events: [ev(3 * 86400, { e: 'session_start', sz: 'Razor Hill' }), ev(3 * 86400 + 1, { e: 'kill', name: 'Scorpid Worker' }), ev(3 * 86400 + 2, { e: 'kill', name: 'Scorpid Worker' }), ev(3 * 86400 + 3, { e: 'kill', name: 'Scorpid Worker' }), ev(3 * 86400 + 4, { e: 'loot', id: 1, name: 'Ornate Blade', n: 1, q: 3, src: 'loot' })] };
+  const r = journalEntries({ character, sessions: [other, hunt], db, moment });
+  assert.deepEqual(r.entries.map((e) => e.id), ['s-h']);
+  assert.match(r.entries[0].text, /three Scorpid Worker/i);
+  assert.match(r.entries[0].text, /a rare Ornate Blade/);
+  assert.doesNotMatch(r.entries[0].text, /Wolf\b|Aldric/);
 });
 
 test('journal: markdown export', () => {

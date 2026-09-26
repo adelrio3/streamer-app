@@ -418,7 +418,7 @@ button.danger-btn:hover { filter: brightness(1.08); }
 .ring-fg { fill: none; stroke: var(--class); stroke-width: 6; stroke-linecap: round; stroke-dashoffset: var(--to); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--class) 60%, transparent)); }
 main.enter .ring-fg { animation: ringin 1.4s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes ringin { from { stroke-dashoffset: 999; } }
-.ring-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 600; font-size: 1.8rem; color: var(--text); }
+.ring-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-weight: 700; font-size: 1.7rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.02em; color: var(--text); }
 
 /* Activity chart. */
 .activity svg { width: 100%; height: 72px; display: block; margin: 6px 0 4px; overflow: visible; }
@@ -696,14 +696,17 @@ main.enter .entry { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; 
 main.enter .tale { animation: rise .5s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
 .lore-pretend { margin-top: 26px; text-align: center; }
 /* The open book */
-.storybook { max-width: 68ch; margin: 0 auto; padding: 34px 40px 30px; background: linear-gradient(180deg, #1c1710, #141009); border: 1px solid rgba(var(--gold-rgb), .4); border-radius: 10px; box-shadow: inset 0 0 0 6px #141009, inset 0 0 0 7px rgba(var(--gold-rgb), .3), 0 24px 50px -20px rgba(0, 0, 0, .9); font-family: var(--serif); }
+.storybook { max-width: 1100px; margin: 0 auto; padding: 34px 56px 30px; background: linear-gradient(180deg, #1c1710, #141009); border: 1px solid rgba(var(--gold-rgb), .4); border-radius: 10px; box-shadow: inset 0 0 0 6px #141009, inset 0 0 0 7px rgba(var(--gold-rgb), .3), 0 24px 50px -20px rgba(0, 0, 0, .9); font-family: var(--serif); }
 .storybook h1 { text-align: center; font-size: 2.3rem; margin: 6px 0 4px; color: var(--gold-2); }
 .storybook .dedication { text-align: center; font-style: italic; color: var(--text-2); margin: 0 0 18px; }
 .storybook h2 { font-size: 1.35rem; margin: 22px 0 8px; color: var(--gold-2); }
+.storybook .book-part { column-width: 34ch; column-gap: 44px; column-rule: 1px solid rgba(var(--gold-rgb), .18); }
+.storybook .book-part h2 { column-span: all; }
+.storybook .book-part p { break-inside: avoid; }
 .storybook .chapter-no { display: inline-grid; place-items: center; width: 1.8em; height: 1.8em; margin-right: 10px; border-radius: 50%; border: 1px solid rgba(var(--gold-rgb), .6); font-size: .75em; color: var(--gold); }
-.storybook p { font-size: 1.16rem; line-height: 1.75; margin: 10px 0; color: var(--text); }
+.storybook p { font-size: 1.08rem; line-height: 1.7; margin: 0 0 12px; color: var(--text); text-align: justify; hyphens: auto; }
 .storybook p.dropcap::first-letter { float: left; font-size: 3.6em; line-height: .8; padding: 6px 8px 0 0; color: var(--gold); text-shadow: 0 0 14px rgba(var(--gold-rgb), .5); }
 .storybook .ending { text-align: center; font-style: italic; margin-top: 18px; }
 .book-orn { text-align: center; color: var(--gold); letter-spacing: .5em; margin: 8px 0; opacity: .8; }
 .book-orn.small { margin: 14px 0 4px; }
-@media (max-width: 720px) { .storybook { padding: 22px 18px; } }
+@media (max-width: 720px) { .storybook { padding: 22px 18px; } .storybook .book-part { column-width: auto; } .storybook p { text-align: left; } }
