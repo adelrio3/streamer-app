@@ -5,10 +5,10 @@ ChroniclerDB = {
 			["build"] = 11507,
 			["ctx"] = "CHAT_MSG_SKILL",
 			["first"] = 1790000077,
-			["key"] = "test/addon/harness.lua:575: boom",
+			["key"] = "test/addon/harness.lua:582: boom",
 			["last"] = 1790000077,
 			["level"] = 10,
-			["msg"] = "test/addon/harness.lua:575: boom",
+			["msg"] = "test/addon/harness.lua:582: boom",
 			["n"] = 2,
 			["session"] = "Mankrik-Aldric-1790000000",
 			["sub"] = "Goldshire",
@@ -1040,6 +1040,21 @@ ChroniclerDB = {
 					["z"] = "Elwynn Forest",
 				}, -- [50]
 				{
+					["e"] = "loot",
+					["id"] = 2512,
+					["lvl"] = 2,
+					["m"] = 1429,
+					["n"] = 200,
+					["name"] = "Rough Arrow",
+					["q"] = 1,
+					["src"] = "bought",
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000041.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [51]
+				{
 					["e"] = "trainer",
 					["greeting"] = "The Light calls to you.",
 					["lvl"] = 2,
@@ -1068,7 +1083,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [51]
+				}, -- [52]
 				{
 					["e"] = "taxi_map",
 					["lvl"] = 2,
@@ -1097,7 +1112,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [52]
+				}, -- [53]
 				{
 					["cost"] = 50,
 					["e"] = "flight",
@@ -1109,7 +1124,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [53]
+				}, -- [54]
 				{
 					["e"] = "flight_end",
 					["lvl"] = 2,
@@ -1119,7 +1134,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [54]
+				}, -- [55]
 				{
 					["e"] = "bind",
 					["lvl"] = 2,
@@ -1130,7 +1145,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [55]
+				}, -- [56]
 				{
 					["e"] = "equip",
 					["id"] = 2488,
@@ -1144,7 +1159,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [56]
+				}, -- [57]
 				{
 					["e"] = "talents",
 					["lvl"] = 10,
@@ -1170,7 +1185,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [57]
+				}, -- [58]
 				{
 					["ch"] = "say",
 					["e"] = "chat",
@@ -1183,7 +1198,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [58]
+				}, -- [59]
 				{
 					["e"] = "zone",
 					["lvl"] = 10,
@@ -1193,7 +1208,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [59]
+				}, -- [60]
 				{
 					["area"] = "Goldshire",
 					["e"] = "explore",
@@ -1204,7 +1219,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [60]
+				}, -- [61]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
@@ -1215,7 +1230,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [61]
+				}, -- [62]
 				{
 					["e"] = "sync",
 					["lvl"] = 10,
@@ -1225,7 +1240,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [62]
+				}, -- [63]
 				{
 					["e"] = "mark",
 					["kind"] = "lore",
@@ -1236,7 +1251,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [63]
+				}, -- [64]
 				{
 					["e"] = "mark",
 					["kind"] = "shot",
@@ -1248,7 +1263,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [64]
+				}, -- [65]
 				{
 					["e"] = "mark",
 					["kind"] = "mark",
@@ -1260,7 +1275,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [65]
+				}, -- [66]
 				{
 					["e"] = "quest_abandon",
 					["lvl"] = 10,
@@ -1271,7 +1286,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [66]
+				}, -- [67]
 				{
 					["e"] = "npc",
 					["lvl"] = 10,
@@ -1284,7 +1299,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [67]
+				}, -- [68]
 				{
 					["by"] = "Melee",
 					["e"] = "death",
@@ -1295,7 +1310,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [68]
+				}, -- [69]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
@@ -1304,7 +1319,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [69]
+				}, -- [70]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
@@ -1313,7 +1328,7 @@ ChroniclerDB = {
 					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 3.",
 					["z"] = "Elwynn Forest",
-				}, -- [70]
+				}, -- [71]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
@@ -1322,7 +1337,7 @@ ChroniclerDB = {
 					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 4.",
 					["z"] = "Elwynn Forest",
-				}, -- [71]
+				}, -- [72]
 				{
 					["e"] = "bags",
 					["items"] = {
@@ -1337,7 +1352,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [72]
+				}, -- [73]
 				{
 					["e"] = "reputation",
 					["factions"] = {
@@ -1354,7 +1369,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [73]
+				}, -- [74]
 				{
 					["e"] = "skills",
 					["lvl"] = 10,
@@ -1369,7 +1384,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [74]
+				}, -- [75]
 				{
 					["e"] = "session_end",
 					["lvl"] = 10,
@@ -1377,7 +1392,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [75]
+				}, -- [76]
 			},
 			["id"] = "Mankrik-Aldric-1790000000",
 			["schema"] = 2,

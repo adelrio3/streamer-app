@@ -19,15 +19,20 @@ export function storylines(db, ctx = {}) {
   const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra !== rb) parent.set(ra, rb); };
   for (const q of quests) parent.set(q.id, q.id);
   const parents = new Map(); // quest id -> ids that must come before it
-  const link = (before, after) => {
+  // join: whether the link makes the two quests one story. An ordering-only
+  // link still puts the prerequisite first when both end up in one chain.
+  const link = (before, after, join = true) => {
     if (!byId.has(before) || !byId.has(after) || before === after) return;
-    union(before, after);
+    if (join) union(before, after);
     if (!parents.has(after)) parents.set(after, new Set());
     parents.get(after).add(before);
   };
+  // "pre" with several entries means any one of them unlocks the quest
+  // (the racial starting quests all lead to one "report to" quest); that is
+  // an ordering, not one story, so it is not a link.
   for (const q of quests) {
     if (q.next) link(q.id, q.next);
-    for (const p of q.pre || []) link(p, q.id);
+    for (const p of q.pre || []) link(p, q.id, q.pre.length === 1);
     for (const p of q.preAll || []) link(p, q.id);
   }
   const groups = new Map();

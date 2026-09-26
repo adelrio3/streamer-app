@@ -519,8 +519,15 @@ fire("MERCHANT_SHOW")
 fire("MERCHANT_UPDATE")
 state.money = 1025
 fire("PLAYER_MONEY")
+-- Buying: the game says "You receive item"; with the shop open that is a purchase.
+fire("CHAT_MSG_LOOT", "You receive item: |cffffffff|Hitem:2512::::|h[Rough Arrow]|h|rx200.")
 fire("MERCHANT_CLOSED")
 runTimers()
+do
+	local bought
+	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot" and e.id == 2512 then bought = e end end
+	assert(bought and bought.src == "bought" and bought.n == 200, "an item received while a shop is open is bought")
+end
 
 -- The item cache: Linen Cloth arrives from the server later, then a hover.
 ITEMS[2589].cached = nil

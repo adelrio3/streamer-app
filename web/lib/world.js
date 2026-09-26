@@ -36,7 +36,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
     if (!it) {
       it = {
         id, name: name ?? null, info: null, looted: 0, moments: [], droppedBy: new Map(), soldBy: [], rewardFrom: new Map(),
-        equippedBy: [], created: 0, received: 0, costOf: new Map(),
+        equippedBy: [], created: 0, received: 0, bought: 0, costOf: new Map(),
       };
       items.set(id, it);
     }
@@ -131,6 +131,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           const it = item(e.id, e.name);
           if (!it) break;
           if (e.src === 'created') it.created += e.n || 1;
+          else if (e.src === 'bought') it.bought += e.n || 1;
           else if (e.src === 'received') it.received += e.n || 1;
           else it.looted += e.n || 1;
           it.moments.push(moment(s, e));
@@ -222,7 +223,20 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
     n.unnamed = !best;
     delete n.votes;
   }
-  const npcList = [...npcs.values()].map((n) => ({
+  // One entry per name: the same NPC met by id and by name only (a line it
+  // said with no id attached, an older log) is one creature or person, and
+  // several ids that share a name (three Lazy Peons) are one wiki entry.
+  // Every old key still resolves to the merged entry.
+  const byName = new Map();
+  for (const n of npcs.values()) {
+    if (n.object || !n.name) continue;
+    const nameKey = n.name.toLowerCase();
+    const into = byName.get(nameKey);
+    if (!into) { byName.set(nameKey, n); continue; }
+    mergeNpc(into, n);
+    npcs.set(n.key, into);
+  }
+  const npcList = [...new Set(npcs.values())].map((n) => ({
     ...n,
     ...classify(n),
     titles: [...n.titles], ranks: [...n.ranks], zones: [...n.zones],
@@ -239,7 +253,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
       quality: info.q ?? null,
       icon: info.icon ?? null,
       // Obtained: it was yours at some point (looted, handed over, made, worn or carried), not merely seen.
-      obtained: it.looted > 0 || it.received > 0 || it.created > 0 || it.equippedBy.length > 0 || Boolean(it.carried),
+      obtained: it.looted > 0 || it.received > 0 || it.bought > 0 || it.created > 0 || it.equippedBy.length > 0 || Boolean(it.carried),
       droppedBy: [...it.droppedBy.values()].map((d) => {
         const n = npcs.get(d.key);
         return { ...d, loots: n?.loots ?? 0, rate: n?.loots ? d.times / n.loots : null };
@@ -258,6 +272,32 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
     byNpc: new Map(npcList.map((n) => [n.key, n])),
     byItem: new Map(itemList.map((i) => [i.id, i])),
   };
+}
+
+function mergeNpc(a, b) {
+  if (!a.npcId && b.npcId) a.npcId = b.npcId;
+  a.ids = [...new Set([...(a.ids || (a.npcId ? [a.npcId] : [])), ...(b.ids || (b.npcId ? [b.npcId] : []))])];
+  for (const t of b.titles) a.titles.add(t);
+  a.levels.push(...b.levels);
+  for (const r of b.ranks) a.ranks.add(r);
+  a.ctype ??= b.ctype; a.family ??= b.family; a.react ??= b.react; a.faction ??= b.faction; a.hp ??= b.hp; a.tip ??= b.tip;
+  for (const z of b.zones) a.zones.add(z);
+  a.sightings += b.sightings;
+  for (const [k, v] of Object.entries(b.sources)) a.sources[k] = (a.sources[k] || 0) + v;
+  if (!a.first || (b.first && b.first.t < a.first.t)) a.first = b.first;
+  if (!a.last || (b.last && b.last.t > a.last.t)) a.last = b.last;
+  a.kills += b.kills;
+  if (!a.firstKill || (b.firstKill && b.firstKill.t < a.firstKill.t)) a.firstKill = b.firstKill;
+  a.loots += b.loots;
+  for (const [k, d] of b.drops) { const mine = a.drops.get(k); if (mine) { mine.times += d.times; mine.qty += d.qty; } else a.drops.set(k, d); }
+  a.moneyDrops += b.moneyDrops;
+  a.vendor ??= b.vendor; a.trainer ??= b.trainer; a.taxi ??= b.taxi;
+  a.lines.push(...b.lines);
+  for (const q of b.quests) a.quests.add(q);
+  a.killedYou += b.killedYou;
+  a.fights += b.fights;
+  a.rare = a.rare || b.rare;
+  a.spots.push(...b.spots);
 }
 
 export const ROLE_NAMES = { quest: 'Quest giver', vendor: 'Vendor', trainer: 'Trainer', taxi: 'Flight master', innkeeper: 'Innkeeper', banker: 'Banker', talker: 'Speaks', other: 'Other' };

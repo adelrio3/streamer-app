@@ -608,3 +608,32 @@ a.dim:hover { color: var(--muted); }
 #nav a .pct:empty { display: none; }
 #nav a .pct.shine { animation: pctshine 1.4s ease-out; }
 @keyframes pctshine { 0% { filter: brightness(1); transform: scale(1); } 25% { filter: brightness(1.8); transform: scale(1.18); text-shadow: 0 0 18px rgba(var(--gold2-rgb), .9); } 100% { filter: brightness(1); transform: scale(1); } }
+
+/* The navigator folds to a rail once a zone is chosen: the page is the point. */
+.rpg.rpg--zone { grid-template-columns: 72px 210px minmax(0, 1fr); }
+.rpg--zone .rpg-item { justify-content: center; padding: 8px 6px; }
+.rpg--zone .rpg-item .rpg-text, .rpg--zone .rpg-foot { display: none; }
+.rpg--zone .rpg-row { grid-template-columns: minmax(0, 1fr) auto; padding: 7px 10px; }
+.rpg--zone .rpg-lvl, .rpg--zone .rpg-bars { display: none; }
+.rpg--zone .rpg-pct { font-size: 1rem; }
+.rpg--zone .rpg-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+.rpg--zone .rpg-detail { position: static; padding: 20px 24px; }
+.rpg-list.enter .rpg-row, .rpg-detail.enter > * { animation: rise .4s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 18ms); }
+.rpg-stats.four { grid-template-columns: repeat(4, 1fr); }
+.wiki-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+.wiki-map { margin: 4px 0 14px; }
+@media (max-width: 1100px) { .rpg.rpg--zone { grid-template-columns: 72px 1fr; } .rpg-stats.four { grid-template-columns: 1fr 1fr; } .wiki-cols { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .rpg.rpg--zone { grid-template-columns: 1fr; } }
+
+/* Item kinds as a shelf, and the newest entries in the compendium */
+.kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin: 10px 0 22px; }
+.kind { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px 14px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); text-decoration: none; box-shadow: var(--shadow); transition: transform .2s, border-color .2s, box-shadow .2s; overflow: hidden; }
+.kind::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% -20%, rgba(var(--gold-rgb), .18), transparent 60%); pointer-events: none; }
+.kind:hover { transform: translateY(-2px); border-color: rgba(var(--gold-rgb), .5); box-shadow: 0 10px 30px -12px rgba(var(--gold-rgb), .35), var(--shadow); text-decoration: none; }
+.kind .ring { margin-bottom: 4px; }
+.kind-ico { font-size: 1.3rem; color: var(--gold); text-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
+.kind b { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
+.kind small { font-size: .8rem; color: var(--text-2); }
+main.enter .kind { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+.recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.recent-item { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }

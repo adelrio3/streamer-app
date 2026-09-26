@@ -83,6 +83,19 @@ export function fits(q, who) {
   return true;
 }
 
+// Who a quest is for, in words, when it is not for everyone: a faction, a
+// list of races, a list of classes. Empty when anyone can take it.
+export function requirementText(q) {
+  const bits = [];
+  if (q.ra && q.ra !== (HORDE | ALLIANCE)) {
+    if ((q.ra & ALLIANCE) === ALLIANCE && !(q.ra & HORDE)) bits.push('Alliance');
+    else if ((q.ra & HORDE) === HORDE && !(q.ra & ALLIANCE)) bits.push('Horde');
+    else bits.push([].concat(raceNames(q.ra)).join(', '));
+  }
+  if (q.cl) bits.push([].concat(classNames(q.cl)).join(', '));
+  return bits.filter(Boolean).join(' · ');
+}
+
 // One quest's state for a character: done, active, ready, later, other,
 // excluded or hidden. ctx: { who, level, done: Set, active: Set }.
 export function questState(q, { who = null, level = 0, done = new Set(), active = new Set() } = {}) {
@@ -277,9 +290,9 @@ export const ITEM_CLASSES = {
   11: ['Quiver', { 2: 'Quiver', 3: 'Ammo Pouch' }],
   12: ['Quest', {}],
   13: ['Key', { 0: 'Key', 1: 'Lockpick' }],
-  15: ['Miscellaneous', { 0: 'Junk', 1: 'Reagent', 2: 'Pet', 3: 'Holiday', 4: 'Other', 5: 'Mount' }],
+  15: ['Miscellaneous', { 0: 'Other', 1: 'Reagent', 2: 'Pet', 3: 'Holiday', 4: 'Other', 5: 'Mount' }], // subclass 0 is "junk" in the game files, but it holds the Hearthstone
 };
-export const ITEM_CLASS_ORDER = ['Weapon', 'Armor', 'Consumable', 'Trade Goods', 'Recipe', 'Container', 'Reagent', 'Projectile', 'Quiver', 'Key', 'Gem', 'Miscellaneous', 'Money', 'Unknown', 'Quest'];
+export const ITEM_CLASS_ORDER = ['Weapon', 'Armor', 'Consumable', 'Projectile', 'Quest', 'Miscellaneous', 'Trade Goods', 'Recipe', 'Container', 'Reagent', 'Quiver', 'Key', 'Gem', 'Money', 'Unknown'];
 export function itemClassName(cls, sub) {
   const c = ITEM_CLASSES[cls];
   if (!c) return { type: 'Unknown', sub: null };

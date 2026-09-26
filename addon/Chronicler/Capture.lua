@@ -424,6 +424,12 @@ end)
 -- Stock details can arrive a moment after the window opens.
 on("MERCHANT_UPDATE", snapshotMerchant)
 on("MERCHANT_CLOSED", function() vendorVisit = nil end)
+-- What an item you "receive" really is: bought while a shop is open, mail at a mailbox.
+ns.lootContext = function()
+	if vendorVisit then return "bought" end
+	if context.mail then return "mail" end
+	return nil
+end
 
 on("TRAINER_SHOW", function()
 	local services = {}

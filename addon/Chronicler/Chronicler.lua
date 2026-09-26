@@ -572,6 +572,8 @@ function handlers.CHAT_MSG_LOOT(msg)
 		if link then
 			local item = itemFromLink(link, tonumber(count), spec[2])
 			if item then
+				-- "You receive item" at a vendor is a purchase, at a mailbox the mail.
+				if item.src == "received" and ns.lootContext then item.src = ns.lootContext() or item.src end
 				record("loot", item)
 				if ns.wantItem then ns.wantItem(item.id) end
 			end
