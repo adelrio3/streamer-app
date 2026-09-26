@@ -199,6 +199,8 @@ function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, des
         : `<tr><td colspan="${columns.length}" class="muted">${esc(empty)}</td></tr>`;
     }
     el.querySelector('.more').hidden = list.length <= state.limit;
+    // Rows only animate the first time the table appears after navigation.
+    requestAnimationFrame(() => el.classList.add('settled'));
     setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 30);
   };
   setTimeout(() => {
@@ -217,10 +219,10 @@ function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, des
     render();
   });
   if (card) {
-    return `<div id="${id}"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span><span style="margin-left:auto" class="row"><span class="muted small">Sort</span><select class="sorter"></select><button class="ghost dir" title="Reverse order">⇅</button></span></div>
+    return `<div id="${id}" class="tbl"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span><span style="margin-left:auto" class="row"><span class="muted small">Sort</span><select class="sorter"></select><button class="ghost dir" title="Reverse order">⇅</button></span></div>
       <div class="cardgrid"></div><p><button class="more" hidden>Show more</button></p></div>`;
   }
-  return `<div id="${id}"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span></div>
+  return `<div id="${id}" class="tbl"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span></div>
     <div class="scroll"><table><thead></thead><tbody></tbody></table></div><p><button class="more" hidden>Show more</button></p></div>`;
 }
 
@@ -349,6 +351,28 @@ function activityFeed(limit) {
 
 function card(n, label, href) {
   return `<a class="card" href="${href}"><div class="num" data-n="${Number(n) || 0}">${Number(n).toLocaleString()}</div><div class="lbl">${esc(label)}</div></a>`;
+}
+
+// Stat cards on screen, by label: { 'quests completed': 12, ... }
+function statSnapshot(root) {
+  const out = new Map();
+  for (const el of root.querySelectorAll('.card .num[data-n]')) {
+    const label = el.parentElement.querySelector('.lbl')?.textContent;
+    if (label) out.set(label, Number(el.dataset.n));
+  }
+  return out;
+}
+
+// After a silent refresh, numbers that changed get a brief gold shine.
+function shineChanged(root, before) {
+  if (!before) return;
+  for (const el of root.querySelectorAll('.card .num[data-n]')) {
+    const label = el.parentElement.querySelector('.lbl')?.textContent;
+    if (label && before.has(label) && before.get(label) !== Number(el.dataset.n)) {
+      el.parentElement.classList.add('shine');
+      setTimeout(() => el.parentElement.classList.remove('shine'), 1600);
+    }
+  }
 }
 
 // Numbers in stat cards count up when a page appears.
@@ -1769,19 +1793,25 @@ async function route({ keepScroll = false } = {}) {
   }
   const render = state.machine.config.fresh && page !== 'setup' ? pages.setup : pages[page] ?? pages[''];
   const y = window.scrollY;
+  // A refresh (new data, same page) must be seamless: remember the numbers on
+  // screen so only the ones that changed get a shine.
+  const before = keepScroll ? statSnapshot(main) : null;
+  if (keepScroll) main.classList.remove('enter');
   try {
     main.innerHTML = await render(rest.map(decodeURIComponent).join('/'), params);
   } catch (err) {
     main.innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
     console.error(err);
   }
-  // Entrance: children rise in one after another; numbers count up.
   if (!keepScroll) {
+    // Navigation: children rise in one after another; numbers count up.
     main.classList.remove('enter');
     void main.offsetWidth;
     main.classList.add('enter');
     [...main.children].forEach((child, i) => child.style.setProperty('--i', Math.min(i, 12)));
     animateNumbers(main);
+  } else {
+    shineChanged(main, before);
   }
   moveNavGlow();
   window.scrollTo(0, keepScroll ? y : 0);
