@@ -16,6 +16,7 @@ local HEARTBEAT = 60
 
 local queue = {}
 local channel = { name = nil, password = nil, index = 0 }
+local sent = 0
 local lastSend = 0
 local lastBeat = 0
 local frames = {}
@@ -98,6 +99,7 @@ local function flush()
 	end
 	if n == 0 then return end
 	if SendChatMessage then SendChatMessage(PREFIX .. SEP .. msg, "CHANNEL", nil, channel.index) end
+	sent = sent + 1
 	lastSend = now
 end
 
@@ -179,9 +181,22 @@ ns.commands.live = function(arg)
 		settings().live = false
 		queue = {}
 		print("|cffd4a017Chronicler|r live link off.")
+	elseif arg == "test" then
+		-- A line the app and the overlay both show, to prove the whole chain.
+		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
+		join()
+		push("T", time())
+		lastSend = -MIN_GAP
+		flush()
+		if channel.index > 0 then
+			print(string.format("|cffd4a017Chronicler|r test line sent to channel %s (%d). Within a few seconds: Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", channel.name, channel.index))
+		else
+			print("|cffd4a017Chronicler|r not in the channel yet: it goes out as soon as the join completes (a few seconds after login). Try again in a moment.")
+		end
 	else
-		print(string.format("|cffd4a017Chronicler|r live link %s, channel %s, %d lines waiting. /chron live on|off",
-			enabled() and "on" or "off", channel.index > 0 and (channel.name or "?") or "not joined yet", #queue))
+		local logging = LoggingChat and LoggingChat() or false
+		print(string.format("|cffd4a017Chronicler|r live link %s · chat log %s · channel %s · %d messages sent, %d lines waiting. /chron live on|off|test",
+			enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", channel.index > 0 and (channel.name .. " (" .. channel.index .. ")") or "not joined yet", sent, #queue))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off - live link for the stream overlay (posts to a hidden chat channel of your own; on by default)"
+ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test - live link for the stream overlay (posts to a hidden chat channel of your own; on by default); test sends a line the app confirms"

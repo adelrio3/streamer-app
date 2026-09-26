@@ -12,7 +12,7 @@ import { iconName, iconUrl } from './lib/overlaypack.js';
 const params = new URLSearchParams(location.search);
 const token = params.get('token');
 const demo = params.get('demo') === '1';
-const show = new Set((params.get('show') || 'toasts,tracker,counters,kills,timer,callouts').split(',').filter(Boolean));
+const show = new Set((params.get('show') || 'toasts,tracker,counters,kills,timer,callouts,effects').split(',').filter(Boolean));
 const replay = params.get('replay') === '1';
 const debug = params.get('debug') === '1';
 const POS = { toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
@@ -34,10 +34,11 @@ const QCOLOR = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000'
 const STREAKS = [[30, 'LEGENDARY', 'thirty kills without a pause'], [20, 'UNSTOPPABLE', 'twenty in a row'], [10, 'RAMPAGE', 'ten in a row'], [5, 'KILLING SPREE', 'five in a row']];
 
 for (const [k, el] of Object.entries({ toasts: $('toasts'), tracker: $('tracker'), counters: $('counters'), kills: $('kills'), timer: $('timer') })) {
-  el.className = widget ? 'widget pos-fill' : `widget pos-${POS[k]}`;
+  el.className = widget ? `widget pos-fill fill-${k}` : `widget pos-${POS[k]}`;
   el.hidden = !show.has(k);
 }
 $('callouts').hidden = !show.has('callouts');
+if (!show.has('effects')) { $('fx').hidden = true; $('flash').hidden = true; }
 const icons = () => setTimeout(() => fillIcons(), 0);
 
 // Particles ------------------------------------------------------------------
@@ -150,14 +151,33 @@ function toast(e) {
     const r = el.getBoundingClientRect();
     const x = r.left + 36; const y = r.top + r.height / 2;
     const color = QCOLOR[q];
+    // The burst around the card itself; the screen-wide part is fullScreenFx.
     if (q === 2) burst({ x, y, color, n: 14, speed: 3, life: 700 });
     if (q === 3) burst({ x, y, color, n: 50, speed: 6, life: 1000 });
-    if (q === 4) { flash(color); shake(false); burst({ x, y, color, n: 90, speed: 8, life: 1300 }); storm(color, 140); }
-    if (q >= 5) { flash(color); shake(true); burst({ x, y, color, n: 140, speed: 10, life: 1600, sizeMax: 6 }); storm(color, 260); setTimeout(() => storm('#ffd27a', 120), 900); }
+    if (q === 4) burst({ x, y, color, n: 90, speed: 8, life: 1300 });
+    if (q >= 5) burst({ x, y, color, n: 140, speed: 10, life: 1600, sizeMax: 6 });
   });
   icons();
   const life = q >= 5 ? 11000 : q >= 4 ? 8500 : q >= 3 ? 6500 : 4500;
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 600); }, life);
+}
+
+// Screen-wide effects for epic and legendary drops: a flash, a storm of
+// particles from the edges, a shake. On their own (?widget=effects) they
+// get a full 1920×1080 window to cover the whole stream.
+function fullScreenFx(q) {
+  if (!show.has('effects') || q < 4) return;
+  const color = QCOLOR[q];
+  const cx = innerWidth / 2; const cy = innerHeight / 2;
+  const alone = !show.has('toasts');
+  if (q === 4) {
+    flash(color); shake(false); storm(color, 140);
+    if (alone) burst({ x: cx, y: cy, color, n: 120, speed: 9, life: 1400, sizeMax: 5 });
+  } else {
+    flash(color); shake(true); storm(color, 260);
+    setTimeout(() => storm('#ffd27a', 120), 900);
+    if (alone) { burst({ x: cx, y: cy, color, n: 220, speed: 12, life: 1800, sizeMax: 7 }); setTimeout(() => burst({ x: cx, y: cy, color: '#ffd27a', n: 160, speed: 9, life: 1600, sizeMax: 5 }), 500); }
+  }
 }
 
 // Callouts -------------------------------------------------------------------
@@ -323,7 +343,7 @@ let lastSnapLocal = Date.now();
 
 function onEvent(e) {
   switch (e.kind) {
-    case 'loot': toast(e); break;
+    case 'loot': toast(e); fullScreenFx(Math.max(0, Math.min(6, e.q ?? 1))); break;
     case 'level': callout('level', `LEVEL ${e.level}`, 'ding', 3600); flash('#f2cc6b'); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#f2cc6b', n: 120, speed: 9, life: 1500, sizeMax: 5 }); break;
     case 'death': callout('death', 'YOU DIED', e.killer ? `killed by ${e.killer}` : '', 3400); flash('#ff2a2a'); shake(true); break;
     case 'rare': callout('rare', e.name || 'Rare', `rare spotted${e.level ? ` · level ${e.level}` : ''}`, 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.28, color: '#ff6fb5', n: 70, speed: 7, life: 1200 }); break;
@@ -333,6 +353,7 @@ function onEvent(e) {
       break;
     case 'zone': if (e.zone) callout('zone', e.zone, e.sub || 'entering', 2600); break;
     case 'explore': callout('zone', e.area || 'Discovered', 'discovered', 2400); break;
+    case 'test': callout('quest', 'LIVE LINK OK', 'the game reaches the overlay', 3000); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#5fd3ff', n: 60, speed: 6, life: 1100 }); break;
     case 'skill': break;
     default: break;
   }

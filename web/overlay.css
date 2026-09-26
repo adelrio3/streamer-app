@@ -35,7 +35,8 @@ body.shake.big { animation-name: shakebig; animation-duration: .8s; }
 .pos-br { bottom: 28px; right: 28px; flex-direction: column-reverse; align-items: flex-end; }
 /* A widget on its own in its own window */
 .pos-fill { top: 12px; left: 12px; right: 12px; bottom: 12px; align-items: stretch; }
-body.single #toasts.pos-fill { flex-direction: column; }
+/* The drop toasts get room around them for their rings, rays and bursts. */
+body.single #toasts.pos-fill { flex-direction: column; top: 280px; left: 280px; right: 200px; bottom: 40px; }
 body.single .toast { max-width: none; }
 body.single #tracker.pos-fill { width: auto; }
 body.single #callouts { top: 50%; transform: translate(-50%, -50%); }

@@ -131,7 +131,7 @@ test('what the real addon sends decodes end to end', { skip: !lua && 'no Lua int
   const chatLog = fs.readFileSync(`${out}.chatlog.txt`, 'utf8');
   const { events } = eventsFromChatLog(chatLog, { now: NOW });
   const kinds = events.map((e) => e.kind);
-  for (const k of ['begin', 'quest', 'kill', 'loot', 'money', 'level', 'heartbeat', 'xp', 'skill', 'zone', 'explore', 'mark', 'death', 'rare']) assert.ok(kinds.includes(k), `${k} arrives`);
+  for (const k of ['begin', 'quest', 'kill', 'loot', 'money', 'level', 'heartbeat', 'xp', 'skill', 'zone', 'explore', 'mark', 'death', 'rare', 'test']) assert.ok(kinds.includes(k), `${k} arrives`);
   const live = new LiveState(0);
   for (const e of events) live.apply(e);
   assert.equal(live.kills, 3);
@@ -139,5 +139,6 @@ test('what the real addon sends decodes end to end', { skip: !lua && 'no Lua int
   assert.equal(live.drops.get(2589).n, 2);
   assert.equal([...live.quests.values()].find((q) => q.qid === 7).state, 'done');
   assert.equal(live.character.level, 2);
+  assert.ok(live.lastTestAt > 0, 'the test line is noted');
   assert.equal(events.filter((e) => e.fromGame).length, 1, 'the game\'s own loot line counts only hours after the last link line');
 });

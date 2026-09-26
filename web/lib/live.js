@@ -67,6 +67,7 @@ export function decodeLine(line) {
     case 'P': return { kind: 'screenshot', reason: str(f[1]) };
     case 'H': return { kind: 'heartbeat', level: num(f[1]), xp: num(f[2]), xpMax: num(f[3]), zone: str(f[4]), sub: str(f[5]), x: num(f[6]), y: num(f[7]), money: num(f[8]) };
     case 'B': return { kind: 'begin', version: str(f[1]), name: str(f[2]), realm: str(f[3]), level: num(f[4]) };
+    case 'T': return { kind: 'test', sentAt: num(f[1]) };
     default: return null;
   }
 }
@@ -128,6 +129,7 @@ export class LiveState {
     this.character = { level: null, xp: null, xpMax: null, zone: null, sub: null, name: null, realm: null, x: null, y: null, gold: null };
     this.lastEventAt = 0;
     this.begunAt = 0;
+    this.lastTestAt = 0;
   }
 
   apply(e) {
@@ -137,6 +139,7 @@ export class LiveState {
     const c = this.character;
     switch (e.kind) {
       case 'begin': c.name = e.name; c.realm = e.realm; c.level = e.level; this.begunAt = e.at; break;
+      case 'test': this.lastTestAt = e.at; break;
       case 'heartbeat': Object.assign(c, { level: e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); return true;
       case 'loot': {
         if (!e.id) return false;
@@ -194,7 +197,7 @@ export class LiveState {
       }
       default: break;
     }
-    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp'].includes(e.kind)) {
+    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp', 'test'].includes(e.kind)) {
       this.seq++;
       this.events.push({ seq: this.seq, ...e });
       if (this.events.length > 80) this.events.shift();
@@ -207,7 +210,7 @@ export class LiveState {
   snapshot(now = Date.now()) {
     const minutes = Math.max(1, (now - this.since) / 60000);
     return {
-      since: this.since, uploadedUntil: this.uploadedUntil, at: now, seq: this.seq, lastEventAt: this.lastEventAt,
+      since: this.since, uploadedUntil: this.uploadedUntil, at: now, seq: this.seq, lastEventAt: this.lastEventAt, lastTestAt: this.lastTestAt,
       character: this.character,
       kills: this.kills, killsPerMinute: Math.round((this.kills / minutes) * 10) / 10, deaths: this.deaths,
       streak: now - this.lastKillAt <= STREAK_WINDOW ? this.streak : 0, bestStreak: this.bestStreak, lastKillAt: this.lastKillAt,

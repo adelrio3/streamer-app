@@ -56,7 +56,7 @@ end
 local cvars = { nameplateMaxAlpha = "1" }
 -- Chat channels and the chat log (the live link).
 local chat = { logging = false, channels = {}, sent = {}, filters = {} }
-function LoggingChat(on) chat.logging = on end
+function LoggingChat(on) if on ~= nil then chat.logging = on end return chat.logging end
 function JoinTemporaryChannel(name, password) chat.channels[#chat.channels + 1] = { name = name, password = password } end
 function GetChannelName(name)
 	for i, c in ipairs(chat.channels) do if c.name == name then return 6 + i, name end end
@@ -595,6 +595,11 @@ for _, f in ipairs(chat.filters) do
 	if f.event == "CHAT_MSG_CHANNEL" then assert(not f.fn(nil, "CHAT_MSG_CHANNEL", "hello", "Bob", "", "1. General - Elwynn Forest"), "other channels are not hidden") end
 end
 assert(hidden == 1, "the channel is hidden from chat windows")
+-- The test line goes out at once, even between ticks.
+local before = #chat.sent
+SlashCmdList.CHRONICLER("live test")
+assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test sends a test line")
+
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}
 for _, m in ipairs(chat.sent) do

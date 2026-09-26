@@ -651,6 +651,7 @@ function liveLine(e) {
     case 'explore': return `Discovered <b>${esc(e.area ?? '')}</b>`;
     case 'mark': return `Marked: ${esc(e.markKind ?? '')}${e.note ? ` · ${esc(e.note)}` : ''}`;
     case 'screenshot': return `<span class="muted">Screenshot (${esc(e.reason ?? '')})</span>`;
+    case 'test': return '<span style="color:var(--cyan)">Test line from the game: the live link works</span>';
     default: return esc(e.kind);
   }
 }
@@ -1962,11 +1963,12 @@ pages.marks = async () => {
 
 // Stream: live overlay and drops ----------------------------------------------
 
-const OVERLAY_WIDGETS = [['toasts', 'Drop toasts'], ['tracker', 'Quest tracker'], ['counters', 'Item counters'], ['kills', 'Kills & streaks'], ['timer', 'Session timer & XP'], ['callouts', 'Callouts (levels, deaths, rares, quests)']];
+const OVERLAY_WIDGETS = [['toasts', 'Drop toasts'], ['effects', 'Full-screen effects (flashes, particle storms and shakes for epic and legendary drops)'], ['tracker', 'Quest tracker'], ['counters', 'Item counters'], ['kills', 'Kills & streaks'], ['timer', 'Session timer & XP'], ['callouts', 'Callouts (levels, deaths, rares, quests)']];
 const OVERLAY_POSITIONS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['ml', 'Middle left'], ['mr', 'Middle right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
-const DEFAULT_OVERLAY = { show: ['toasts', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc', bg: '' };
-// One window per widget: the size to give the OBS browser source.
-const WIDGET_SIZES = { toasts: [520, 460], tracker: [420, 380], counters: [320, 340], kills: [340, 170], timer: [500, 120], callouts: [1100, 300] };
+const DEFAULT_OVERLAY = { show: ['toasts', 'effects', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc', bg: '' };
+// One window per widget: the size to give the OBS browser source. The toast
+// window is roomy on purpose: legendary rays and bursts reach far past the card.
+const WIDGET_SIZES = { toasts: [1000, 760], effects: [1920, 1080], tracker: [420, 380], counters: [320, 340], kills: [340, 170], timer: [500, 120], callouts: [1100, 300] };
 const LIVE_TESTS = {
   'loot:1': ['Common drop', { kind: 'loot', id: 2589, name: 'Linen Cloth', q: 1, n: 3, source: 'Kobold Vermin', sourceId: 6 }],
   'loot:2': ['Uncommon drop', { kind: 'loot', id: 1121, name: 'Feet of the Lynx', q: 2, n: 1, source: 'Mother Fang', sourceId: 471 }],
@@ -2050,6 +2052,10 @@ pages.live = async () => {
           <p class="small muted">Since ${snap?.since ? esc(when(snap.since / 1000)) : '—'}${snap?.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}${snap?.character?.name ? ` · ${esc(snap.character.name)} level ${snap.character.level ?? '?'}${snap.character.zone ? ` in ${esc(snap.character.zone)}` : ''}` : ''}</p>
           <div class="row">${here ? '<button data-live="reset">Start a new stream session (counters from now)</button>' : '<span class="muted small">Counters restart from the gaming PC: open this page there.</span>'}<a class="btn ghost" href="#/drops?range=session">Drops this session</a></div>
         </div>
+        <div class="panel"><h3>Link check</h3>
+          <p class="small muted">The chain is: addon → hidden chat channel → <code>Logs\\WoWChatLog.txt</code> → this app on the gaming PC → the cloud → the overlay. In game, type <code>/chron live test</code>: a line goes down the whole chain, this page shows it below, and the overlay shows <b>LIVE LINK OK</b>. <code>/chron live</code> on its own prints the addon's side of things.</p>
+          ${linkCheck(here, m, snap, row)}
+        </div>
         <div class="panel"><h3>Try it</h3>
           <p class="small muted">Sends a fake event to the overlay so you can see each effect in OBS (they also count in this session's totals).</p>
           <div class="tests">${Object.entries(LIVE_TESTS).map(([k, [label, ev]]) => `<button class="ghost ${ev.kind === 'loot' ? `q${ev.q}` : ''}" data-test="${k}">${esc(label)}</button>`).join('')}</div>
@@ -2064,7 +2070,7 @@ pages.live = async () => {
       </div>
       <div>
         <form id="overlayForm" class="panel"><h3>One window per widget</h3>
-          <p class="small muted">Each widget as its own OBS Browser source, so you place and size them however you like. Pop out a preview to see it run on its own with demo events.</p>
+          <p class="small muted">Each widget as its own OBS Browser source, so you place and size them however you like. Pop out a preview to see it run on its own with demo events. Give the drop toasts their full size: the legendary rays and bursts spread far around the card. Full-screen effects is a 1920 × 1080 source to lay over the whole stream.</p>
           <table class="widget-list"><tbody>${OVERLAY_WIDGETS.map(([k, label]) => `<tr><td><b>${esc(label)}</b><br><span class="muted small">${WIDGET_SIZES[k][0]} × ${WIDGET_SIZES[k][1]}</span></td><td><button type="button" class="small" data-copy-widget="${k}" ${token ? '' : 'disabled'}>Copy address</button> <button type="button" class="ghost small" data-pop-widget="${k}">Pop out preview</button></td></tr>`).join('')}</tbody></table>
           <label class="row" style="margin-top:10px"><span>Chroma key background</span><input type="color" name="bgPick" value="${/^[0-9a-f]{6}$/i.test(String(cfg.bg || '').replace('#', '')) ? `#${String(cfg.bg).replace('#', '')}` : '#00ff00'}" style="width:48px;padding:0"><input type="text" name="bg" value="${esc(cfg.bg || '')}" placeholder="transparent (empty) or a hex like 00ff00" style="max-width:220px"></label>
           <p class="small muted">Leave it empty for a transparent background (an OBS Browser source needs nothing more). Set a hex colour when the overlay goes through a capture or a feed that cannot carry transparency, and key it out with OBS's Chroma Key filter.</p>
@@ -2079,6 +2085,26 @@ pages.live = async () => {
       </div>
     </div>`;
 };
+
+function linkCheck(here, m, snap, row) {
+  const rows = [];
+  const yes = (t) => `<span class="dot ok"></span> ${t}`;
+  const no = (t) => `<span class="dot"></span> ${t}`;
+  if (here) {
+    const l = m.live;
+    rows.push(['Chat log file', l.status === 'ok' ? yes(`found in ${esc(l.flavor ?? '')}\\Logs\\WoWChatLog.txt, ${(l.fileSize / 1024).toFixed(0)} KB${l.fileModified ? `, last written ${esc(when(l.fileModified / 1000))}` : ''}`) : l.status === 'no-log' ? no('not found yet: it appears once you log in with addon 0.4.0, which turns chat logging on') : no(esc(l.status))]);
+    rows.push(['Lines read since this tab opened', `${l.lines.toLocaleString()} lines, ${l.decoded.toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
+    if (l.lastLine) rows.push(['Last line', `<code class="small">${esc(l.lastLine)}</code>`]);
+    rows.push(['Cloud', l.error ? no(esc(l.error)) : l.lastPush ? yes(`pushed ${esc(when((l.lastPush + (m.offset ?? 0)) / 1000))}`) : no('nothing pushed yet')]);
+  } else {
+    const l = snap?.link;
+    rows.push(['Gaming PC', l ? (l.status === 'ok' ? yes(`reading ${esc(l.flavor ?? '')}\\Logs\\WoWChatLog.txt${l.fileModified ? `, last written ${esc(when(l.fileModified / 1000))}` : ''}`) : no(esc(l.status))) : no('has not reported yet')]);
+    if (l) rows.push(['Lines it read', `${(l.lines ?? 0).toLocaleString()} lines, ${(l.decoded ?? 0).toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
+    rows.push(['Last update from it', row?.updated_at ? esc(when(Date.parse(row.updated_at) / 1000)) : 'never']);
+  }
+  rows.push(['Test line from the game', snap?.lastTestAt ? yes(`received ${esc(when(snap.lastTestAt / 1000))}`) : no('none yet: type <code>/chron live test</code> in game')]);
+  return `<div class="health">${rows.map(([k, v]) => `<div class="row"><span class="muted">${k}</span><span>${v}</span></div>`).join('')}</div>`;
+}
 
 function wireLive(cfg, token) {
   const m = state.machine;

@@ -50,7 +50,7 @@ export class Machine {
     this.seen = new Map(); // SavedVariables file -> lastModified already handled
     this.timers = [];
     // The live link: the chat log on this PC, read as the game writes it.
-    this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0 };
+    this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0, fileSize: 0, fileModified: 0, lines: 0, decoded: 0, lastLine: '' };
     // Voice notes: transcribed here, uploaded in batches.
     this.voice = { status: 'off', notes: null, queue: [] };
   }
@@ -292,6 +292,8 @@ export class Machine {
     }
     let file;
     try { file = await live.file.getFile(); } catch (err) { live.file = null; live.status = 'no-log'; live.error = err.message; return; }
+    live.fileSize = file.size;
+    live.fileModified = file.lastModified;
     if (file.size < live.size) { live.size = 0; live.remainder = ''; } // the game started the log over
     if (live.size === 0) live.size = Math.max(0, file.size - 512 * 1024); // catch up on the end of the file
     if (file.size > live.size) {
@@ -302,6 +304,10 @@ export class Machine {
       live.remainder = cut >= 0 ? chunk.slice(cut + 1) : chunk;
       const { events, linkSeenAt } = eventsFromChatLog(cut >= 0 ? chunk.slice(0, cut + 1) : '', { linkSeenAt: live.linkSeenAt });
       live.linkSeenAt = linkSeenAt;
+      const lines = (cut >= 0 ? chunk.slice(0, cut) : '').split('\n').filter(Boolean);
+      live.lines += lines.length;
+      live.decoded += events.filter((e) => !e.fromGame).length;
+      if (lines.length) live.lastLine = lines.at(-1).slice(0, 160);
       let changed = false;
       // The log carries this PC's local time; everything else runs on the server clock.
       for (const e of events) if (live.state.apply({ ...e, at: this.toServer(e.at) })) changed = true;
@@ -323,7 +329,7 @@ export class Machine {
       const snap = live.state.snapshot(this.toServer(now));
       snap.counters = this.counterValues();
       snap.machine = this.name;
-      snap.link = { status: live.status, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0 };
+      snap.link = { status: live.status, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0, fileSize: live.fileSize, fileModified: live.fileModified ? this.toServer(live.fileModified) : 0, lines: live.lines, decoded: live.decoded };
       await this.store.saveLive(token, this.name, snap);
       live.pushedSeq = live.state.seq;
       live.error = null;

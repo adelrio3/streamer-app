@@ -56,7 +56,7 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 | `/chron social on\|off` | Also log group, duels and chat (off by default) |
 | `/chron track on\|off` | Position tracking for the footage finder (on by default) |
 | `/chron items` | Size of the item catalog |
-| `/chron live on\|off` | The live link for the stream overlay (on by default; posts to a hidden chat channel of your own and turns the chat log on) |
+| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; posts to a hidden chat channel of your own and turns the chat log on). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
 | `/chron errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
 | `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 
