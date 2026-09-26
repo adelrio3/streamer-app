@@ -611,6 +611,7 @@ for _, e in ipairs(ChroniclerDB.sessions[1].events) do
 	assert(not (e.e == "chat" and e.text and e.text:find("CHRON1~", 1, true)), "the live whispers are not logged as chat")
 end
 -- The test line goes out at once, even between ticks.
+state.level = 2 -- the ticks below may send a heartbeat; keep it at the fixture's last level
 local before = #chat.sent
 SlashCmdList.CHRONICLER("live test")
 assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test sends a test line")
@@ -622,7 +623,6 @@ assert(#chat.sent == before + 1, "nothing is sent while the log is closed")
 runTimers()
 assert(chat.logging, "the chat log is reopened")
 -- Filler lines fill the game's write buffer so the file gets written.
-state.level = 2 -- so the heartbeat below matches the fixture's last level
 SlashCmdList.CHRONICLER("live pad 4")
 assert(#systemLines == 4 and #systemLines[1] >= 230 and systemLines[1]:find("CHRONPAD~", 1, true) == 1, "pad sends filler system lines now")
 SlashCmdList.CHRONICLER("live test")
