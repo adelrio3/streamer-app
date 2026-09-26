@@ -2888,6 +2888,12 @@ function wireSetup() {
 
 // Signing in ------------------------------------------------------------------
 
+// Where emailed links come back to. Supabase allows the project's Site URL
+// exactly as typed, so the bare address, with no trailing slash, is safest.
+function siteAddress() {
+  return location.pathname === '/' ? location.origin : location.origin + location.pathname.replace(/\/$/, '');
+}
+
 function renderLogin(message = '') {
   document.getElementById('nav').hidden = true;
   main.innerHTML = `<div class="login"><div class="panel glow">
@@ -2909,13 +2915,13 @@ function renderLogin(message = '') {
     const mode = ev.submitter?.value;
     if (mode === 'magic') {
       if (!creds.email) return renderLogin('Enter your email first.');
-      const { error: err } = await auth.signInWithOtp({ email: creds.email, options: { emailRedirectTo: location.origin + location.pathname } });
+      const { error: err } = await auth.signInWithOtp({ email: creds.email, options: { emailRedirectTo: siteAddress() } });
       if (err) return renderLogin(esc(err.message));
       return renderLogin(`A sign-in link is on its way to <b>${esc(creds.email)}</b> (from Supabase Auth; check spam too). Open it on this computer and you are in. It works once and expires after an hour.`);
     }
     if (!creds.password) return renderLogin('Enter your password, or ask for a sign-in link.');
     const { data, error } = mode === 'up'
-      ? await auth.signUp({ ...creds, options: { emailRedirectTo: location.origin + location.pathname } })
+      ? await auth.signUp({ ...creds, options: { emailRedirectTo: siteAddress() } })
       : await auth.signInWithPassword(creds);
     if (error) return renderLogin(esc(error.message));
     if (!data.session) return renderLogin('Account created. Supabase sent you a confirmation email (from Supabase Auth, check spam too): click <b>Confirm your mail</b> in it. If the page it opens does not load, that is fine: your account is confirmed anyway. Then come back here and log in.');
