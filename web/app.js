@@ -1,4 +1,4 @@
-// Chronicler web app. Plain modules, no build step. Data lives in Supabase;
+// Compendium web app (the in-game addon keeps its name, Compendium). Plain modules, no build step. Data lives in Supabase;
 // each computer does its part in the background (see lib/machine.js).
 
 import { CloudStore } from './lib/cloud.js';
@@ -644,7 +644,7 @@ function liveFeed() {
   const age = row?.updated_at ? Date.now() + (m.offset ?? 0) - Date.parse(row.updated_at) : null;
   const live = age != null && age < 90000;
   return `<div class="panel feed-live" id="liveFeed"><div class="row spread"><h3><span class="dot ${live ? 'live' : ''}"></span> Live</h3><span class="muted small">${snap ? `${esc(snap.machine ?? 'gaming PC')}${snap.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}` : 'not connected'}</span></div>
-    <div class="feed">${events.length ? events.map((e) => `<div class="row"><span class="when">${esc(new Date(e.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span><span>${liveLine(e)}</span></div>`).join('') : `<p class="muted small">${snap ? 'Nothing yet this session. Play, and it shows up here as it happens.' : 'Open Chronicler on the gaming PC with addon 0.4.6 to see the game live.'}</p>`}</div>
+    <div class="feed">${events.length ? events.map((e) => `<div class="row"><span class="when">${esc(new Date(e.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span><span>${liveLine(e)}</span></div>`).join('') : `<p class="muted small">${snap ? 'Nothing yet this session. Play, and it shows up here as it happens.' : 'Open Compendium on the gaming PC with addon 0.4.6 to see the game live.'}</p>`}</div>
   </div>`;
 }
 
@@ -1526,7 +1526,7 @@ async function loadShots(shots) {
 pages.screenshots = async () => {
   const shots = [...state.screenshots].sort((a, b) => (b.taken_ms ?? 0) - (a.taken_ms ?? 0));
   if (shots.length) setTimeout(() => loadShots(shots.slice(0, 120)));
-  return `${pageHead('Footage', 'Screenshots', 'Taken in game while Chronicler was logging: automatically at rares, level-ups, discoveries and deaths (<code>/chron shots off</code> to stop), and whenever you press Print Screen. Your gaming PC uploads them, shrunk, while the app is open.')}
+  return `${pageHead('Footage', 'Screenshots', 'Taken in game while the addon was logging: automatically at rares, level-ups, discoveries and deaths (<code>/comp shots off</code> to stop), and whenever you press Print Screen. Your gaming PC uploads them, shrunk, while the app is open.')}
     ${state.schema2 ? '' : schemaNotice()}
     <div class="shots">${shots.slice(0, 120).map(shotTile).join('') || '<p class="muted">None yet.</p>'}</div>`;
 };
@@ -2534,7 +2534,7 @@ pages.marks = async () => {
     invalidate();
     route();
   }));
-  return `${pageHead('Footage', 'Marks', 'Moments you flagged in game with a Chronicler key binding or <code>/chron mark</code>. Deleting a mark hides it everywhere; the addon\'s log is untouched.', deleted ? `<div class="row"><button class="ghost" id="undeleteMarks">Restore ${deleted} deleted mark${deleted === 1 ? '' : 's'}</button></div>` : '')}
+  return `${pageHead('Footage', 'Marks', 'Moments you flagged in game with a Compendium key binding or <code>/comp mark</code>. Deleting a mark hides it everywhere; the addon\'s log is untouched.', deleted ? `<div class="row"><button class="ghost" id="undeleteMarks">Restore ${deleted} deleted mark${deleted === 1 ? '' : 's'}</button></div>` : '')}
     ${table(c.marks.slice().reverse(), [
       { label: 'Footage', value: (m) => m.t, html: (m) => play(m) },
       { label: 'Kind', value: (m) => MARK_NAMES[m.kind] ?? m.kind },
@@ -2611,7 +2611,7 @@ async function liveTestEvent(ev) {
   snap.seq = seq;
   snap.at = at;
   const token = state.settings.liveToken || row?.token;
-  if (!token) throw new Error('No overlay address yet: open Chronicler on the gaming PC once.');
+  if (!token) throw new Error('No overlay address yet: open Compendium on the gaming PC once.');
   await state.store.saveLive(token, m.name, snap);
   state.live = { token, machine: m.name, state: snap, updated_at: new Date(at).toISOString() };
 }
@@ -2627,7 +2627,7 @@ pages.live = async () => {
   const addon = m.wow.installs?.map((i) => i.addonVersion).filter(Boolean)[0] ?? null;
   const linkStatus = here
     ? { ok: '<span class="dot live"></span> reading the chat log', 'no-log': 'no chat log yet: log in to WoW with addon 0.4.6 or later (it turns chat logging on)', waiting: 'waiting for the WoW folder', off: 'off' }[m.live.status] ?? esc(m.live.status)
-    : snap ? (age < 60000 ? `<span class="dot live"></span> ${esc(snap.machine ?? 'the gaming PC')} is feeding it` : `last heard from ${esc(snap.machine ?? 'the gaming PC')} ${esc(when(Date.parse(row.updated_at) / 1000))}`) : 'nothing yet: open Chronicler on the gaming PC while you play';
+    : snap ? (age < 60000 ? `<span class="dot live"></span> ${esc(snap.machine ?? 'the gaming PC')} is feeding it` : `last heard from ${esc(snap.machine ?? 'the gaming PC')} ${esc(when(Date.parse(row.updated_at) / 1000))}`) : 'nothing yet: open Compendium on the gaming PC while you play';
   const counters = state.settings.liveCounters || [];
   const { world } = derived();
   setTimeout(() => wireLive(cfg, token));
@@ -2644,7 +2644,7 @@ pages.live = async () => {
           <div class="row">${here ? '<button data-live="reset">Start a new stream session (counters from now)</button>' : '<span class="muted small">Counters restart from the gaming PC: open this page there.</span>'}<a class="btn ghost" href="#/drops?range=session">Drops this session</a></div>
         </div>
         <div class="panel"><h3>Link check</h3>
-          <p class="small muted">The chain is: addon → hidden lines in the chat log → <code>Logs\\WoWChatLog.txt</code> → this app on the gaming PC → the cloud → the overlay. In game, type <code>/chron live test</code>: a line goes down the whole chain, this page shows it below, and the overlay shows <b>LIVE LINK OK</b>. <code>/chron live</code> on its own prints the addon's side of things.</p>
+          <p class="small muted">The chain is: addon → hidden lines in the chat log → <code>Logs\\WoWChatLog.txt</code> → this app on the gaming PC → the cloud → the overlay. In game, type <code>/comp live test</code>: a line goes down the whole chain, this page shows it below, and the overlay shows <b>LIVE LINK OK</b>. <code>/comp live</code> on its own prints the addon's side of things.</p>
           ${linkCheck(here, m, snap, row)}
         </div>
         <div class="panel"><h3>Try it</h3>
@@ -2652,7 +2652,7 @@ pages.live = async () => {
           <div class="tests">${Object.entries(LIVE_TESTS).map(([k, [label, ev]]) => `<button class="ghost ${ev.kind === 'loot' ? `q${ev.q}` : ''}" data-test="${k}">${esc(label)}</button>`).join('')}</div>
         </div>
         <form id="countersForm" class="panel"><h3>Item counters</h3>
-          <p class="small muted">Show how many of an item have dropped: this session, or all time across every session (plus an offset if you started counting before Chronicler).</p>
+          <p class="small muted">Show how many of an item have dropped: this session, or all time across every session (plus an offset if you started counting before Compendium).</p>
           <table class="counters-list"><tbody>
             ${counters.map((c, i) => `<tr><td>${itemLink(c.id, c.name, c.q)}</td><td><select name="mode${i}"><option value="session" ${c.mode !== 'ongoing' ? 'selected' : ''}>this session</option><option value="ongoing" ${c.mode === 'ongoing' ? 'selected' : ''}>all time</option></select></td><td><input type="number" name="add${i}" value="${Number(c.add) || 0}" title="Added to the count"></td><td class="num">${snap?.counters?.find((x) => x.id === c.id && (x.mode || 'session') === (c.mode || 'session'))?.n ?? ''}</td><td><button class="ghost small" type="button" data-remove="${i}" title="Remove">✕</button></td></tr>`).join('') || '<tr><td class="muted" colspan="5">No counters yet.</td></tr>'}
           </tbody></table>
@@ -2670,7 +2670,7 @@ pages.live = async () => {
           <label class="row" style="margin-top:10px"><span>Colours</span><select name="theme">${[['auto', 'Follow the character (by race)'], ...OVERLAY_RACES].map(([k, l]) => `<option value="${k}" ${k === (cfg.theme || 'auto') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <p class="small muted">Each race has its own palette: the accent, its glow and the panels change the moment a different character logs in. Pick one here to pin it instead.</p>
           <label style="margin-top:10px"><span>Size <b id="scaleOut">${Number(cfg.scale).toFixed(2)}×</b></span><input type="range" name="scale" min="0.6" max="1.8" step="0.05" value="${cfg.scale}"></label>
-          <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Chronicler has run on the gaming PC.'}</p>
+          <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Compendium has run on the gaming PC.'}</p>
           <div class="row"><button type="button" id="copyUrl" ${token ? '' : 'disabled'}>Copy address</button><a class="btn ghost" href="${overlayUrl(cfg, token, { demo: true })}" target="_blank" rel="noopener">Open the demo</a></div>
           <p class="small muted">In OBS: <b>Sources › + › Browser</b>, paste the address, width <b>1920</b>, height <b>1080</b>, FPS <b>60</b>. Untick <i>Shutdown source when not visible</i>. Put it above the game capture. The background is transparent. Keep this address to yourself: anyone with it can watch your counters.</p>
         </form>
@@ -2697,7 +2697,7 @@ function linkCheck(here, m, snap, row) {
     if (l) rows.push(['Lines it read', `${(l.lines ?? 0).toLocaleString()} lines, ${(l.decoded ?? 0).toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
     rows.push(['Last update from it', row?.updated_at ? esc(when(Date.parse(row.updated_at) / 1000)) : 'never']);
   }
-  rows.push(['Test line from the game', snap?.lastTestAt ? yes(`received ${esc(when(snap.lastTestAt / 1000))}`) : no('none yet: type <code>/chron live test</code> in game')]);
+  rows.push(['Test line from the game', snap?.lastTestAt ? yes(`received ${esc(when(snap.lastTestAt / 1000))}`) : no('none yet: type <code>/comp live test</code> in game')]);
   return `<div class="health">${rows.map(([k, v]) => `<div class="row"><span class="muted">${k}</span><span>${v}</span></div>`).join('')}</div>`;
 }
 
@@ -3060,7 +3060,7 @@ function wireSync(r, video) {
     list.sort((a, b) => Math.abs(a.distance) - Math.abs(b.distance));
     list.splice(8);
     if (!list.length) {
-      box.innerHTML = '<p class="small">No sync flashes uploaded yet. In game, press your Sync key (or type <code>/chron sync</code>) right after starting a recording, then log out or /reload with the app open on your gaming PC.</p>';
+      box.innerHTML = '<p class="small">No sync flashes uploaded yet. In game, press your Sync key (or type <code>/comp sync</code>) right after starting a recording, then log out or /reload with the app open on your gaming PC.</p>';
       return;
     }
     const gap = (d) => (Math.abs(d) < 90 ? `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}s` : `${d >= 0 ? '+' : '−'}${duration(Math.abs(d))}`);
@@ -3160,7 +3160,7 @@ function overlayPackPanel(r) {
       <select name="killsMode"><option value="recording" ${o.killsMode === 'recording' ? 'selected' : ''}>counting from this recording</option><option value="lifetime" ${o.killsMode === 'lifetime' ? 'selected' : ''}>lifetime total</option></select>
       <label>Corner <select name="corner">${Object.entries(CORNERS).map(([k, l]) => `<option value="${k}" ${o.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Seconds per card <input type="number" name="cardSeconds" value="${o.cardSeconds}" min="1" max="30" style="width:70px"></label>
-      <label style="flex-basis:100%">Overlays folder on the editing computer <input type="text" name="folder" value="${esc(o.folder)}" placeholder="/Users/you/Movies/Chronicler overlays or C:\\Videos\\Chronicler overlays"></label>
+      <label style="flex-basis:100%">Overlays folder on the editing computer <input type="text" name="folder" value="${esc(o.folder)}" placeholder="/Users/you/Movies/Compendium overlays or C:\\Videos\\Compendium overlays"></label>
       <button id="packBuild" class="primary">Build the pack</button>
       <span class="muted small" id="packStatus"></span>
     </form>
@@ -3338,7 +3338,7 @@ pages.setup = async () => {
     'needs-permission': '<p>Chrome needs your OK again to read the recordings folder.</p><button class="primary" data-act="grantRec">Allow access to recordings</button>',
     ok: `<p><span class="dot ok" style="display:inline-block"></span> Reading <b>${esc(m.recRoot?.name ?? '')}</b>: ${m.rec.videos.size} video${m.rec.videos.size === 1 ? '' : 's'}. <button data-act="pickRec">Choose a different folder</button></p>`,
   }[m.rec.state] ?? '';
-  return `${pageHead('System', 'This computer', 'What this computer does for Chronicler, and how it is connected.')}
+  return `${pageHead('System', 'This computer', 'What this computer does for Compendium, and how it is connected.')}
     ${foldersSupported() ? '' : '<div class="notice error">This browser can\'t open local folders. Use Google Chrome (or Microsoft Edge on Windows).</div>'}
     <form id="machineForm" class="panel">
       <h3>What this computer does</h3>
@@ -3352,8 +3352,8 @@ pages.setup = async () => {
       ${cfg.fresh ? '<p class="muted small">These are guesses for this computer; change them if they are wrong.</p>' : ''}
     </form>
     ${cfg.plays && !cfg.fresh ? `<div class="panel"><h3>World of Warcraft</h3>${wowBody}</div>
-      <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Chronicler. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p>
-        <p class="small">Optional commands: <code>/chron scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/chron scanner off</code> puts them back). <code>/chron shots off</code> stops automatic screenshots. <code>/chron social on</code> also logs group, duels and chat. <code>/chron</code> lists everything.</p></div>` : ''}
+      <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Compendium. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p>
+        <p class="small">Optional commands: <code>/comp scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/comp scanner off</code> puts them back). <code>/comp shots off</code> stops automatic screenshots. <code>/comp social on</code> also logs group, duels and chat. <code>/comp</code> lists everything.</p></div>` : ''}
     ${cfg.plays && !cfg.fresh ? `<form id="voiceForm" class="panel"><h3>Voice notes</h3>
       <p class="small">Transcribes what you say into the microphone while you play (Chrome's own speech recognition, so it needs the internet and your OK for the microphone). Notes land on the timelines, on the <a href="#/narration">Narration</a> page and in each recording's captions.</p>
       <label class="check"><input type="checkbox" name="voice" ${cfg.voice ? 'checked' : ''}><span>Transcribe my voice while this tab is open</span></label>
@@ -3383,7 +3383,7 @@ pages.setup = async () => {
     ${addonErrorsPanel()}
     <div class="panel"><h3>Account</h3><p class="small">Logged in as <b>${esc(state.user.email)}</b>. Clock: ${m.offset == null ? 'measuring…' : `${(m.offset / 1000).toFixed(3)}s from the server (±${Math.round((m.rtt ?? 0) / 2)} ms)`}.</p><button data-act="logout">Log out</button></div>
     <div class="panel danger"><h3>Start over</h3>
-      <p class="small">Deletes every session, recording, item, route, screenshot, clock sample and deleted-mark record from your account, on both computers. Your own map images are kept. Sessions and recordings from before now will not come back even if the addon still has them; afterwards, type <code>/chron clear confirm</code> in game to empty the addon's log too.</p>
+      <p class="small">Deletes every session, recording, item, route, screenshot, clock sample and deleted-mark record from your account, on both computers. Your own map images are kept. Sessions and recordings from before now will not come back even if the addon still has them; afterwards, type <code>/comp clear confirm</code> in game to empty the addon's log too.</p>
       <div class="row"><input type="text" id="wipeWord" placeholder="type DELETE" autocomplete="off"><button class="danger-btn" id="wipe" disabled>Delete everything and start over</button></div>
     </div>`;
 };
@@ -3393,7 +3393,7 @@ function addonErrorsPanel() {
   const list = state.settings.addonErrors || [];
   const total = list.reduce((n, e) => n + (e.n || 1), 0);
   return `<div class="panel" id="errors"><h3>Addon errors ${total ? `<span class="chip bad">${total}</span>` : '<span class="chip done">none</span>'}</h3>
-    <p class="small muted">Every Lua error the addon catches in game (its own and other addons') is kept with its stack and where you were. Copy the dump and paste it to whoever is fixing the addon. In game, <code>/chron errors</code> shows them too.</p>
+    <p class="small muted">Every Lua error the addon catches in game (its own and other addons') is kept with its stack and where you were. Copy the dump and paste it to whoever is fixing the addon. In game, <code>/comp errors</code> shows them too.</p>
     ${list.length ? `<div class="row"><button id="copyErrors">Copy error dump</button><button class="ghost" id="clearErrors">Clear</button></div>
     <table><thead><tr><th>Times</th><th>Error</th><th>While</th><th>Last</th></tr></thead><tbody>${list.slice(0, 20).map((e) => `<tr><td class="num">${e.n || 1}</td><td><code style="white-space:pre-wrap">${esc(String(e.msg).slice(0, 220))}</code></td><td class="muted small">${esc(e.ctx ?? '')}${e.zone ? ` · ${esc(e.zone)}` : ''}</td><td class="muted small">${e.last ? esc(when(e.last)) : ''}</td></tr>`).join('')}</tbody></table>${list.length > 20 ? `<p class="muted small">and ${list.length - 20} more in the dump.</p>` : ''}` : ''}
   </div>`;
@@ -3404,7 +3404,7 @@ function errorDump() {
   const m = state.machine;
   const last = state.sessions.at(-1);
   const head = [
-    `Chronicler addon error dump — ${new Date().toISOString()}`,
+    `Compendium addon error dump — ${new Date().toISOString()}`,
     `Site: ${location.host} · this computer: ${m?.name ?? '?'} · addon installed: ${m?.wow?.installs?.map((i) => `${i.flavor} ${i.addonVersion ?? '?'}`).join(', ') || 'unknown here'}`,
     last ? `Last session: ${last.id} · ${last.char?.name ?? '?'} ${last.char?.class ?? ''} level ${last.char?.level ?? '?'} · build ${last.build?.version ?? '?'} (${last.build?.interface ?? '?'}) · ${last.flavor ?? ''}` : 'No sessions uploaded yet.',
     `${list.length} distinct error${list.length === 1 ? '' : 's'}, ${list.reduce((n, e) => n + (e.n || 1), 0)} in total.`,
@@ -3425,7 +3425,7 @@ function wireSetup() {
     try { await navigator.clipboard.writeText(errorDump()); toast('Error dump copied. Paste it into your message.'); } catch { download('chronicler-errors.txt', 'text/plain', errorDump()); }
   });
   document.getElementById('clearErrors')?.addEventListener('click', async () => {
-    if (!window.confirm('Clear the collected addon errors here? The addon keeps its own list until /chron errors clear.')) return;
+    if (!window.confirm('Clear the collected addon errors here? The addon keeps its own list until /comp errors clear.')) return;
     state.settings = { ...state.settings, addonErrors: [] };
     try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); }
     route({ keepScroll: true });
@@ -3475,7 +3475,7 @@ function wireSetup() {
       for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
       Object.assign(state, { sessions: [], rows: [], clock: [], items: [], screenshots: [], tracks: new Map(), shotUrls: new Map() });
       invalidate();
-      toast('Everything deleted. Type /chron clear confirm in game to empty the addon too.');
+      toast('Everything deleted. Type /comp clear confirm in game to empty the addon too.');
       m.restart();
       location.hash = '#/';
       route();
@@ -3518,7 +3518,7 @@ function siteAddress() {
 function renderLogin(message = '') {
   document.getElementById('nav').hidden = true;
   main.innerHTML = `<div class="login"><div class="panel glow">
-    <div class="brand" style="font-size:2rem;margin-bottom:6px"><span class="brand-mark"></span>Chronicler</div>
+    <div class="brand" style="font-size:2rem;margin-bottom:6px"><span class="brand-mark"></span><span class="brand-text">Compendium</span></div>
     <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team. Emailed links only come back to this site once its address is the project's Site URL (Supabase › Authentication › URL Configuration).</p>
     ${message ? `<div class="notice">${message}</div>` : ''}
     <form id="login">

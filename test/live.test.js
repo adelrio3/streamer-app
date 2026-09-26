@@ -137,8 +137,8 @@ test('item counters and drop summaries combine uploaded sessions with the live s
 });
 
 test('what the real addon sends decodes end to end', { skip: !lua && 'no Lua interpreter installed' }, () => {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-')), 'Chronicler.lua');
-  const run = spawnSync(lua, [path.join(root, 'test/addon/harness.lua'), path.join(root, 'addon/Chronicler'), out], { encoding: 'utf8' });
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-')), 'Compendium.lua');
+  const run = spawnSync(lua, [path.join(root, 'test/addon/harness.lua'), path.join(root, 'addon/Compendium'), out], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   const chatLog = fs.readFileSync(`${out}.chatlog.txt`, 'utf8');
   const { events } = eventsFromChatLog(chatLog, { now: NOW });

@@ -15,7 +15,7 @@ import { buildCodex } from '../web/lib/codex.js';
 import { buildIndex, search } from '../web/lib/search.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8'));
+const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Compendium.lua'), 'utf8'));
 const sessions = log.sessions;
 const moment = (s, e) => ({ session: s.id, t: e.t, footage: null });
 
@@ -65,7 +65,7 @@ test('items: full catalog info and every source', () => {
 test('character journey', () => {
   const [c] = buildCharacters(sessions, moment);
   assert.equal(c.name, 'Aldric');
-  assert.equal(c.info.guild, 'Chroniclers');
+  assert.equal(c.info.guild, 'Compendiums');
   assert.equal(c.info.bind, "Lion's Pride Inn", 'latest hearthstone, not the one at login');
   assert.equal(c.questsDone, 1);
   assert.deepEqual(c.levels.map((l) => l.level), [2]);

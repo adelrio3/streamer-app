@@ -1,4 +1,4 @@
--- Runs the Chronicler addon against a fake WoW client and writes the result in
+-- Runs the Compendium addon against a fake WoW client and writes the result in
 -- the same format WoW uses for SavedVariables.
 --
 --   lua5.1 test/addon/harness.lua <addon dir> <output file>
@@ -220,7 +220,7 @@ function GetBuildInfo() return "1.15.7", "61582", "Jun 1 2026", 11507 end
 function GetRealZoneText() return state.zone end
 function GetSubZoneText() return state.sub end
 function GetMoney() return state.money end
-function GetGuildInfo() return "Chroniclers" end
+function GetGuildInfo() return "Compendiums" end
 function GetBindLocation() return state.bind or "Northshire Abbey" end
 C_Map = {
 	GetBestMapForUnit = function() return state.map end,
@@ -349,15 +349,15 @@ FACTION_STANDING_DECREASED = "Reputation with %s decreased by %d."
 
 -- Load the addon, in .toc order, sharing one namespace --------------------------
 local ns = {}
-assert(loadfile(addonDir .. "/Boot.lua"))("Chronicler", ns)
-local bootSlash = SlashCmdList.CHRONICLER
-assert(loadfile(addonDir .. "/Chronicler.lua"))("Chronicler", ns)
-assert(loadfile(addonDir .. "/Capture.lua"))("Chronicler", ns)
-assert(loadfile(addonDir .. "/Live.lua"))("Chronicler", ns)
+assert(loadfile(addonDir .. "/Boot.lua"))("Compendium", ns)
+local bootSlash = SlashCmdList.COMPENDIUM
+assert(loadfile(addonDir .. "/Compendium.lua"))("Compendium", ns)
+assert(loadfile(addonDir .. "/Capture.lua"))("Compendium", ns)
+assert(loadfile(addonDir .. "/Live.lua"))("Compendium", ns)
 
 -- Scenario ------------------------------------------------------------------
-assert(SlashCmdList.CHRONICLER ~= bootSlash, "main file should replace the boot fallback")
-fire("ADDON_LOADED", "Chronicler")
+assert(SlashCmdList.COMPENDIUM ~= bootSlash, "main file should replace the boot fallback")
+fire("ADDON_LOADED", "Compendium")
 fire("PLAYER_LOGIN")
 frameTick(0.8) -- 0.25 + 0.8 crosses a whole second, so the clock calibrates
 frameTick(0.1)
@@ -479,13 +479,13 @@ fire("LOOT_OPENED") -- autoloot fires twice: recorded once
 fire("UNIT_SPELLCAST_SENT", "player", "Cactus Apple", "Cast-3-4372-0-0-3365-000", 3365)
 loot = { { name = "Cactus Apple", n = 1, link = "|cffffffff|Hitem:11583::::|h[Cactus Apple]|h|r", src = "GameObject-0-4372-0-17-171938-00040" } }
 fire("LOOT_OPENED")
-assert(ChroniclerDB.objects[171938] == "Cactus Apple", "object names are remembered")
+assert(CompendiumDB.objects[171938] == "Cactus Apple", "object names are remembered")
 do
 	local last
-	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot_window" then last = e end end
+	for _, e in ipairs(CompendiumDB.sessions[1].events) do if e.e == "loot_window" then last = e end end
 	assert(last.sources[1].kind == "GameObject" and last.sources[1].name == "Cactus Apple", "the loot window names the cactus")
 	local named
-	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "object" and e.objId == 171938 then named = e end end
+	for _, e in ipairs(CompendiumDB.sessions[1].events) do if e.e == "object" and e.objId == 171938 then named = e end end
 	assert(named and named.name == "Cactus Apple", "an object event records the name once")
 end
 
@@ -503,7 +503,7 @@ loot = { { name = "Linen Cloth", n = 1, link = "|cffffffff|Hitem:2589::::|h[Line
 fire("LOOT_OPENED")
 do
 	local wins = {}
-	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot_window" then wins[#wins + 1] = e end end
+	for _, e in ipairs(CompendiumDB.sessions[1].events) do if e.e == "loot_window" then wins[#wins + 1] = e end end
 	local a, b = wins[#wins - 1], wins[#wins]
 	assert(a.sources[1].id == 200 and a.sources[1].name == nil, "a unit tooltip does not name an object: " .. tostring(a.sources[1].name))
 	assert(b.sources[1].id == 201 and b.sources[1].name == "Solid Chest", "an object tooltip names it: " .. tostring(b.sources[1].name))
@@ -525,7 +525,7 @@ fire("MERCHANT_CLOSED")
 runTimers()
 do
 	local bought
-	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot" and e.id == 2512 then bought = e end end
+	for _, e in ipairs(CompendiumDB.sessions[1].events) do if e.e == "loot" and e.id == 2512 then bought = e end end
 	assert(bought and bought.src == "bought" and bought.n == 200, "an item received while a shop is open is bought")
 end
 
@@ -556,7 +556,7 @@ fire("CHARACTER_POINTS_CHANGED")
 
 -- Social is off by default, then on.
 fire("CHAT_MSG_SAY", "hello there", "Someone")
-SlashCmdList.CHRONICLER("social on")
+SlashCmdList.COMPENDIUM("social on")
 fire("CHAT_MSG_SAY", "anyone for Hogger?", "Someone")
 
 frameTick(30)
@@ -565,12 +565,12 @@ fire("ZONE_CHANGED")
 fire("ZONE_CHANGED") -- no actual change, no event
 fire("UI_INFO_MESSAGE", 0, "Discovered Goldshire: 20 experience gained")
 runTimers()
-SlashCmdList.CHRONICLER("sync")
+SlashCmdList.COMPENDIUM("sync")
 assert(#sounds == 1 and sounds[1][1] == 8959 and sounds[1][2] == "Master", "sync plays a sound")
 runTimers()
-Chronicler_Mark("lore", nil)
-SlashCmdList.CHRONICLER("mark shot sunset over the lake")
-SlashCmdList.CHRONICLER("note wolf pathing weird")
+Compendium_Mark("lore", nil)
+SlashCmdList.COMPENDIUM("mark shot sunset over the lake")
+SlashCmdList.COMPENDIUM("note wolf pathing weird")
 AbandonQuest()
 state.x = nil
 -- Hogger finishes us off.
@@ -580,13 +580,13 @@ fire("PLAYER_DEAD")
 runTimers()
 -- A Lua error in a handler is recorded, with the event, and does not stop the others.
 ns.on("CHAT_MSG_SKILL", function() error("boom") end)
-local skillsBefore = #ChroniclerDB.sessions[1].events
+local skillsBefore = #CompendiumDB.sessions[1].events
 fire("CHAT_MSG_SKILL", "Your skill in Fishing has increased to 3.")
 fire("CHAT_MSG_SKILL", "Your skill in Fishing has increased to 4.")
-assert(#ChroniclerDB.errors == 1 and ChroniclerDB.errors[1].n == 2, "the same error counts twice")
-assert(ChroniclerDB.errors[1].msg:find("boom", 1, true) and ChroniclerDB.errors[1].ctx == "CHAT_MSG_SKILL", "error message and event kept")
-assert(ChroniclerDB.errors[1].zone == "Elwynn Forest" and ChroniclerDB.errors[1].version, "where and which version")
-assert(#ChroniclerDB.sessions[1].events == skillsBefore + 2, "the skill lines were still logged by the other listener")
+assert(#CompendiumDB.errors == 1 and CompendiumDB.errors[1].n == 2, "the same error counts twice")
+assert(CompendiumDB.errors[1].msg:find("boom", 1, true) and CompendiumDB.errors[1].ctx == "CHAT_MSG_SKILL", "error message and event kept")
+assert(CompendiumDB.errors[1].zone == "Elwynn Forest" and CompendiumDB.errors[1].version, "where and which version")
+assert(#CompendiumDB.sessions[1].events == skillsBefore + 2, "the skill lines were still logged by the other listener")
 fire("PLAYER_LOGOUT")
 assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
 
@@ -616,7 +616,7 @@ for _, f in ipairs(chat.filters) do
 	end
 end
 assert(hidden == 1, "the live lines are hidden from chat windows")
-for _, e in ipairs(ChroniclerDB.sessions[1].events) do
+for _, e in ipairs(CompendiumDB.sessions[1].events) do
 	assert(not (e.text and (e.text:find("CHRON1~", 1, true) or e.text:find("CHRONPAD", 1, true))), "live and filler lines are never recorded")
 end
 -- After each message, filler fills the game's buffer so the file is written.
@@ -625,18 +625,18 @@ assert(chat.written > 0, "the game's 64 KB buffer was filled, so the file got wr
 -- The test line goes out at once, even between ticks; its filler follows.
 state.level = 2 -- the ticks below may send a heartbeat; keep it at the fixture's last level
 local before, padBefore, writtenBefore = #chat.sent, #chat.pad, chat.written
-SlashCmdList.CHRONICLER("live test")
-assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test writes a test line")
+SlashCmdList.COMPENDIUM("live test")
+assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/comp live test writes a test line")
 assert(#chat.pad == padBefore, "the filler waits for a quiet moment")
 trackTick()
 assert(#chat.pad == padBefore + 20, "filler goes out in slices of 20 lines per tick")
 for _ = 1, 8 do trackTick() end
 -- (a heartbeat during those ticks tops the filler up again, so at least 80)
 assert(#chat.pad >= padBefore + 80 and chat.written > writtenBefore, "80 KB of filler after the message, and the file was written")
-SlashCmdList.CHRONICLER("live pad 0")
-assert(ChroniclerDB.settings.livePadKB == 0, "/chron live pad 0 turns the filler off")
-SlashCmdList.CHRONICLER("live pad 80")
-assert(ChroniclerDB.settings.livePadKB == nil, "the default is not stored")
+SlashCmdList.COMPENDIUM("live pad 0")
+assert(CompendiumDB.settings.livePadKB == 0, "/comp live pad 0 turns the filler off")
+SlashCmdList.COMPENDIUM("live pad 80")
+assert(CompendiumDB.settings.livePadKB == nil, "the default is not stored")
 
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}
@@ -689,8 +689,8 @@ local function dump(v, indent, out)
 		out[#out + 1] = indent .. "}"
 	else out[#out + 1] = "nil" end
 end
-local out = { "\n", "ChroniclerDB = " }
-dump(ChroniclerDB, "", out)
+local out = { "\n", "CompendiumDB = " }
+dump(CompendiumDB, "", out)
 out[#out + 1] = "\n"
 local fh = assert(io.open(outFile, "w"))
 fh:write(table.concat(out))

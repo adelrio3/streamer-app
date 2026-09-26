@@ -9,7 +9,7 @@ import { buildCodex } from '../web/lib/codex.js';
 import { buildMaps, routesFor, cluster, spread } from '../web/lib/maps.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8'));
+const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Compendium.lua'), 'utf8'));
 const moment = (s, e) => ({ session: s.id, t: e.t, footage: null });
 
 test('bestiary holds only what you can fight; people are everyone else', () => {

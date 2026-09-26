@@ -13,7 +13,7 @@ const json = (name) => JSON.parse(fs.readFileSync(path.join(here, '..', 'web', '
 const data = { quests: json('quests.json').quests, npcs: json('npcs.json').npcs, objects: json('objects.json').objects, items: json('items.json').items, zones: json('zones.json').zones };
 const spawns = json('spawns.json').spawns;
 const db = indexDB(data);
-const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8'));
+const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Compendium.lua'), 'utf8'));
 const codex = buildCodex(log.sessions);
 const human = { raceToken: 'Human', classToken: 'PALADIN', faction: 'Alliance' };
 const orc = { raceToken: 'Orc', classToken: 'WARRIOR', faction: 'Horde' };

@@ -1,5 +1,5 @@
 
-ChroniclerDB = {
+CompendiumDB = {
 	["errors"] = {
 		{
 			["build"] = 11507,
@@ -137,7 +137,7 @@ ChroniclerDB = {
 				["classToken"] = "PALADIN",
 				["faction"] = "Alliance",
 				["guid"] = "Player-4372-0ABCDEF1",
-				["guild"] = "Chroniclers",
+				["guild"] = "Compendiums",
 				["level"] = 1,
 				["money"] = 1000,
 				["name"] = "Aldric",

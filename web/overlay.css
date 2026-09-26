@@ -1,8 +1,8 @@
-/* Chronicler stream overlay. Transparent; everything is positioned in the
+/* Compendium stream overlay. Transparent; everything is positioned in the
    corners and animates with transforms and opacity only. */
 
 :root {
-  --gold: #f2cc6b; --gold-2: #fff0b8; --gold-rgb: 242, 204, 107; --ink: #fff; --ink-2: rgba(255, 255, 255, .78);
+  --gold: #4f93ff; --gold-2: #d6e6ff; --gold-rgb: 79, 147, 255; --ink: #fff; --ink-2: rgba(255, 255, 255, .78);
   --panel-rgb: 12, 9, 5; --panel-solid: #0c0905; --panel: rgba(var(--panel-rgb), .72); --line: rgba(var(--gold-rgb), .35);
   --q0: #9d9d9d; --q1: #ffffff; --q2: #1eff00; --q3: #0070dd; --q4: #a335ee; --q5: #ff8000; --q6: #e6cc80;
   --serif: 'Cormorant Garamond', Georgia, serif; --sans: 'Inter', system-ui, sans-serif;

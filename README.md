@@ -1,11 +1,11 @@
-# Chronicler
+# Compendium
 
-A companion for playing through World of Warcraft on camera. You play once, record everything, and Chronicler keeps the notes for you.
+A companion for playing through World of Warcraft on camera. You play once, record everything, and Compendium keeps the notes for you.
 
-- **The addon** (`addon/Chronicler`) runs in game and logs, with timestamps accurate to about a frame:
+- **The addon** (`addon/Compendium`) runs in game and logs, with timestamps accurate to about a frame:
   - every quest's full text as you read it, who gave it, its rewards, where, and at what level
   - NPC speech, gossip, books and plaques page by page, cinematics
-  - **every NPC and creature near you**: targeted, moused over, on a nameplate, fighting within combat-log range, or speaking; with level, elite/rare rank, type, family, reaction and subtitle. `/chron scanner on` adds invisible nameplates to catch everything within about 40 yards
+  - **every NPC and creature near you**: targeted, moused over, on a nameplate, fighting within combat-log range, or speaking; with level, elite/rare rank, type, family, reaction and subtitle. `/comp scanner on` adds invisible nameplates to catch everything within about 40 yards
   - **every loot window**: what dropped and from whom (including what you left behind), coins, herbs, ore, chests and anything else you open (a cactus, a crate), named from the tooltip or the opening cast and remembered for every later session
   - **a full item catalog**: every tooltip line (flavor text included), stats, sell price, icon, use effect, for anything you loot, see, buy, wear, carry or hover
   - **vendors** with stock, prices, limited quantities and item costs; **trainers** and their prices; **flight masters**, routes and costs, flights taken; hearthstone location
@@ -13,10 +13,10 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - **your character over time**: gear and every change, talents, stats per level, reputation, gold with where it came from, XP, skills and bags
   - **position and state every 2 seconds** (mounted, flight path, UI hidden, indoors, swimming, in-game time of day) for the footage finder
   - **automatic screenshots** at rares, level-ups, discoveries and deaths, plus your own
-  - optional group, duel and chat logging (`/chron social on`)
+  - optional group, duel and chat logging (`/comp social on`)
   - **marks** (lore beat, beautiful shot, funny, redo) and the **sync flash**
-  - the **live link**: the addon writes what happens into the game's chat log as hidden lines, so the file carries it out as you play; `/chron live off` stops it
-  - every **Lua error** it catches (its own and other addons'), with the stack and where you were: `/chron errors`
+  - the **live link**: the addon writes what happens into the game's chat log as hidden lines, so the file carries it out as you play; `/comp live off` stops it
+  - every **Lua error** it catches (its own and other addons'), with the stack and where you were: `/comp errors`
 - **The web app** (`web/`, hosted on Netlify, data in Supabase) is open in Chrome on each computer and bridges them:
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
   - on the **recording computer** it listens to OBS for when each recording starts and stops, and reads the recordings folder
@@ -46,28 +46,28 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 
 | Command | What it does |
 |---|---|
-| `/chron` | How much has been logged, and whether the clock is calibrated |
-| `/chron sync` | Sync flash and sound (also a key binding): press right after starting a recording |
-| `/chron mark lore <note>` | Mark a lore beat. Other kinds: `shot`, `funny`, `redo`, or leave the kind out |
-| `/chron note <text>` | A mark with a note |
-| `/chron silent` | Stop marks from printing to chat (so it stays out of footage) |
-| `/chron scanner on\|off` | Log every NPC within about 40 yards using invisible nameplates (changes your nameplate settings; `off` restores them) |
-| `/chron shots on\|off` | Automatic screenshots at rares, level-ups, discoveries and deaths (on by default) |
-| `/chron social on\|off` | Also log group, duels and chat (off by default) |
-| `/chron track on\|off` | Position tracking for the footage finder (on by default) |
-| `/chron items` | Size of the item catalog |
-| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; writes hidden lines to the chat log and turns chat logging on; `pad KB` sets how much filler follows each line, since the game writes the file only when its 64 KB buffer fills; the app on the gaming PC empties the file once it is over 1 MB and you have been logged out for 3 minutes). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
-| `/chron errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
-| `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
+| `/comp` | How much has been logged, and whether the clock is calibrated |
+| `/comp sync` | Sync flash and sound (also a key binding): press right after starting a recording |
+| `/comp mark lore <note>` | Mark a lore beat. Other kinds: `shot`, `funny`, `redo`, or leave the kind out |
+| `/comp note <text>` | A mark with a note |
+| `/comp silent` | Stop marks from printing to chat (so it stays out of footage) |
+| `/comp scanner on\|off` | Log every NPC within about 40 yards using invisible nameplates (changes your nameplate settings; `off` restores them) |
+| `/comp shots on\|off` | Automatic screenshots at rares, level-ups, discoveries and deaths (on by default) |
+| `/comp social on\|off` | Also log group, duels and chat (off by default) |
+| `/comp track on\|off` | Position tracking for the footage finder (on by default) |
+| `/comp items` | Size of the item catalog |
+| `/comp live on\|off\|test` | The live link for the stream overlay (on by default; writes hidden lines to the chat log and turns chat logging on; `pad KB` sets how much filler follows each line, since the game writes the file only when its 64 KB buffer fills; the app on the gaming PC empties the file once it is over 1 MB and you have been logged out for 3 minutes). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/comp live` alone prints the addon's status |
+| `/comp errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
+| `/comp clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 
-Key bindings: Options › Keybindings › AddOns › Chronicler.
+Key bindings: Options › Keybindings › AddOns › Compendium.
 
 WoW only writes the addon's log to disk on logout or `/reload`; the app uploads it a few seconds later.
 
 ## Where things live
 
 ```
-addon/Chronicler/        the WoW addon (Lua)
+addon/Compendium/        the WoW addon (Lua)
 web/                     the web app Netlify publishes (overlay.html is the OBS browser source)
 web/lib/                 SavedVariables parser, sessions, clock bridge and timelines, codex, exports,
                          OBS link, folder access, Supabase storage, this computer's background jobs,

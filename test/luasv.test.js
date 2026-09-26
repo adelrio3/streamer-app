@@ -4,7 +4,7 @@ import { parseSavedVariables } from '../web/lib/luasv.js';
 
 test('parses WoW-style nested tables, arrays and comments', () => {
   const src = `
-ChroniclerDB = {
+CompendiumDB = {
 	["schema"] = 1,
 	["sessions"] = {
 		{
@@ -22,9 +22,9 @@ ChroniclerDB = {
 OtherVar = nil
 `;
   const out = parseSavedVariables(src);
-  assert.equal(out.ChroniclerDB.schema, 1);
-  assert.ok(Array.isArray(out.ChroniclerDB.sessions));
-  const ev = out.ChroniclerDB.sessions[0].events[0];
+  assert.equal(out.CompendiumDB.schema, 1);
+  assert.ok(Array.isArray(out.CompendiumDB.sessions));
+  const ev = out.CompendiumDB.sessions[0].events[0];
   assert.deepEqual(ev, { e: 'kill', t: 1790000004.125, x: -12.5 });
   assert.equal(out.OtherVar, null);
 });

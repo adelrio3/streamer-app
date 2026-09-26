@@ -152,7 +152,7 @@ export function toOverlayXML(recording, clips, { fps = 60, width = 1920, height 
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence id="sequence-1">
-    <name>${xml(`Chronicler overlays - ${stem(recording.name)}`)}</name>
+    <name>${xml(`Compendium overlays - ${stem(recording.name)}`)}</name>
     <duration>${duration}</duration>
     ${rate}
     <timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode>
@@ -172,12 +172,12 @@ export function toOverlayXML(recording, clips, { fps = 60, width = 1920, height 
 }
 
 export function packReadme(recording, folder, count) {
-  return `Chronicler overlay pack for ${recording.name}
+  return `Compendium overlay pack for ${recording.name}
 
 ${count} PNG stills in overlays/ (transparent, ${'1920×1080'}) and ${stem(recording.name)}.overlays.xml.
 
 1. Unzip. Put the overlays folder at:
-   ${folder || '(the folder you entered in Chronicler)'}
+   ${folder || '(the folder you entered in Compendium)'}
    The XML points there; if you put it elsewhere, Premiere will ask you to locate the first file and then finds the rest.
 2. In Premiere: File > Import, choose the .xml. A sequence appears with the recording on V1 and every overlay on the tracks above, already at the right time.
 3. Slide, trim or delete any of them like normal clips.

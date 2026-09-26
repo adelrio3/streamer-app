@@ -37,9 +37,9 @@ local padLeft = 0 -- filler lines still to send
 local padded = 0 -- filler lines sent, for the status line
 
 local function settings()
-	ChroniclerDB = ChroniclerDB or {}
-	ChroniclerDB.settings = ChroniclerDB.settings or {}
-	return ChroniclerDB.settings
+	CompendiumDB = CompendiumDB or {}
+	CompendiumDB.settings = CompendiumDB.settings or {}
+	return CompendiumDB.settings
 end
 
 local function enabled()
@@ -80,7 +80,7 @@ ns.isLiveLine = isLiveLine
 local function filter(_, event, text)
 	if type(text) ~= "string" then return false end
 	if text:find(PAD_PREFIX .. SEP, 1, true) == 1 then return true end
-	if settings().liveShow then return false end -- /chron live show, for checking
+	if settings().liveShow then return false end -- /comp live show, for checking
 	return text:find(PREFIX .. SEP, 1, true) == 1
 end
 
@@ -134,7 +134,7 @@ local function heartbeat()
 end
 
 -- Everything the addon records passes through here (see record() in
--- Chronicler.lua); the kinds the overlay cares about go out.
+-- Compendium.lua); the kinds the overlay cares about go out.
 ns.liveEvent = function(kind, data)
 	if not enabled() then return end
 	data = data or {}
@@ -191,39 +191,39 @@ ns.commands.live = function(arg)
 	if arg == "on" then
 		settings().live = true
 		if LoggingChat then LoggingChat(true) end
-		print("|cffd4a017Chronicler|r live link on: what happens goes to Logs\\WoWChatLog.txt for the stream overlay.")
+		print("|cff5a9bffCompendium|r live link on: what happens goes to Logs\\WoWChatLog.txt for the stream overlay.")
 	elseif arg == "off" then
 		settings().live = false
 		queue = {}
 		padLeft = 0
-		print("|cffd4a017Chronicler|r live link off.")
+		print("|cff5a9bffCompendium|r live link off.")
 	elseif arg == "show" or arg == "hide" then
 		settings().liveShow = arg == "show" or nil
-		print("|cffd4a017Chronicler|r live link lines are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
+		print("|cff5a9bffCompendium|r live link lines are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
 	elseif arg:match("^pad") then
-		-- /chron live pad 80: push 80 KB of filler after each message (the
+		-- /comp live pad 80: push 80 KB of filler after each message (the
 		-- game writes its chat log buffer of about 64 KB only when it fills).
 		local kb = tonumber(arg:match("%d+"))
 		if not kb then
-			print(string.format("|cffd4a017Chronicler|r filler after each message: %d KB (the game's buffer is about 64 KB; 0 turns it off, %d is the default). /chron live pad <KB>", padKB(), PAD_DEFAULT_KB))
+			print(string.format("|cff5a9bffCompendium|r filler after each message: %d KB (the game's buffer is about 64 KB; 0 turns it off, %d is the default). /comp live pad <KB>", padKB(), PAD_DEFAULT_KB))
 			return
 		end
 		settings().livePadKB = kb ~= PAD_DEFAULT_KB and kb or nil
 		padLeft = math.max(padLeft, kb)
 		lastSend = -FLUSH_AFTER
-		print(string.format("|cffd4a017Chronicler|r filler set to %d KB after each message; %d KB going out now. Watch the size of Logs\\WoWChatLog.txt.", kb, kb))
+		print(string.format("|cff5a9bffCompendium|r filler set to %d KB after each message; %d KB going out now. Watch the size of Logs\\WoWChatLog.txt.", kb, kb))
 	elseif arg == "test" then
 		-- A line the app and the overlay both show, to prove the whole chain.
-		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
+		if not enabled() then print("|cff5a9bffCompendium|r live link is off: /comp live on first.") return end
 		push("T", time())
 		lastSend = -MIN_GAP
 		flush()
-		print("|cffd4a017Chronicler|r test line written. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.")
+		print("|cff5a9bffCompendium|r test line written. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.")
 	else
 		local logging = LoggingChat and LoggingChat() or false
 		local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?"
-		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · lines %s · %d messages sent, %d waiting · filler %d KB after each (%d KB sent so far). /chron live on|off|test|show|hide|pad KB",
+		print(string.format("|cff5a9bffCompendium|r %s · live link %s · chat log %s · lines %s · %d messages sent, %d waiting · filler %d KB after each (%d KB sent so far). /comp live on|off|test|show|hide|pad KB",
 			version, enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", settings().liveShow and "shown" or "hidden", sent, #queue, padKB(), padded))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide|pad KB - live link for the stream overlay (writes to the chat log, hidden from chat; on by default); test writes a line the app confirms"
+ns.helpLines[#ns.helpLines + 1] = "/comp live on|off|test|show|hide|pad KB - live link for the stream overlay (writes to the chat log, hidden from chat; on by default); test writes a line the app confirms"

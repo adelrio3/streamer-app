@@ -7,12 +7,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const src = path.join(root, 'addon', 'Chronicler');
+const src = path.join(root, 'addon', 'Compendium');
 const out = path.join(root, 'web', 'addon');
 fs.rmSync(out, { recursive: true, force: true });
-fs.mkdirSync(path.join(out, 'Chronicler'), { recursive: true });
+fs.mkdirSync(path.join(out, 'Compendium'), { recursive: true });
 const files = fs.readdirSync(src).filter((f) => fs.statSync(path.join(src, f)).isFile());
-for (const f of files) fs.copyFileSync(path.join(src, f), path.join(out, 'Chronicler', f));
-const version = /^## Version:\s*(\S+)/m.exec(fs.readFileSync(path.join(src, 'Chronicler.toc'), 'utf8'))[1];
+for (const f of files) fs.copyFileSync(path.join(src, f), path.join(out, 'Compendium', f));
+const version = /^## Version:\s*(\S+)/m.exec(fs.readFileSync(path.join(src, 'Compendium.toc'), 'utf8'))[1];
 fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify({ version, files }, null, 2));
 console.log(`Addon ${version} copied to web/addon (${files.join(', ')})`);

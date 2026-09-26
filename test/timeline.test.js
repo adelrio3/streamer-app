@@ -11,7 +11,7 @@ import { clockModel, eventMs, startFromName, resolveRecordings, aligner, buildTi
 import { buildCodex } from '../web/lib/codex.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8');
+const fixture = fs.readFileSync(path.join(here, 'fixtures', 'Compendium.lua'), 'utf8');
 
 test('reads the start time from OBS file names', () => {
   assert.equal(startFromName('/Users/me/Movies/2026-09-25 20-15-42.mkv'), new Date(2026, 8, 25, 20, 15, 42).getTime());

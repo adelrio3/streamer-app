@@ -1,5 +1,8 @@
-/* Chronicler: obsidian and moonlight. A cool near-black, an arcane cyan
-   glow for anything alive, and gold for what matters. */
+/* Compendium: obsidian under the two banners. A cool near-black, Alliance
+   blue for what matters (headings, links, progress) and Horde red for
+   anything alive (glows, icons, the live link), used as equals; the title
+   runs from one to the other. The old token names stay (gold = blue,
+   cyan = red) so nothing else had to change. */
 
 :root {
   --bg: #0b0d12;
@@ -13,14 +16,16 @@
   --text-2: #c7cfdd;
   --muted: #8d97ab;
   --faint: #5c6679;
-  --gold: #e8b64a;
-  --gold-2: #ffd77a;
-  --gold-dim: #8f6f22;
-  --cyan: #5fd3ff;
-  --cyan-dim: #1f6f8a;
-  --gold-rgb: 232, 182, 74;
-  --gold2-rgb: 255, 215, 122;
-  --cyan-rgb: 95, 211, 255;
+  --ally: #3f86f0; --ally-2: #8fbaff; --ally-dim: #1e4a94; --ally-rgb: 63, 134, 240;
+  --horde: #e0453d; --horde-2: #ff8f88; --horde-dim: #8a1d19; --horde-rgb: 224, 69, 61;
+  --gold: var(--ally);
+  --gold-2: var(--ally-2);
+  --gold-dim: var(--ally-dim);
+  --cyan: var(--horde);
+  --cyan-dim: var(--horde-dim);
+  --gold-rgb: var(--ally-rgb);
+  --gold2-rgb: 143, 186, 255;
+  --cyan-rgb: var(--horde-rgb);
   --red: #ff6b6b;
   --green: #7fd18a;
   --blue: #7fb3ff;
@@ -69,9 +74,10 @@ li { margin-bottom: .25em; }
   display: flex; flex-direction: column; gap: 14px;
 }
 .side-top { display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }
-.brand { font-family: var(--serif); font-weight: 600; font-size: 1.55rem; color: var(--gold-2); letter-spacing: .02em; display: inline-flex; align-items: center; gap: 9px; }
-.brand:hover { text-decoration: none; color: var(--gold-2); }
-.brand-mark { width: 12px; height: 12px; border: 2px solid var(--gold); transform: rotate(45deg); border-radius: 2px; box-shadow: 0 0 10px rgba(var(--gold-rgb), .35), 0 0 22px rgba(var(--cyan-rgb), .25); }
+.brand { font-family: var(--serif); font-weight: 600; font-size: 1.55rem; letter-spacing: .02em; display: inline-flex; align-items: center; gap: 9px; color: var(--ally-2); }
+.brand .brand-text { background: linear-gradient(90deg, var(--ally-2) 0%, var(--ally) 30%, var(--horde) 70%, var(--horde-2) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.brand:hover { text-decoration: none; }
+.brand-mark { width: 12px; height: 12px; border: 2px solid transparent; background: linear-gradient(var(--bg), var(--bg)) padding-box, linear-gradient(135deg, var(--ally), var(--horde)) border-box; transform: rotate(45deg); border-radius: 2px; box-shadow: 0 0 10px rgba(var(--gold-rgb), .35), 0 0 22px rgba(var(--cyan-rgb), .25); }
 .menu-toggle { display: none; background: none; border: 1px solid var(--line-2); color: var(--text); border-radius: 8px; padding: 4px 9px; font-size: 1.05rem; }
 
 #search input { width: 100%; min-width: 0; }

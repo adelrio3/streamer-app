@@ -1,0 +1,12 @@
+## Interface: 11509, 11510, 11511, 11512, 11507, 11508, 20505, 30405, 40402, 50500, 50501, 110200, 110205, 120000, 120001
+## Title: Compendium
+## Notes: Logs quests, lore, NPCs, loot, items, vendors, fights, gear and your route with precise timestamps so the Compendium web app can line them up with your recordings.
+## Author: Compendium
+## Version: 1.0.0
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## SavedVariables: CompendiumDB
+
+Boot.lua
+Compendium.lua
+Capture.lua
+Live.lua

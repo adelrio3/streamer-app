@@ -468,7 +468,7 @@ if (unknownZones.size) console.warn('  quests in areas without a name:', [...unk
 // --- Write -----------------------------------------------------------------
 
 fs.mkdirSync(outDir, { recursive: true });
-const source = 'Questie (https://github.com/Questie/Questie), GPL-3.0. Reshaped for Chronicler by tools/import-questie.js; not affiliated with Questie.';
+const source = 'Questie (https://github.com/Questie/Questie), GPL-3.0. Reshaped for Compendium by tools/import-questie.js; not affiliated with Questie.';
 const generated = new Date().toISOString().slice(0, 10);
 const write = (name, data) => {
   const json = JSON.stringify({ source, generated, ...data });

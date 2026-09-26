@@ -88,7 +88,7 @@ export async function wowInstalls(root) {
   return out;
 }
 
-// Chronicler SavedVariables files: [{ flavor, account, handle }].
+// Compendium SavedVariables files: [{ flavor, account, handle }].
 export async function savedVariablesFiles(root) {
   const out = [];
   for (const { flavor, dir } of await wowInstalls(root)) {
@@ -97,7 +97,7 @@ export async function savedVariablesFiles(root) {
     for await (const acc of entries(accounts)) {
       if (acc.kind !== 'directory') continue;
       const sv = await child(acc, 'SavedVariables');
-      const file = sv && await child(sv, 'Chronicler.lua', 'file');
+      const file = sv && await child(sv, 'Compendium.lua', 'file');
       if (file) out.push({ flavor, account: acc.name, handle: file });
     }
   }
@@ -113,19 +113,22 @@ export async function chatLogFile(flavorDir) {
 // Version of the installed addon in a flavor folder, or null.
 export async function installedAddonVersion(flavorDir) {
   const addons = await child(await child(flavorDir, 'Interface') ?? flavorDir, 'AddOns');
-  const dir = addons && await child(addons, 'Chronicler');
-  const toc = dir && await child(dir, 'Chronicler.toc', 'file');
+  const dir = addons && await child(addons, 'Compendium');
+  const toc = dir && await child(dir, 'Compendium.toc', 'file');
   if (!toc) return null;
   const m = /^## Version:\s*(\S+)/m.exec(await (await toc.getFile()).text());
   return m ? m[1] : 'unknown';
 }
 
-// Writes the addon files into <flavor>/Interface/AddOns/Chronicler.
+// Writes the addon files into <flavor>/Interface/AddOns/Compendium.
 // files: [{ name, text }]
 export async function installAddon(flavorDir, files) {
   const iface = await flavorDir.getDirectoryHandle('Interface', { create: true });
   const addons = await iface.getDirectoryHandle('AddOns', { create: true });
-  const dir = await addons.getDirectoryHandle('Chronicler', { create: true });
+  const dir = await addons.getDirectoryHandle('Compendium', { create: true });
+  // The addon used to be called Chronicler: its folder goes, so the game does
+  // not load two copies. Its saved data (Chronicler.lua) is left alone.
+  try { await addons.removeEntry('Chronicler', { recursive: true }); } catch { /* not there */ }
   for (const f of files) {
     const handle = await dir.getFileHandle(f.name, { create: true });
     const w = await handle.createWritable();

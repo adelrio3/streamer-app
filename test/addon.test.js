@@ -14,11 +14,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lua = ['lua5.1', 'luajit', 'lua'].find((bin) => spawnSync(bin, ['-v']).status === 0);
 
 test('addon logs a full play session', { skip: !lua && 'no Lua interpreter installed' }, () => {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-')), 'Chronicler.lua');
-  const run = spawnSync(lua, [path.join(root, 'test/addon/harness.lua'), path.join(root, 'addon/Chronicler'), out], { encoding: 'utf8' });
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chron-')), 'Compendium.lua');
+  const run = spawnSync(lua, [path.join(root, 'test/addon/harness.lua'), path.join(root, 'addon/Compendium'), out], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
 
-  const db = parseSavedVariables(fs.readFileSync(out, 'utf8')).ChroniclerDB;
+  const db = parseSavedVariables(fs.readFileSync(out, 'utf8')).CompendiumDB;
   assert.equal(db.sessions.length, 1);
   assert.equal(db.schema, 2);
   const s = db.sessions[0];
@@ -134,11 +134,11 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
   assert.deepEqual(of('bags')[0].items, [{ id: 159, n: 5 }]);
   assert.equal(of('rep')[0].amount, 25);
   assert.equal(of('xp')[0].amount, 45);
-  assert.equal(s.char.guild, 'Chroniclers');
+  assert.equal(s.char.guild, 'Compendiums');
 
   // Screenshots, social.
   assert.deepEqual(of('screenshot').map((e) => e.reason).sort(), ['death', 'discovery', 'level', 'rare']);
-  assert.deepEqual(of('chat').map((c) => c.text), ['anyone for Hogger?'], 'only after /chron social on');
+  assert.deepEqual(of('chat').map((c) => c.text), ['anyone for Hogger?'], 'only after /comp social on');
 
   // Track: compact points, standing still skipped, flags for mounted + UI hidden.
   assert.ok(s.track.length >= 5);
@@ -160,8 +160,8 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
 });
 
 test('the .toc loads on the current Classic Era client (1.15.9)', () => {
-  const toc = fs.readFileSync(path.join(root, 'addon/Chronicler/Chronicler.toc'), 'utf8');
+  const toc = fs.readFileSync(path.join(root, 'addon/Compendium/Compendium.toc'), 'utf8');
   const versions = /^## Interface:(.*)$/m.exec(toc)[1].split(',').map((s) => Number(s.trim()));
   assert.ok(versions.includes(11509));
-  assert.ok(/^Boot\.lua\s*$/m.test(toc) && toc.indexOf('Boot.lua') < toc.indexOf('Chronicler.lua'));
+  assert.ok(/^Boot\.lua\s*$/m.test(toc) && toc.indexOf('Boot.lua') < toc.indexOf('Compendium.lua'));
 });

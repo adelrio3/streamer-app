@@ -18,7 +18,7 @@ import { tales, tellTale, taleText, rollUp } from '../web/lib/tales.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const json = (name) => JSON.parse(fs.readFileSync(path.join(here, '..', 'web', 'data', 'classic', name), 'utf8'));
 const db = indexDB({ quests: json('quests.json').quests, npcs: json('npcs.json').npcs, objects: json('objects.json').objects, items: json('items.json').items, zones: json('zones.json').zones });
-const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Chronicler.lua'), 'utf8'));
+const log = readAddonLog(fs.readFileSync(path.join(here, 'fixtures', 'Compendium.lua'), 'utf8'));
 const sessions = log.sessions;
 const moment = (s, e) => ({ session: s.id, t: e.t, footage: null });
 const codex = buildCodex(sessions);

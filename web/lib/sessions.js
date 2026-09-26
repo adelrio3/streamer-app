@@ -26,14 +26,14 @@ export function expansionOf(iface) {
   return hit ? hit.key : 'retail';
 }
 
-// Every session in a Chronicler.lua SavedVariables file.
+// Every session in a Compendium.lua SavedVariables file.
 export function sessionsFromSavedVariables(text, opts) {
   return readAddonLog(text, opts).sessions;
 }
 
 // Sessions plus the item catalog: { sessions, items: [{ item_id, data }] }.
 export function readAddonLog(text, { flavor = null, account = null } = {}) {
-  const db = parseSavedVariables(text).ChroniclerDB;
+  const db = parseSavedVariables(text).CompendiumDB;
   if (!db) return { sessions: [], items: [], errors: [] };
   const sessions = Object.values(db.sessions || {}).map((raw) => normalizeSession(raw, { flavor, account })).filter(Boolean);
   const items = Object.values(db.items || {})

@@ -1,4 +1,4 @@
--- Chronicler capture: everything beyond the core log.
+-- Compendium capture: everything beyond the core log.
 --
 --   NPCs        every creature you target, mouse over, see on a nameplate, fight
 --               near or hear speak, with level, rank, type, family and reaction
@@ -13,12 +13,12 @@
 --   Fights      a summary per fight, close calls, who killed you
 --   Character   gear, talents, stats, reputation, gold, XP, skills and bags over time
 --   Screenshots automatic ones at big moments, and your own
---   Social      group, duels and chat (off unless /chron social on)
+--   Social      group, duels and chat (off unless /comp social on)
 
 local ADDON_NAME, ns = ...
 local record, now, parseGUID, on = ns.record, ns.now, ns.parseGUID, ns.on
 
-local function settings() return ChroniclerDB.settings end
+local function settings() return CompendiumDB.settings end
 local function session() return ns.session() end
 local function idFromLink(link) return link and tonumber(link:match("|Hitem:(%d+)")) end
 local function nameFromLink(link) return link and link:match("%[(.-)%]") end
@@ -57,7 +57,7 @@ end
 
 -- Tooltip scanning ----------------------------------------------------------
 
-local scanTip = CreateFrame("GameTooltip", "ChroniclerScanTip", nil, "GameTooltipTemplate")
+local scanTip = CreateFrame("GameTooltip", "CompendiumScanTip", nil, "GameTooltipTemplate")
 
 local function hex(r, g, b)
 	if not r then return nil end
@@ -72,8 +72,8 @@ local function tooltipLines(setter)
 	setter(scanTip)
 	local lines = {}
 	for i = 1, scanTip:NumLines() do
-		local left = _G["ChroniclerScanTipTextLeft" .. i]
-		local right = _G["ChroniclerScanTipTextRight" .. i]
+		local left = _G["CompendiumScanTipTextLeft" .. i]
+		local right = _G["CompendiumScanTipTextRight" .. i]
 		local lt = left and left:GetText()
 		local rt = right and right:IsShown() and right:GetText()
 		if (lt and lt ~= "") or (rt and rt ~= "") then
@@ -90,7 +90,7 @@ end
 
 -- Item catalog --------------------------------------------------------------
 --
--- ChroniclerDB.items[id] holds everything the client knows about an item.
+-- CompendiumDB.items[id] holds everything the client knows about an item.
 -- Items not yet in the client cache are asked for and scanned when they arrive.
 
 local pending, queued, tries = {}, {}, {}
@@ -98,7 +98,7 @@ local pending, queued, tries = {}, {}, {}
 local function wantItem(id)
 	id = tonumber(id)
 	if not id or id <= 0 or queued[id] then return end
-	local known = ChroniclerDB.items[id]
+	local known = CompendiumDB.items[id]
 	if known and known.scanned then return end
 	queued[id] = true
 	pending[#pending + 1] = id
@@ -108,7 +108,7 @@ ns.wantItem = wantItem
 local function scanItem(id)
 	local name, link, quality, ilvl, reqLevel, itemType, subType, maxStack, equipLoc, icon, sellPrice, classID, subclassID, bindType, _, setID, isReagent = GetItemInfo(id)
 	if not name then return false end
-	local info = ChroniclerDB.items[id] or {}
+	local info = CompendiumDB.items[id] or {}
 	info.id, info.name, info.link, info.q, info.ilvl, info.req = id, name, link, quality, ilvl, reqLevel
 	info.type, info.sub, info.stack, info.icon, info.sell = itemType, subType, maxStack, icon, sellPrice
 	info.classId, info.subId, info.bind, info.set = classID, subclassID, bindType, setID
@@ -123,7 +123,7 @@ local function scanItem(id)
 	end
 	info.first = info.first or time()
 	info.scanned = true
-	ChroniclerDB.items[id] = info
+	CompendiumDB.items[id] = info
 	return true
 end
 
@@ -188,15 +188,15 @@ end)
 -- Names of objects learned so far (id -> name), so an object named once is
 -- named in every later session too.
 local function objectName(id, name)
-	ChroniclerDB.objects = ChroniclerDB.objects or {}
+	CompendiumDB.objects = CompendiumDB.objects or {}
 	if name and name ~= "" then
-		if ChroniclerDB.objects[id] ~= name then
-			ChroniclerDB.objects[id] = name
+		if CompendiumDB.objects[id] ~= name then
+			CompendiumDB.objects[id] = name
 			record("object", { objId = id, name = name })
 		end
 		return name
 	end
-	return ChroniclerDB.objects[id]
+	return CompendiumDB.objects[id]
 end
 local function hookTitle(tip)
 	if tip and tip.HookScript then
@@ -815,7 +815,7 @@ end
 on("UI_INFO_MESSAGE", discovery)
 on("CHAT_MSG_SYSTEM", discovery)
 
--- Social (off unless /chron social on) -------------------------------------
+-- Social (off unless /comp social on) -------------------------------------
 
 local CHAT = {
 	CHAT_MSG_SAY = "say", CHAT_MSG_YELL = "yell", CHAT_MSG_PARTY = "party", CHAT_MSG_PARTY_LEADER = "party",
@@ -857,7 +857,7 @@ local function toggle(key, label, after)
 	return function(arg)
 		local s = settings()
 		if arg == "on" then s[key] = true elseif arg == "off" then s[key] = false else s[key] = not s[key] end
-		print(string.format("|cffd4a017Chronicler|r %s %s", label, s[key] and "on" or "off"))
+		print(string.format("|cff5a9bffCompendium|r %s %s", label, s[key] and "on" or "off"))
 		if after then after(s[key]) end
 	end
 end
@@ -868,15 +868,15 @@ ns.commands.track = toggle("track", "position tracking")
 ns.commands.scanner = toggle("scanner", "invisible nameplate scanner", applyScanner)
 ns.commands.items = function()
 	local n = 0
-	for _ in pairs(ChroniclerDB.items) do n = n + 1 end
-	print(string.format("|cffd4a017Chronicler|r %d items in the catalog, %d waiting for item info.", n, #pending))
+	for _ in pairs(CompendiumDB.items) do n = n + 1 end
+	print(string.format("|cff5a9bffCompendium|r %d items in the catalog, %d waiting for item info.", n, #pending))
 end
 for _, line in ipairs({
-	"/chron shots [on|off] - automatic screenshots at big moments",
-	"/chron scanner [on|off] - log every NPC in range using invisible nameplates",
-	"/chron social [on|off] - log group, duels and chat",
-	"/chron track [on|off] - position tracking for the footage finder",
-	"/chron items - item catalog size",
+	"/comp shots [on|off] - automatic screenshots at big moments",
+	"/comp scanner [on|off] - log every NPC in range using invisible nameplates",
+	"/comp social [on|off] - log group, duels and chat",
+	"/comp track [on|off] - position tracking for the footage finder",
+	"/comp items - item catalog size",
 }) do
 	ns.helpLines[#ns.helpLines + 1] = line
 end

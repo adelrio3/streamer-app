@@ -1,4 +1,4 @@
-// What this computer does for Chronicler, running in the background while the
+// What this computer does for Compendium, running in the background while the
 // app is open:
 //
 //   every computer   measures its clock against the server (clock samples)
@@ -462,7 +462,7 @@ export class Machine {
     this.changed('data');
   }
 
-  // Screenshots taken while Chronicler was logging, shrunk and uploaded a few
+  // Screenshots taken while Compendium was logging, shrunk and uploaded a few
   // at a time. WoW names them WoWScrnShot_MMDDYY_HHMMSS.jpg in local time.
   async uploadScreenshots() {
     this.skipShots ??= new Set();
@@ -498,7 +498,7 @@ export class Machine {
     const manifest = await (await fetch('addon/manifest.json', { cache: 'no-store' })).json();
     const files = [];
     for (const name of manifest.files) {
-      const res = await fetch(`addon/Chronicler/${name}`, { cache: 'no-store' });
+      const res = await fetch(`addon/Compendium/${name}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`Could not download ${name}`);
       files.push({ name, text: await res.text() });
     }

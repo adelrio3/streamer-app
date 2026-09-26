@@ -126,7 +126,7 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence id="sequence-1">
-    <name>${xml(`Chronicler - ${stem(recording.name)}`)}</name>
+    <name>${xml(`Compendium - ${stem(recording.name)}`)}</name>
     <duration>${duration}</duration>
     ${rate}
     <timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode>

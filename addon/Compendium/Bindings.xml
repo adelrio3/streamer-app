@@ -1,20 +1,20 @@
 <Bindings>
 	<Binding name="CHRONICLER_MARK_LORE" header="CHRONICLER" category="ADDONS">
-		Chronicler_Mark("lore")
+		Compendium_Mark("lore")
 	</Binding>
 	<Binding name="CHRONICLER_MARK_SHOT" category="ADDONS">
-		Chronicler_Mark("shot")
+		Compendium_Mark("shot")
 	</Binding>
 	<Binding name="CHRONICLER_MARK_FUNNY" category="ADDONS">
-		Chronicler_Mark("funny")
+		Compendium_Mark("funny")
 	</Binding>
 	<Binding name="CHRONICLER_MARK_REDO" category="ADDONS">
-		Chronicler_Mark("redo")
+		Compendium_Mark("redo")
 	</Binding>
 	<Binding name="CHRONICLER_MARK" category="ADDONS">
-		Chronicler_Mark("mark")
+		Compendium_Mark("mark")
 	</Binding>
 	<Binding name="CHRONICLER_SYNC" category="ADDONS">
-		Chronicler_Sync()
+		Compendium_Sync()
 	</Binding>
 </Bindings>

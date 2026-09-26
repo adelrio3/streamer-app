@@ -1,7 +1,7 @@
--- Chronicler: records what happens while you play so the companion app can
+-- Compendium: records what happens while you play so the companion app can
 -- line it up with your OBS recordings.
 --
--- Everything is appended to ChroniclerDB.sessions[n].events. WoW writes
+-- Everything is appended to CompendiumDB.sessions[n].events. WoW writes
 -- SavedVariables to disk on logout and /reload, and the web app picks the
 -- file up from there. Nothing here talks to the network or the filesystem.
 --
@@ -14,7 +14,7 @@ local SCHEMA = 2
 local KEEP_DAYS = 30 -- sessions older than this are dropped at login
 local MARK_KINDS = { lore = "Lore beat", shot = "Beautiful shot", funny = "Funny", redo = "Redo", mark = "Mark" }
 
-BINDING_HEADER_CHRONICLER = "Chronicler"
+BINDING_HEADER_COMPENDIUM = "Compendium"
 BINDING_NAME_CHRONICLER_MARK_LORE = "Mark: lore beat"
 BINDING_NAME_CHRONICLER_MARK_SHOT = "Mark: beautiful shot"
 BINDING_NAME_CHRONICLER_MARK_FUNNY = "Mark: funny moment"
@@ -121,7 +121,7 @@ local function on(event, fn)
 	local list = listeners[event]
 	list[#list + 1] = fn
 end
--- Lua errors are kept in ChroniclerDB.errors (with their stack, the event
+-- Lua errors are kept in CompendiumDB.errors (with their stack, the event
 -- that was being handled, and where you were) so the web app can collect
 -- them for a bug report. Errors from other addons are caught too.
 local MAX_ERRORS = 60
@@ -131,9 +131,9 @@ local function addonVersion()
 	return ok and v or "?"
 end
 local function noteError(err, context, stack)
-	if type(ChroniclerDB) ~= "table" then return end
-	ChroniclerDB.errors = ChroniclerDB.errors or {}
-	local list = ChroniclerDB.errors
+	if type(CompendiumDB) ~= "table" then return end
+	CompendiumDB.errors = CompendiumDB.errors or {}
+	local list = CompendiumDB.errors
 	local msg = tostring(err)
 	local key = msg:sub(1, 200)
 	for i = 1, #list do
@@ -187,8 +187,8 @@ if seterrorhandler then
 end
 
 local function say(msg)
-	if not (ChroniclerDB and ChroniclerDB.settings.silent) then
-		print("|cffd4a017Chronicler|r " .. msg)
+	if not (CompendiumDB and CompendiumDB.settings.silent) then
+		print("|cff5a9bffCompendium|r " .. msg)
 	end
 end
 
@@ -273,7 +273,7 @@ local function startSession()
 		build = { version = version, build = build, date = buildDate, interface = interface },
 		events = {},
 	}
-	local sessions = ChroniclerDB.sessions
+	local sessions = CompendiumDB.sessions
 	sessions[#sessions + 1] = session
 	lastZone, lastSubZone = GetRealZoneText(), GetSubZoneText()
 	record("session_start")
@@ -285,16 +285,16 @@ end
 local function prune()
 	local cutoff = time() - KEEP_DAYS * 86400
 	local kept, dropped = {}, 0
-	for _, s in ipairs(ChroniclerDB.sessions) do
+	for _, s in ipairs(CompendiumDB.sessions) do
 		if (s.started or 0) >= cutoff then kept[#kept + 1] = s else dropped = dropped + 1 end
 	end
-	ChroniclerDB.sessions = kept
+	CompendiumDB.sessions = kept
 	return dropped
 end
 
--- Marks (key bindings and /chron mark) -----------------------------------
+-- Marks (key bindings and /comp mark) -----------------------------------
 
-function Chronicler_Mark(kind, note)
+function Compendium_Mark(kind, note)
 	kind = MARK_KINDS[kind] and kind or "mark"
 	local e = record("mark", { kind = kind, note = (note and note ~= "") and note or nil })
 	if e then say(MARK_KINDS[kind] .. " marked" .. (e.note and (": " .. e.note) or "")) end
@@ -322,7 +322,7 @@ local function buildFlash()
 	flash:Hide()
 end
 
-function Chronicler_Sync()
+function Compendium_Sync()
 	if not session then return end
 	if not flash then buildFlash() end
 	local t = now()
@@ -342,11 +342,11 @@ local handlers = {}
 
 function handlers.ADDON_LOADED(name)
 	if name ~= ADDON_NAME then return end
-	ChroniclerDB = ChroniclerDB or {}
-	ChroniclerDB.schema = SCHEMA
-	ChroniclerDB.sessions = ChroniclerDB.sessions or {}
-	ChroniclerDB.settings = ChroniclerDB.settings or { silent = false }
-	ChroniclerDB.items = ChroniclerDB.items or {}
+	CompendiumDB = CompendiumDB or {}
+	CompendiumDB.schema = SCHEMA
+	CompendiumDB.sessions = CompendiumDB.sessions or {}
+	CompendiumDB.settings = CompendiumDB.settings or { silent = false }
+	CompendiumDB.items = CompendiumDB.items or {}
 	buildPatterns()
 	ns.pruned = prune()
 end
@@ -354,9 +354,9 @@ end
 function handlers.PLAYER_LOGIN()
 	calibrate()
 	startSession()
-	print("|cffd4a017Chronicler|r is logging. |cffffffff/chron|r for status.")
+	print("|cff5a9bffCompendium|r is logging. |cffffffff/comp|r for status.")
 	if (ns.pruned or 0) > 0 then
-		print(string.format("|cffd4a017Chronicler|r removed %d sessions older than %d days from the addon (the web app keeps them).", ns.pruned, KEEP_DAYS))
+		print(string.format("|cff5a9bffCompendium|r removed %d sessions older than %d days from the addon (the web app keeps them).", ns.pruned, KEEP_DAYS))
 	end
 end
 
@@ -650,7 +650,7 @@ ns.sessionEndHooks = ns.sessionEndHooks or {}
 
 local function countEvents()
 	local sessions, events = 0, 0
-	for _, s in ipairs(ChroniclerDB.sessions) do
+	for _, s in ipairs(CompendiumDB.sessions) do
 		sessions = sessions + 1
 		events = events + #s.events
 	end
@@ -658,62 +658,62 @@ local function countEvents()
 end
 
 local function help()
-	print("|cffd4a017Chronicler|r commands:")
-	print("  /chron status - what has been logged")
-	print("  /chron mark [lore|shot|funny|redo] [note] - mark this moment")
-	print("  /chron note <text> - a mark with a note")
-	print("  /chron sync - sync flash and sound, for lining up recordings made on another PC")
-	print("  /chron silent - toggle chat feedback for marks")
-	print("  /chron errors [clear] - Lua errors caught so far (the web app collects them for a bug report)")
-	print("  /chron clear - forget all logged sessions (after the web app has uploaded them)")
+	print("|cff5a9bffCompendium|r commands:")
+	print("  /comp status - what has been logged")
+	print("  /comp mark [lore|shot|funny|redo] [note] - mark this moment")
+	print("  /comp note <text> - a mark with a note")
+	print("  /comp sync - sync flash and sound, for lining up recordings made on another PC")
+	print("  /comp silent - toggle chat feedback for marks")
+	print("  /comp errors [clear] - Lua errors caught so far (the web app collects them for a bug report)")
+	print("  /comp clear - forget all logged sessions (after the web app has uploaded them)")
 	for _, line in ipairs(ns.helpLines) do print("  " .. line) end
 end
 
-SLASH_CHRONICLER1 = "/chron"
-SLASH_CHRONICLER2 = "/chronicler"
-SlashCmdList.CHRONICLER = function(input)
+SLASH_COMPENDIUM1 = "/comp"
+SLASH_COMPENDIUM2 = "/compendium"
+SlashCmdList.COMPENDIUM = function(input)
 	local cmd, rest = (input or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = cmd:lower()
 	if cmd == "" or cmd == "status" then
 		local sessions, events = countEvents()
-		print(string.format("|cffd4a017Chronicler|r %d events this session, %d sessions / %d events stored. Clock %s.",
+		print(string.format("|cff5a9bffCompendium|r %d events this session, %d sessions / %d events stored. Clock %s.",
 			session and #session.events or 0, sessions, events, anchor and "calibrated" or "calibrating"))
 	elseif cmd == "mark" then
 		local kind, note = rest:match("^(%S*)%s*(.-)$")
 		if MARK_KINDS[kind:lower()] then
-			Chronicler_Mark(kind:lower(), note)
+			Compendium_Mark(kind:lower(), note)
 		else
-			Chronicler_Mark("mark", rest)
+			Compendium_Mark("mark", rest)
 		end
 	elseif cmd == "note" then
-		Chronicler_Mark("mark", rest)
+		Compendium_Mark("mark", rest)
 	elseif cmd == "sync" then
-		Chronicler_Sync()
+		Compendium_Sync()
 	elseif cmd == "errors" then
-		local list = ChroniclerDB.errors or {}
+		local list = CompendiumDB.errors or {}
 		if rest == "clear" then
-			ChroniclerDB.errors = {}
-			print("|cffd4a017Chronicler|r error list cleared.")
+			CompendiumDB.errors = {}
+			print("|cff5a9bffCompendium|r error list cleared.")
 		else
 			local total = 0
 			for _, e in ipairs(list) do total = total + (e.n or 1) end
-			print(string.format("|cffd4a017Chronicler|r %d Lua error%s (%d distinct). The web app collects them: This computer > Addon errors > Copy error dump.", total, total == 1 and "" or "s", #list))
+			print(string.format("|cff5a9bffCompendium|r %d Lua error%s (%d distinct). The web app collects them: This computer > Addon errors > Copy error dump.", total, total == 1 and "" or "s", #list))
 			for i = math.max(1, #list - 2), #list do
 				local e = list[i]
 				print(string.format("  %dx %s", e.n or 1, tostring(e.msg):sub(1, 160)))
 			end
 		end
 	elseif cmd == "silent" then
-		ChroniclerDB.settings.silent = not ChroniclerDB.settings.silent
-		print("|cffd4a017Chronicler|r mark feedback " .. (ChroniclerDB.settings.silent and "off" or "on"))
+		CompendiumDB.settings.silent = not CompendiumDB.settings.silent
+		print("|cff5a9bffCompendium|r mark feedback " .. (CompendiumDB.settings.silent and "off" or "on"))
 	elseif cmd == "clear" then
 		if rest == "confirm" then
-			ChroniclerDB.sessions = {}
+			CompendiumDB.sessions = {}
 			startSession()
-			print("|cffd4a017Chronicler|r cleared. Only make sure the companion ingested everything first.")
+			print("|cff5a9bffCompendium|r cleared. Only make sure the companion ingested everything first.")
 		else
 			local sessions, events = countEvents()
-			print(string.format("|cffd4a017Chronicler|r this deletes %d sessions / %d events from the addon. The companion keeps its own copy of everything it has ingested. Type /chron clear confirm to go ahead.", sessions, events))
+			print(string.format("|cff5a9bffCompendium|r this deletes %d sessions / %d events from the addon. The companion keeps its own copy of everything it has ingested. Type /comp clear confirm to go ahead.", sessions, events))
 		end
 	elseif ns.commands[cmd] then
 		ns.commands[cmd](rest)

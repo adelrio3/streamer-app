@@ -590,7 +590,7 @@ function runDemo() {
 
 (async () => {
   if (demo) { runDemo(); return; }
-  if (!token) { status('add ?token=… from Chronicler › Live overlay'); return; }
+  if (!token) { status('add ?token=… from Compendium › Live overlay'); return; }
   const cfg = await config();
   if (!cfg) { status('no Supabase connection (open the app on this computer once)'); return; }
   poll(cfg);

@@ -281,7 +281,7 @@ export function toGeoJSON({ name, mapId, zone, markers = [], routes = [] }) {
   return {
     type: 'FeatureCollection',
     name,
-    properties: { map_id: mapId, zone, coordinate_system: 'World of Warcraft map percent: x east 0-100, y south 0-100 (stored as 100 - y)', generated: new Date().toISOString(), source: 'Chronicler' },
+    properties: { map_id: mapId, zone, coordinate_system: 'World of Warcraft map percent: x east 0-100, y south 0-100 (stored as 100 - y)', generated: new Date().toISOString(), source: 'Compendium' },
     features,
   };
 }
