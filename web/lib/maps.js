@@ -228,3 +228,58 @@ export function questTrail(quest, sessions, tracks, moment) {
     minutes: end === Infinity ? null : Math.round((end - start) / 60),
   };
 }
+
+// Services (repair, innkeeper, trainer, flight master, vendor) nearest to a
+// point on a map, from where you have seen them. Distances are in map
+// percent; bearing is a compass direction.
+export function nearestServices(people, mapId, x, y, limit = 8) {
+  const out = [];
+  for (const n of people) {
+    const spots = n.spots.filter((sp) => sp.m === mapId);
+    if (!spots.length) continue;
+    const px = spots.reduce((a, sp) => a + sp.x, 0) / spots.length;
+    const py = spots.reduce((a, sp) => a + sp.y, 0) / spots.length;
+    const kinds = [];
+    if (n.vendor?.repair) kinds.push('repair');
+    if (n.vendor) kinds.push('vendor');
+    if (n.trainer) kinds.push('trainer');
+    if (n.taxi) kinds.push('flight');
+    if (n.roles.includes('innkeeper')) kinds.push('inn');
+    if (n.roles.includes('banker')) kinds.push('bank');
+    if (n.quests?.size) kinds.push('quests');
+    if (!kinds.length) continue;
+    const dx = px - x;
+    const dy = py - y;
+    out.push({ key: n.key, name: n.name, titles: n.titles, kinds, x: px, y: py, dist: Math.hypot(dx, dy * 1.5), bearing: bearing(dx, dy) });
+  }
+  return out.sort((a, b) => a.dist - b.dist).slice(0, limit);
+}
+
+function bearing(dx, dy) {
+  const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+  const angle = Math.atan2(dy, dx);
+  return dirs[Math.round(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+}
+
+// GeoJSON of pins and routes. WoW map percentages become "coordinates":
+// x as longitude, and 100 - y as latitude so the map is the right way up in
+// ordinary viewers. properties.coordinate_system says so.
+export function toGeoJSON({ name, mapId, zone, markers = [], routes = [] }) {
+  const pos = (x, y) => [Number(x.toFixed(3)), Number((100 - y).toFixed(3))];
+  const features = markers.map((mk) => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: pos(mk.x, mk.y) },
+    properties: { layer: mk.layer, label: mk.label, detail: mk.sub2 ?? null, subzone: mk.sub ?? null, count: mk.n ?? 1, time: mk.t ? new Date(mk.t * 1000).toISOString() : null, footage: mk.footage ? `${mk.footage.rec} @ ${mk.footage.offset.toFixed(2)}s` : null, wow_x: mk.x, wow_y: mk.y },
+  }));
+  routes.forEach((r, i) => features.push({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: r.points.map(([x, y]) => pos(x, y)) },
+    properties: { layer: 'route', segment: i + 1, character: r.char ?? null, points: r.points.length, start: r.points[0]?.[2] ? new Date(r.points[0][2] * 1000).toISOString() : null },
+  }));
+  return {
+    type: 'FeatureCollection',
+    name,
+    properties: { map_id: mapId, zone, coordinate_system: 'World of Warcraft map percent: x east 0-100, y south 0-100 (stored as 100 - y)', generated: new Date().toISOString(), source: 'Chronicler' },
+    features,
+  };
+}

@@ -144,6 +144,31 @@ export class CloudStore {
     check(await this.client.from('settings').upsert({ user_id: this.userId, data, updated_at: this.nowIso() }, { onConflict: 'user_id' }));
   }
 
+  // Deletes everything of yours: every table row and every uploaded file
+  // (screenshots and, unless keepMaps, your map images). Settings keep only
+  // what is passed in `keepSettings`.
+  async deleteAll({ keepMaps = true } = {}) {
+    for (const table of ['tracks', 'screenshots', 'items', 'clock_samples', 'recordings', 'sessions']) {
+      const { error } = await this.client.from(table).delete().eq('user_id', this.userId);
+      if (error && !/does not exist|schema cache/i.test(error.message)) throw new Error(error.message);
+    }
+    const bucket = this.client.storage.from('screenshots');
+    const folders = keepMaps ? [''] : ['', 'maps'];
+    for (const folder of folders) {
+      const prefix = folder ? `${this.userId}/${folder}` : this.userId;
+      for (let offset = 0; ; offset += 100) {
+        const { data, error } = await bucket.list(prefix, { limit: 100, offset });
+        if (error) throw new Error(error.message);
+        const files = (data || []).filter((f) => f.id || f.metadata).map((f) => `${prefix}/${f.name}`);
+        if (files.length) {
+          const { error: err2 } = await bucket.remove(files);
+          if (err2) throw new Error(err2.message);
+        }
+        if (!data || data.length < 100) break;
+      }
+    }
+  }
+
   // Server clock in epoch ms.
   async serverTime() {
     const { data, error } = await this.client.rpc('server_time');

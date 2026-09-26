@@ -66,3 +66,32 @@ test('quest trail: pickup, kills while active, objective progress, turn-in', asy
   assert.equal(heat[0].w, 1);
   assert.equal(heatCells([{ x: 1, y: 1 }, { x: 1, y: 1 }, { x: 50, y: 50 }], 4)[1].w, 0.5);
 });
+
+test('nearest services, GeoJSON and loose ends', async () => {
+  const { nearestServices, toGeoJSON } = await import('../web/lib/maps.js');
+  const { looseEnds } = await import('../web/lib/coverage.js');
+  const world = buildWorld(log.sessions, log.items, moment);
+  const codex = buildCodex(log.sessions);
+  // Danil stands at (46, 42), Willem at (48, 42): from (40, 42) Danil is closer.
+  const near = nearestServices(world.people, 1429, 40, 42);
+  assert.equal(near[0].name, 'Brother Danil');
+  assert.deepEqual(near[0].kinds, ['repair', 'vendor', 'trainer', 'flight']);
+  assert.equal(near[0].bearing, 'E');
+  assert.ok(near[0].dist > 5 && near[0].dist < 7);
+  assert.equal(nearestServices(world.people, 1429, 60, 42)[0].name, 'Deputy Willem');
+  assert.ok(near.some((n) => n.name === 'Deputy Willem' && n.kinds.includes('quests')));
+
+  const maps = buildMaps(log.sessions, world, codex, moment);
+  const geo = toGeoJSON({ name: 'Elwynn', mapId: 1429, zone: 'Elwynn Forest', markers: cluster(maps[0].markers), routes: routesFor(1429, log.sessions, new Map()) });
+  assert.equal(geo.type, 'FeatureCollection');
+  const line = geo.features.find((f) => f.geometry.type === 'LineString');
+  assert.ok(line && line.geometry.coordinates.length >= 3);
+  const point = geo.features.find((f) => f.geometry.type === 'Point');
+  assert.equal(point.geometry.coordinates[1], Number((100 - point.properties.wow_y).toFixed(3)), 'y is flipped so the map is upright');
+
+  const le = looseEnds('Elwynn Forest', codex, world);
+  assert.deepEqual(le.quests.map((q) => q.title), [], 'the one quest was turned in');
+  assert.ok(le.creatures.some((n) => n.name === 'Hogger'), 'seen but never killed');
+  assert.ok(le.rares.some((n) => n.name === 'Mother Fang'));
+  assert.equal(le.total, le.quests.length + le.creatures.length + le.shops.length + le.trainers.length);
+});

@@ -15,7 +15,8 @@ import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
 import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
-import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail } from './lib/maps.js';
+import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON } from './lib/maps.js';
+import { looseEnds } from './lib/coverage.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -24,6 +25,7 @@ const CATS = ['quest', 'lore', 'combat', 'loot', 'mark', 'travel', 'progress', '
 const CAT_NAMES = { quest: 'Quests', lore: 'Lore', combat: 'Combat', loot: 'Loot', mark: 'Marks', travel: 'Travel', progress: 'Progress', world: 'NPCs seen', economy: 'Vendors & gold', character: 'Character', social: 'Social' };
 // Busy categories start switched off in timelines and exports.
 const QUIET_CATS = new Set(['travel', 'world', 'economy', 'character', 'social']);
+const CLASS_COLORS = { WARRIOR: '#c69b6d', PALADIN: '#f48cba', HUNTER: '#aad372', ROGUE: '#fff468', PRIEST: '#ffffff', SHAMAN: '#0070dd', MAGE: '#3fc7eb', WARLOCK: '#8788ee', DRUID: '#ff7c0a', DEATHKNIGHT: '#c41e3a', MONK: '#00ff98', DEMONHUNTER: '#a330c9', EVOKER: '#33937f' };
 const REACTION = { 1: 'Hated', 2: 'Hostile', 3: 'Unfriendly', 4: 'Neutral', 5: 'Friendly', 6: 'Honored', 7: 'Revered', 8: 'Exalted' };
 const MARK_NAMES = { lore: 'Lore beat', shot: 'Beautiful shot', funny: 'Funny', redo: 'Redo', mark: 'Mark' };
 const WOWHEAD = { classic: 'https://www.wowhead.com/classic', tbc: 'https://www.wowhead.com/tbc', wrath: 'https://www.wowhead.com/wotlk', cata: 'https://www.wowhead.com/cata', mop: 'https://www.wowhead.com/mop-classic' };
@@ -166,7 +168,7 @@ function lore(text) {
 }
 
 // A sortable, searchable table. columns: { label, value(row), html(row), num }
-function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, desc = false, limit = 400, empty = 'Nothing here yet.' } = {}) {
+function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, desc = false, limit = 400, empty = 'Nothing here yet.', card = null } = {}) {
   const id = `t${Math.random().toString(36).slice(2, 8)}`;
   let state = { q: '', sort, desc, limit };
   const render = () => {
@@ -184,17 +186,28 @@ function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, des
     const el = document.getElementById(id);
     if (!el) return;
     el.querySelector('.count').textContent = `${list.length} of ${rows.length}`;
-    el.querySelector('thead').innerHTML = `<tr>${columns.map((c, i) => `<th class="${c.num ? 'num' : ''}" data-i="${i}">${esc(c.label)}${i === state.sort ? (state.desc ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr>`;
-    el.querySelector('tbody').innerHTML = shown.length
-      ? shown.map((r) => `<tr>${columns.map((c) => `<td class="${c.num ? 'num' : ''}">${c.html ? c.html(r) : esc(c.value(r))}</td>`).join('')}</tr>`).join('')
-      : `<tr><td colspan="${columns.length}" class="muted">${esc(empty)}</td></tr>`;
+    if (card) {
+      // Card mode: the sort menu replaces the column headers.
+      el.querySelector('.sorter').innerHTML = columns.map((c, i) => `<option value="${i}" ${i === state.sort ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+      el.querySelector('.cardgrid').innerHTML = shown.length
+        ? shown.map((r, i) => `<div class="hcard" style="--i:${Math.min(i, 30)}">${card(r)}</div>`).join('')
+        : `<div class="empty">${esc(empty)}</div>`;
+    } else {
+      el.querySelector('thead').innerHTML = `<tr>${columns.map((c, i) => `<th class="${c.num ? 'num' : ''}" data-i="${i}">${esc(c.label)}${i === state.sort ? (state.desc ? ' ▾' : ' ▴') : ''}</th>`).join('')}</tr>`;
+      el.querySelector('tbody').innerHTML = shown.length
+        ? shown.map((r, i) => `<tr style="--i:${Math.min(i, 40)}">${columns.map((c) => `<td class="${c.num ? 'num' : ''}">${c.html ? c.html(r) : esc(c.value(r))}</td>`).join('')}</tr>`).join('')
+        : `<tr><td colspan="${columns.length}" class="muted">${esc(empty)}</td></tr>`;
+    }
     el.querySelector('.more').hidden = list.length <= state.limit;
+    setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 30);
   };
   setTimeout(() => {
     const el = document.getElementById(id);
     if (!el) return;
     el.querySelector('input').addEventListener('input', (ev) => { state.q = ev.target.value; render(); });
-    el.querySelector('thead').addEventListener('click', (ev) => {
+    el.querySelector('.sorter')?.addEventListener('change', (ev) => { state = { ...state, sort: Number(ev.target.value) }; render(); });
+    el.querySelector('.dir')?.addEventListener('click', () => { state = { ...state, desc: !state.desc }; render(); });
+    el.querySelector('thead')?.addEventListener('click', (ev) => {
       const i = Number(ev.target.closest('th')?.dataset.i);
       if (Number.isNaN(i)) return;
       state = { ...state, desc: state.sort === i ? !state.desc : Boolean(columns[i].num), sort: i };
@@ -203,6 +216,10 @@ function table(rows, columns, { search = (r) => JSON.stringify(r), sort = 0, des
     el.querySelector('.more').addEventListener('click', () => { state.limit += 400; render(); });
     render();
   });
+  if (card) {
+    return `<div id="${id}"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span><span style="margin-left:auto" class="row"><span class="muted small">Sort</span><select class="sorter"></select><button class="ghost dir" title="Reverse order">⇅</button></span></div>
+      <div class="cardgrid"></div><p><button class="more" hidden>Show more</button></p></div>`;
+  }
   return `<div id="${id}"><div class="toolbar"><input type="search" placeholder="Search…"><span class="muted small count"></span></div>
     <div class="scroll"><table><thead></thead><tbody></tbody></table></div><p><button class="more" hidden>Show more</button></p></div>`;
 }
@@ -261,6 +278,7 @@ pages[''] = async () => {
   return `
     ${needsSetup ? `<div class="notice">This computer (<b>${esc(m.name)}</b>) isn't fully set up yet. <a href="#/setup">Open This computer</a> to finish.</div>` : ''}
     ${pageHead('Chronicle', 'Overview', 'What you have seen, done and recorded so far.')}
+    ${activityChart()}
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
       ${card(t.kills, 'creatures slain', '#/bestiary')}
@@ -285,6 +303,41 @@ pages[''] = async () => {
     </div>`;
 };
 
+// Events per day for the last five weeks, as thin gold bars. One series, so
+// the title names it and no legend is needed; each bar carries a tooltip.
+function activityChart() {
+  const days = 35;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const counts = new Array(days).fill(0);
+  for (const s of state.sessions) {
+    for (const e of s.events) {
+      const d = Math.floor((today.getTime() - new Date(e.t * 1000).setHours(0, 0, 0, 0)) / 86400000);
+      if (d >= 0 && d < days) counts[days - 1 - d]++;
+    }
+  }
+  const max = Math.max(1, ...counts);
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (!total) return '';
+  const W = 700;
+  const H = 72;
+  const gap = 2;
+  const bw = (W - gap * (days - 1)) / days;
+  const busiest = counts.indexOf(max);
+  const bars = counts.map((n, i) => {
+    const h = n ? Math.max(3, (n / max) * (H - 18)) : 1.5;
+    const x = i * (bw + gap);
+    const date = new Date(today.getTime() - (days - 1 - i) * 86400000);
+    return `<g class="bar" style="--i:${i}"><title>${esc(date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}: ${n} events</title>
+      <rect x="${x.toFixed(1)}" y="${(H - 4 - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${n ? 'var(--gold)' : 'var(--line-2)'}" opacity="${n ? (0.55 + 0.45 * n / max).toFixed(2) : 1}"/>
+      ${i === busiest ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - 8 - h).toFixed(1)}" text-anchor="middle" class="bar-label">${n}</text>` : ''}
+      <rect x="${x.toFixed(1)}" y="0" width="${(bw + gap).toFixed(1)}" height="${H}" fill="transparent"/></g>`;
+  }).join('');
+  return `<div class="panel activity"><div class="row spread"><h3>Activity, last five weeks</h3><span class="muted small">${total.toLocaleString()} events logged</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Events per day for the last ${days} days">${bars}</svg>
+    <div class="row spread muted small"><span>${esc(new Date(today.getTime() - (days - 1) * 86400000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span><span>today</span></div></div>`;
+}
+
 // The latest milestones across every character.
 function activityFeed(limit) {
   const rows = [];
@@ -295,7 +348,25 @@ function activityFeed(limit) {
 }
 
 function card(n, label, href) {
-  return `<a class="card" href="${href}"><div class="num">${Number(n).toLocaleString()}</div><div class="lbl">${esc(label)}</div></a>`;
+  return `<a class="card" href="${href}"><div class="num" data-n="${Number(n) || 0}">${Number(n).toLocaleString()}</div><div class="lbl">${esc(label)}</div></a>`;
+}
+
+// Numbers in stat cards count up when a page appears.
+function animateNumbers(root) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const el of root.querySelectorAll('.num[data-n]')) {
+    const target = Number(el.dataset.n);
+    if (!target) continue;
+    const start = performance.now();
+    const dur = 650 + Math.min(600, Math.log10(target + 1) * 150);
+    const step = (now) => {
+      const k = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      el.textContent = Math.round(target * eased).toLocaleString();
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 }
 
 pages.quests = async () => {
@@ -349,10 +420,13 @@ function questWhere(q) {
     ...q.turnedIn.flatMap((mo) => pin(mo, 'quest', `Turned in: ${q.title}`, { key: 'turnin' })),
   ];
   const zoneName = d.maps.find((m) => m.id === trail.mapId)?.zone ?? `Map ${trail.mapId}`;
-  setTimeout(() => wireMap('questMap', trail.mapId, markers, { routes: trail.routes, heat: { density: heatCells(trail.killSpots, 3) }, hidden: new Set(['density']) }));
+  setTimeout(() => {
+    wireMap('questMap', trail.mapId, markers, { routes: trail.routes, heat: { density: heatCells(trail.killSpots, 3) }, hidden: new Set(['density']) });
+    document.getElementById('questGeo')?.addEventListener('click', () => download(`${(q.title ?? 'quest').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: q.title, mapId: trail.mapId, zone: zoneName, markers, routes: trail.routes }), null, 1)));
+  });
   const at = (mo) => (mo?.x != null ? `${coords(mo.x, mo.y)}${mo.sz ? ` <span class="muted small">${esc(mo.sz)}</span>` : ''}` : '<span class="muted small">no position</span>');
   return `<h2>Where</h2>
-    ${facts([`<a href="#/map/${trail.mapId}">${esc(zoneName)}</a>`, q.accepted[0] ? `picked up at ${at(q.accepted[0])}` : q.offered[0] ? `offered at ${at(q.offered[0])}` : '', q.turnedIn[0] ? `turned in at ${at(q.turnedIn[0])}` : '', trail.minutes != null ? `${trail.minutes} min from pickup to turn-in` : ''])}
+    ${facts([`<a href="#/map/${trail.mapId}">${esc(zoneName)}</a>`, q.accepted[0] ? `picked up at ${at(q.accepted[0])}` : q.offered[0] ? `offered at ${at(q.offered[0])}` : '', q.turnedIn[0] ? `turned in at ${at(q.turnedIn[0])}` : '', trail.minutes != null ? `${trail.minutes} min from pickup to turn-in` : '', '<button class="ghost small" id="questGeo">Download GeoJSON</button>'])}
     <div class="filters" id="mapLayers">${['quest', 'creature', 'mark', 'route', 'density'].map((k) => `<label><input type="checkbox" value="${k}" ${k === 'density' ? '' : 'checked'}><span class="cat" style="background:${LAYERS[k].color}"></span>${k === 'mark' ? 'Objective progress' : k === 'creature' ? 'Kills while active' : k === 'density' ? 'Kill density' : LAYERS[k].name}</label>`).join('')}</div>
     <div class="map-wrap"><div class="map" id="questMap"></div><div class="map-info panel" id="mapInfo">
       ${trail.kills.length ? `<h3>Killed while active</h3>${trail.kills.slice(0, 12).map((k) => `<div class="row spread"><a href="#/npc/${enc(k.npcId ? `n${k.npcId}` : `s${k.name}`)}">${esc(k.name)}</a><b>${k.n}</b></div>`).join('')}` : '<p class="muted">Click a pin.</p>'}
@@ -575,7 +649,7 @@ pages.item = async (id) => {
 
 function charCard(c) {
   const i = c.info;
-  return `<a class="card" href="#/character/${enc(c.key)}"><div class="num">${esc(c.name)}</div>
+  return `<a class="card charcard" href="#/character/${enc(c.key)}" style="--class:${CLASS_COLORS[i.classToken] ?? 'var(--gold)'}"><div class="num">${esc(c.name)}</div>
     <div class="lbl">Level ${c.level} ${esc(i.race ?? '')} ${esc(i.class ?? '')} · ${esc(c.realm ?? '')}</div>
     <div class="lbl">${c.questsDone} quests · ${c.recordings.length} recordings · ${duration(c.playSeconds)} logged</div></a>`;
 }
@@ -595,9 +669,22 @@ pages.character = async (key) => {
   const shots = state.screenshots.filter((sh) => c.sessions.some((sid) => sessionCovers(sid, sh)));
   if (shots.length) setTimeout(() => loadShots(shots));
   const moneyNow = c.money.at(-1)?.total ?? i.money;
+  const color = CLASS_COLORS[i.classToken] ?? 'var(--gold)';
+  const xpPct = i.xpMax ? Math.min(1, (i.xp ?? 0) / i.xpMax) : 0;
+  const R = 34;
+  const circ = 2 * Math.PI * R;
   return `${crumb('#/characters', 'Characters')}
-    ${pageHead(`Level ${c.level} ${i.race ?? ''} ${i.class ?? ''}`, `${esc(c.name)} <span class="muted" style="font-size:.5em;font-family:var(--sans);font-weight:400">${esc(c.realm ?? '')}</span>`)}
-    ${facts([esc(i.faction ?? ''), i.guild ? `&lt;${esc(i.guild)}&gt;` : '', i.bind ? `Hearth: ${esc(i.bind)}` : '', moneyNow != null ? money(moneyNow) : ''])}
+    <header class="page hero" style="--class:${color}">
+      <div class="ring" title="${i.xpMax ? `${(i.xp ?? 0).toLocaleString()} / ${i.xpMax.toLocaleString()} XP into level ${c.level}` : `Level ${c.level}`}">
+        <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="${R}" class="ring-bg"/><circle cx="40" cy="40" r="${R}" class="ring-fg" style="stroke-dasharray:${circ.toFixed(1)};--to:${(circ * (1 - xpPct)).toFixed(1)}"/></svg>
+        <div class="ring-num">${c.level}</div>
+      </div>
+      <div>
+        <p class="kicker">${esc(i.race ?? '')} ${esc(i.class ?? '')}${i.faction ? ` · ${esc(i.faction)}` : ''}</p>
+        <h1>${esc(c.name)} <span class="muted" style="font-size:.5em;font-family:var(--sans);font-weight:400">${esc(c.realm ?? '')}</span></h1>
+        ${facts([i.guild ? `&lt;${esc(i.guild)}&gt;` : '', i.bind ? `Hearth: ${esc(i.bind)}` : '', moneyNow != null ? money(moneyNow) : '', i.xpMax ? `${Math.round(xpPct * 100)}% into level ${c.level}` : ''])}
+      </div>
+    </header>
     <div class="cards">
       ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'kills', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
       ${card(c.zones.length, 'zones visited', '#/zones')}${card(c.recordings.length, 'recordings', '#/recordings')}${card(Math.round(c.playSeconds / 3600), 'hours logged', '#/sessions')}
@@ -737,6 +824,8 @@ pages.footage = async (_, params) => {
 
 // Highlights ----------------------------------------------------------------
 
+const HL_COLORS = { close: '#e06a5f', death: '#ff4d4d', rare: '#b48cf0', elite: '#e0b95a', brawl: '#c9a27a', loot: '#0070dd', level: '#79c07a', discovery: '#5cc8a8', mark: '#6aa8e8' };
+
 pages.highlights = async (_, params) => {
   const { world } = derived();
   const all = findHighlights(derived().sessions, derived().moment, (id) => world.byItem.get(id)?.quality ?? null);
@@ -748,13 +837,16 @@ pages.highlights = async (_, params) => {
   return `${pageHead('Footage', 'Highlights', 'Moments worth a short, found automatically: close calls, deaths, rares, elite fights, great loot, level-ups, discoveries and your marks.')}
     ${tabs}
     ${table(list, [
-      { label: 'Footage', value: (h) => h.footage?.offset ?? -1, html: (h) => play(h) },
-      { label: 'What', value: (h) => HIGHLIGHT_KINDS[h.kind], html: (h) => `<span class="chip">${esc(HIGHLIGHT_KINDS[h.kind])}</span>` },
-      { label: 'Moment', value: (h) => h.label },
-      { label: 'Where', value: (h) => h.zone ?? '' },
+      { label: 'Newest', value: (h) => h.t },
+      { label: 'Kind', value: (h) => HIGHLIGHT_KINDS[h.kind] },
+      { label: 'Zone', value: (h) => h.zone ?? '' },
       { label: 'Character', value: (h) => h.char ?? '' },
-      { label: 'When', value: (h) => h.t, html: (h) => `<span class="muted">${esc(when(h.t))}</span>` },
-    ], { sort: 5, desc: true, search: (h) => `${h.label} ${h.zone} ${h.char} ${h.kind}`, empty: 'Nothing yet.' })}`;
+    ], {
+      sort: 0, desc: true, search: (h) => `${h.label} ${h.zone} ${h.char} ${h.kind}`, empty: 'Nothing yet. Highlights appear as you play: close calls, deaths, rares, elite fights, great loot, level-ups, discoveries and marks.',
+      card: (h) => `<div class="hcard-top" style="--k:${HL_COLORS[h.kind] ?? 'var(--gold)'}"><span class="chip">${esc(HIGHLIGHT_KINDS[h.kind])}</span><span class="muted small">${esc(when(h.t))}</span></div>
+        <div class="hcard-body"><b>${esc(h.label)}</b><div class="muted small">${esc([h.zone, h.char].filter(Boolean).join(' · '))}</div></div>
+        <div class="hcard-foot">${h.footage ? `<a class="btn primary play-big" href="#/recording/${h.footage.rec}?t=${h.footage.offset.toFixed(2)}">▶ ${tc(h.footage.offset)}</a>` : '<span class="muted small">no footage</span>'}${h.m ? `<a class="ghost btn small" href="#/map/${h.m}">map</a>` : ''}</div>`,
+    })}`;
 };
 
 // Locations: maps with everything pinned -------------------------------------
@@ -784,17 +876,33 @@ pages.map = async (id, params) => {
   const hidden = new Set((params.get('hide') || 'loot,lore,time').split(',').filter(Boolean));
   const timePoints = routesFor(m.id, derived().sessions, state.tracks).flatMap((r) => r.points.map(([x, y]) => ({ x, y })));
   const heat = { density: heatCells(m.markers.filter((mk) => mk.layer === 'creature'), 4), time: heatCells(timePoints, 3) };
-  setTimeout(() => wireMap('zoneMap', m.id, m.markers, { routes: true, hidden, heat }));
+  const services = derived().world.people;
+  setTimeout(() => {
+    wireMap('zoneMap', m.id, m.markers, {
+      routes: true, hidden, heat,
+      onBackground: (x, y) => {
+        const near = nearestServices(services, m.id, x, y);
+        const KIND = { repair: 'Repair', vendor: 'Vendor', trainer: 'Trainer', flight: 'Flight master', inn: 'Innkeeper', bank: 'Bank', quests: 'Quests' };
+        document.getElementById('mapInfo').innerHTML = `<h3>Nearest to ${coords(x, y)}</h3>
+          ${near.length ? near.map((n) => `<div class="row spread near"><span>${npcLink(n.key, n.name)}<br><span class="muted small">${n.kinds.map((k) => KIND[k]).join(' · ')}</span></span><span class="muted small" style="text-align:right">${n.dist.toFixed(1)}% ${n.bearing}<br>${coords(n.x, n.y)}</span></div>`).join('') : '<p class="muted small">No vendors, trainers, innkeepers or flight masters seen on this map yet.</p>'}
+          <p class="muted small" style="margin-top:8px">Click a pin for its moments, or anywhere else for what is nearby.</p>`;
+      },
+    });
+    document.getElementById('geojson')?.addEventListener('click', () => {
+      const routes = routesFor(m.id, derived().sessions, state.tracks);
+      download(`${(m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: m.zone ?? `Map ${m.id}`, mapId: m.id, zone: m.zone, markers: cluster(m.markers), routes }), null, 1));
+    });
+  });
   const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : m.counts[k]);
   return `${crumb('#/locations', 'Locations')}
-    ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
+    ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
     <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${m.counts[k] ? ` <span class="muted">${m.counts[k]}</span>` : ''}</label>`).join('')}</div>
-    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin.</p></div></div>`;
+    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.</p></div></div>`;
 };
 
 // Draws a map: the image, the route from the position track, and clustered
 // pins. Clicking a pin shows its moments in #mapInfo (when present).
-async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set(), heat = {} } = {}) {
+async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set(), heat = {}, onBackground = null } = {}) {
   const el = document.getElementById(elId);
   if (!el) return null;
   const own = state.settings.maps?.[mapId];
@@ -814,7 +922,7 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
   el.innerHTML = `<img src="${src}" alt="" draggable="false" referrerpolicy="no-referrer" crossorigin="anonymous">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none">${heatSvg}${routeLines.map((r) => `<path d="${path(r)}" class="route" vector-effect="non-scaling-stroke"/>`).join('')}</svg>
     <div class="you" hidden></div>
-    ${pins.map((p, i) => `<a class="pin layer-${p.layer}" style="left:${p.x}%;top:${p.y}%;--c:${LAYERS[p.layer]?.color ?? '#fff'}" data-i="${i}" href="${p.href ?? '#'}" title="${esc(p.label)}${p.n > 1 ? ` (${p.n})` : ''}">${p.n > 1 ? `<b>${p.n}</b>` : ''}</a>`).join('')}
+    ${pins.map((p, i) => `<a class="pin layer-${p.layer}" style="left:${p.x}%;top:${p.y}%;--c:${LAYERS[p.layer]?.color ?? '#fff'};--i:${Math.min(i, 60)}" data-i="${i}" href="${p.href ?? '#'}" title="${esc(p.label)}${p.n > 1 ? ` (${p.n})` : ''}">${p.n > 1 ? `<b>${p.n}</b>` : ''}</a>`).join('')}
     <div class="map-legend muted small">${pins.length} pins${routeLines.length ? ` · ${routeLines.length} route segment${routeLines.length === 1 ? '' : 's'}` : ''} · coordinates are the game's map percentages</div>
     <div class="map-missing" hidden><b>No map image for this zone yet.</b><br>Open the map in game (M), take a screenshot, crop it to just the map, and use <i>Use my own map image</i> above. Pins are still placed correctly.</div>`;
   const img = el.querySelector('img');
@@ -829,7 +937,14 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
   const info = document.getElementById('mapInfo');
   el.addEventListener('click', (ev) => {
     const pin = ev.target.closest('.pin');
-    if (!pin) return;
+    if (!pin) {
+      if (!onBackground) return;
+      const rect = img.getBoundingClientRect();
+      const x = ((ev.clientX - rect.left) / rect.width) * 100;
+      const y = ((ev.clientY - rect.top) / rect.height) * 100;
+      if (x >= 0 && x <= 100 && y >= 0 && y <= 100) onBackground(x, y);
+      return;
+    }
     const p = pins[Number(pin.dataset.i)];
     if (!info) return;
     ev.preventDefault();
@@ -1013,8 +1128,9 @@ pages.zones = async () => {
       { label: 'Quests seen', value: (z) => z.quests.length, num: true },
       { label: 'Kills', value: (z) => z.kills, num: true },
       { label: 'Subzones', value: (z) => z.subzones.length, num: true },
+      { label: 'Loose ends', value: (z) => looseEnds(z.name, c, derived().world).total, html: (z) => { const n = looseEnds(z.name, c, derived().world).total; return n ? `<a class="chip active" href="#/zone/${enc(z.name)}#loose">${n}</a>` : '<span class="chip done">clear</span>'; }, num: true },
       { label: 'First visit', value: (z) => z.first.t, html: (z) => play(z.first) },
-    ], { search: (z) => `${z.name} ${z.subzones.join(' ')}`, sort: 5 })}`;
+    ], { search: (z) => `${z.name} ${z.subzones.join(' ')}`, sort: 6 })}`;
 };
 
 pages.zone = async (name) => {
@@ -1036,12 +1152,28 @@ pages.zone = async (name) => {
       { label: 'Accepted', value: (q) => q.accepted[0]?.t ?? 0, html: (q) => (q.accepted[0] ? play(q.accepted[0]) : '') },
       { label: 'Turned in', value: (q) => q.turnedIn[0]?.t ?? 0, html: (q) => (q.turnedIn[0] ? play(q.turnedIn[0]) : '') },
     ], { sort: 2 })}
+    ${looseEndsSection(name, c, world)}
     <h2>Creatures</h2>
     <p>${creatures.map((k) => `<a href="#/npc/${enc(k.key)}">${esc(k.name)}</a> <span class="muted">${k.kills}</span>`).join(' · ') || '<span class="muted">None</span>'}</p>
     <h2>People</h2>
     <p>${people.map((k) => `<a href="#/npc/${enc(k.key)}">${esc(k.name)}</a>${k.titles[0] ? ` <span class="muted small">&lt;${esc(k.titles[0])}&gt;</span>` : ''}`).join(' · ') || '<span class="muted">None</span>'}</p>
     ${marks.length ? `<h2>Marks</h2><table><tbody>${marks.map((m) => `<tr><td>${play(m)}</td><td>${esc(MARK_NAMES[m.kind])}</td><td>${esc(m.note ?? '')}</td></tr>`).join('')}</tbody></table>` : ''}`;
 };
+
+// What you came across in a zone but did not finish.
+function looseEndsSection(zoneName, c, world) {
+  const le = looseEnds(zoneName, c, world);
+  const list = (title, items) => (items.length ? `<div class="panel loose"><h3>${title} <span class="muted">${items.length}</span></h3><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : '');
+  return `<h2 id="loose">Loose ends ${le.total ? `<span class="chip active">${le.total}</span>` : '<span class="chip done">all clear</span>'}</h2>
+    <p class="muted">Things you came across here but did not finish. Built only from what you saw, so it never nags you about quests you have not found yet.</p>
+    ${le.total ? `<div class="grid3">
+      ${list('Quests not turned in', le.quests.map((q) => `<a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span>${q.giver ? ` <span class="muted small">from ${esc(q.giver.name)}</span>` : ''}`))}
+      ${list('Rares seen, not killed', le.rares.map((n) => `${npcLink(n.key, n.name)} <span class="muted small">seen ${n.sightings}×</span>`))}
+      ${list('Creatures met, never killed', le.creatures.filter((n) => !le.rares.includes(n)).slice(0, 40).map((n) => `${npcLink(n.key, n.name)} <span class="muted small">${levelText(n) ? `lvl ${levelText(n)} · ` : ''}seen ${n.sightings}×</span>`))}
+      ${list('Shops seen, never opened', le.shops.map((n) => `${npcLink(n.key, n.name)} <span class="muted small">&lt;${esc(n.titles[0])}&gt;</span>`))}
+      ${list('Trainers seen, never opened', le.trainers.map((n) => `${npcLink(n.key, n.name)} <span class="muted small">&lt;${esc(n.titles[0])}&gt;</span>`))}
+    </div>` : ''}`;
+}
 
 pages.marks = async () => {
   const c = await codex();
@@ -1319,7 +1451,7 @@ async function wirePlayer(r, start) {
     if (local) note.textContent = 'Chrome cannot play this file. Set OBS to record MP4 (Settings › Output › Recording Format), or remux it (File › Remux Recordings). Timestamps and exports still work.';
   });
   wireSync(r, video);
-  const follow = await recordingMap(r);
+  const follow = await recordingMap(r, video);
   const shownCats = () => new Set([...document.querySelectorAll('#tlCats input:checked')].map((i) => i.value));
   const draw = () => {
     const cats = shownCats();
@@ -1357,7 +1489,7 @@ async function wirePlayer(r, start) {
 
 // A small map beside the video: the route during this recording and a marker
 // that follows playback. Returns a function (seconds) => void, or null.
-async function recordingMap(r) {
+async function recordingMap(r, video) {
   const el = document.getElementById('recMap');
   if (!el) return null;
   if (!state.tracks && state.schema2) { try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); } }
@@ -1377,8 +1509,20 @@ async function recordingMap(r) {
   const mapId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
   const onMap = points.filter((p) => p.map === mapId);
   el.hidden = false;
-  const api = await wireMap('recMap', mapId, [], { routes: [{ points: onMap.map((p) => [p.x, p.y, p.t, p.flags]) }] });
+  const api = await wireMap('recMap', mapId, [], {
+    routes: [{ points: onMap.map((p) => [p.x, p.y, p.t, p.flags]) }],
+    // Click the route to jump the video to when you were there.
+    onBackground: (x, y) => {
+      let best = null;
+      for (const p of onMap) {
+        const d = Math.hypot(p.x - x, (p.y - y) * 1.5);
+        if (!best || d < best.d) best = { d, p };
+      }
+      if (best && best.d < 6 && video) { video.currentTime = Math.max(0, best.p.offset); video.play().catch(() => {}); }
+    },
+  });
   if (!api) return null;
+  el.title = 'Click the route to jump the video there';
   return (seconds) => {
     // Nearest track point at or before this second, if it is close enough.
     let lo = 0;
@@ -1467,7 +1611,11 @@ pages.setup = async () => {
         <label><span>Caption length, seconds</span><input type="number" step="0.5" name="cueSeconds" value="${s.cueSeconds}"></label>
       </div>
       <button type="submit">Save</button></form>
-    <div class="panel"><h3>Account</h3><p class="small">Logged in as <b>${esc(state.user.email)}</b>. Clock: ${m.offset == null ? 'measuring…' : `${(m.offset / 1000).toFixed(3)}s from the server (±${Math.round((m.rtt ?? 0) / 2)} ms)`}.</p><button data-act="logout">Log out</button></div>`;
+    <div class="panel"><h3>Account</h3><p class="small">Logged in as <b>${esc(state.user.email)}</b>. Clock: ${m.offset == null ? 'measuring…' : `${(m.offset / 1000).toFixed(3)}s from the server (±${Math.round((m.rtt ?? 0) / 2)} ms)`}.</p><button data-act="logout">Log out</button></div>
+    <div class="panel danger"><h3>Start over</h3>
+      <p class="small">Deletes every session, recording, item, route, screenshot, clock sample and deleted-mark record from your account, on both computers. Your own map images are kept. Sessions and recordings from before now will not come back even if the addon still has them; afterwards, type <code>/chron clear confirm</code> in game to empty the addon's log too.</p>
+      <div class="row"><input type="text" id="wipeWord" placeholder="type DELETE" autocomplete="off"><button class="danger-btn" id="wipe" disabled>Delete everything and start over</button></div>
+    </div>`;
 };
 
 function wireSetup() {
@@ -1493,6 +1641,28 @@ function wireSetup() {
       route();
     });
   }
+  const wipeWord = document.getElementById('wipeWord');
+  const wipe = document.getElementById('wipe');
+  wipeWord?.addEventListener('input', () => { wipe.disabled = wipeWord.value.trim() !== 'DELETE'; });
+  wipe?.addEventListener('click', async () => {
+    if (!window.confirm('Really delete everything? This cannot be undone.')) return;
+    wipe.disabled = true;
+    wipe.textContent = 'Deleting…';
+    try {
+      m.stop();
+      await state.store.deleteAll({ keepMaps: true });
+      const keep = { maps: state.settings.maps || {}, fps: state.settings.fps, width: state.settings.width, height: state.settings.height, cueSeconds: state.settings.cueSeconds };
+      state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
+      await state.store.saveSettings(state.settings);
+      for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
+      Object.assign(state, { sessions: [], rows: [], clock: [], items: [], screenshots: [], tracks: new Map(), shotUrls: new Map() });
+      invalidate();
+      toast('Everything deleted. Type /chron clear confirm in game to empty the addon too.');
+      m.restart();
+      location.hash = '#/';
+      route();
+    } catch (err) { toast(err.message); wipe.textContent = 'Delete everything and start over'; wipe.disabled = false; }
+  });
   document.getElementById('machineForm')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
@@ -1523,15 +1693,15 @@ function wireSetup() {
 
 function renderLogin(message = '') {
   document.getElementById('nav').hidden = true;
-  main.innerHTML = `<div class="panel" style="max-width:420px;margin:40px auto">
-    <h1>Chronicler</h1>
+  main.innerHTML = `<div class="login"><div class="panel glow">
+    <div class="brand" style="font-size:2rem;margin-bottom:6px"><span class="brand-mark"></span>Chronicler</div>
     <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team.</p>
     ${message ? `<div class="notice">${message}</div>` : ''}
     <form id="login">
       <label><span>Email</span><input type="email" name="email" required autocomplete="username" style="width:100%"></label>
       <label><span>Password</span><input type="password" name="password" required minlength="6" autocomplete="current-password" style="width:100%"></label>
       <div class="row"><button class="primary" type="submit" name="mode" value="in">Log in</button><button type="submit" name="mode" value="up">Create account</button></div>
-    </form></div>`;
+    </form></div></div>`;
   document.getElementById('login').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
@@ -1605,6 +1775,15 @@ async function route({ keepScroll = false } = {}) {
     main.innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
     console.error(err);
   }
+  // Entrance: children rise in one after another; numbers count up.
+  if (!keepScroll) {
+    main.classList.remove('enter');
+    void main.offsetWidth;
+    main.classList.add('enter');
+    [...main.children].forEach((child, i) => child.style.setProperty('--i', Math.min(i, 12)));
+    animateNumbers(main);
+  }
+  moveNavGlow();
   window.scrollTo(0, keepScroll ? y : 0);
   const box = document.getElementById('searchBox');
   if (box && page === 'search' && document.activeElement !== box) box.value = params.get('q') || '';
@@ -1636,7 +1815,7 @@ async function makeClient(cfg) {
 async function startApp(user) {
   state.user = user;
   state.store = new CloudStore(state.client, user.id);
-  main.innerHTML = '<p class="muted">Loading your chronicle…</p>';
+  main.innerHTML = '<div class="loading"><span class="brand-mark spin"></span><span class="muted">Opening your chronicle…</span></div>';
   const all = await state.store.loadAll();
   Object.assign(state, {
     sessions: all.sessions, rows: all.recordings, clock: all.clock, settings: all.settings,
@@ -1662,6 +1841,31 @@ async function boot() {
   }
 }
 
+// The gold bar in the sidebar slides to the active page.
+function moveNavGlow() {
+  const nav = document.getElementById('nav');
+  const active = nav?.querySelector('a.active');
+  let glow = nav?.querySelector('.nav-glow');
+  if (!nav) return;
+  if (!glow) { glow = document.createElement('span'); glow.className = 'nav-glow'; nav.prepend(glow); }
+  if (!active) { glow.style.opacity = '0'; return; }
+  const nr = nav.getBoundingClientRect();
+  const ar = active.getBoundingClientRect();
+  glow.style.opacity = '1';
+  glow.style.transform = `translateY(${ar.top - nr.top + nav.scrollTop}px)`;
+  glow.style.height = `${ar.height}px`;
+}
+
+window.addEventListener('resize', moveNavGlow);
+window.addEventListener('keydown', (ev) => {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+    ev.preventDefault();
+    const box = document.getElementById('searchBox');
+    document.getElementById('side')?.classList.add('open');
+    box?.focus();
+    box?.select();
+  }
+});
 window.addEventListener('hashchange', () => { document.getElementById('side')?.classList.remove('open'); route(); });
 document.getElementById('menuToggle')?.addEventListener('click', (ev) => {
   const side = document.getElementById('side');

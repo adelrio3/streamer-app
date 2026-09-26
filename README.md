@@ -19,9 +19,10 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
   - on the **recording computer** it listens to OBS for when each recording starts and stops, and reads the recordings folder
   - both computers measure their clocks against the server, so game events land on the right second of footage automatically, and a sync flash makes it exact
-  - **Chronicle**: Overview, Characters (each one's full journey), Quests, Zones, Lore (every text and line of dialogue, filterable by zone for scripts), Locations (zone maps with everything pinned where it happened, plus the route you walked)
-  - **World**: Bestiary (creatures you can fight, with drop rates and every sighting's coordinates), People (quest givers, vendors, trainers, flight masters, townsfolk), Items (icons, full tooltips, every source) and the herbs, ore and chests you opened
-  - **Footage**: Recordings, Highlights, Footage finder, Screenshots, Marks; every entry links to the second of footage it happened in
+  - **Chronicle**: Overview (activity, status, recent milestones), Characters (each one's journey with a class-coloured hero and XP ring), Quests (each with a map of pickup, objectives, kills while active, turn-in and route), Zones (with a loose-ends checklist: quests not turned in, rares and creatures never killed, shops and trainers never opened), Locations (zone maps with layers, creature-density and time-spent heat, nearest services on click, your own map images cropped in the app, GeoJSON export), Lore (every text and line of dialogue, filterable by zone for scripts)
+  - **World**: Bestiary (creatures you can fight, drop rates, every sighting's coordinates and density), People (quest givers, vendors, trainers, flight masters, townsfolk), Items (icons, full tooltips, every source) and the herbs, ore and chests you opened
+  - **Footage**: Recordings (with a live map: a marker follows the video, click the route to jump), a Highlights reel, Footage finder, Screenshots, Marks (deletable); every entry links to the second of footage it happened in
+  - **This computer › Start over** deletes everything and blocks old sessions from returning
   - one search box across all of it
   - per recording: **Premiere markers** (.xml), **captions** (.srt), **kill counter data** (.csv), **YouTube chapters** and a full event list
 

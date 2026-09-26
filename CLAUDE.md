@@ -14,7 +14,7 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + a no-build web app (`web/`) hosted on 
 
 ## Web app layout
 
-- `web/index.html` is a sidebar shell (Chronicle / World / Footage / System groups); pages live in `web/app.js` as `pages.<name>` and use `pageHead`, `tabsHtml`, `crumb`, `facts`, `table`. Bestiary = `world.creatures` (attackable), People = `world.people`, objects (herbs/ore/chests) under Items. Maps: `web/lib/maps.js` + `wireMap` in app.js.
+- `web/index.html` is a sidebar shell (Chronicle / World / Footage / System groups); pages live in `web/app.js` as `pages.<name>` and use `pageHead`, `tabsHtml`, `crumb`, `facts`, `table`. Bestiary = `world.creatures` (attackable), People = `world.people`, objects (herbs/ore/chests) under Items. Maps: `web/lib/maps.js` (pins, heat, quest trails, nearest services, GeoJSON) + `wireMap` in app.js; loose ends in `web/lib/coverage.js`. Motion/animation lives at the end of `web/styles.css` under "Glow-up" and respects prefers-reduced-motion; `route()` adds the `enter` class, staggers `--i`, counts numbers up, and slides the nav glow. Reset: `CloudStore.deleteAll` + `settings.resetAt` (machine.js skips older sessions/recordings).
 - The headless two-computer smoke test lives in the session scratchpad (`cloud-smoke.cjs`), not the repo; it fakes Supabase, folders and OBS.
 
 ## Checks

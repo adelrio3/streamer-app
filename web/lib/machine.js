@@ -164,7 +164,10 @@ export class Machine {
       const key = `${f.flavor}/${f.account}`;
       if (this.seen.get(key) === file.lastModified) continue;
       const log = readAddonLog(await file.text(), { flavor: f.flavor, account: f.account });
+      const resetAt = this.state.settings.resetAt || 0;
       for (const s of log.sessions) {
+        // Sessions from before "delete everything" stay deleted.
+        if ((s.started || 0) < resetAt) continue;
         const i = this.state.sessions.findIndex((x) => x.id === s.id);
         const merged = mergeSession(i >= 0 ? this.state.sessions[i] : null, s);
         if (merged) {
@@ -317,6 +320,8 @@ export class Machine {
         const local = startFromName(v.name, this.config.pattern);
         if (local == null || v.lastModified <= local) continue;
         const start = this.toServer(local);
+        // Recordings from before "delete everything" stay deleted.
+        if (start < (this.state.settings.resetAt || 0) * 1000) continue;
         const end = this.toServer(v.lastModified);
         await this.putRow({ name: v.name, path: this.fullPath(v.name), machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: 'filename', sync: null });
       } else if (!row.duration && row.start_ms && v.lastModified) {
