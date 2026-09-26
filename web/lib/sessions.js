@@ -27,10 +27,35 @@ export function expansionOf(iface) {
 }
 
 // Every session in a Chronicler.lua SavedVariables file.
-export function sessionsFromSavedVariables(text, { flavor = null, account = null } = {}) {
+export function sessionsFromSavedVariables(text, opts) {
+  return readAddonLog(text, opts).sessions;
+}
+
+// Sessions plus the item catalog: { sessions, items: [{ item_id, data }] }.
+export function readAddonLog(text, { flavor = null, account = null } = {}) {
   const db = parseSavedVariables(text).ChroniclerDB;
-  if (!db || !db.sessions) return [];
-  return Object.values(db.sessions).map((raw) => normalizeSession(raw, { flavor, account })).filter(Boolean);
+  if (!db) return { sessions: [], items: [] };
+  const sessions = Object.values(db.sessions || {}).map((raw) => normalizeSession(raw, { flavor, account })).filter(Boolean);
+  const items = Object.values(db.items || {})
+    .filter((i) => i && Number.isFinite(i.id))
+    .map((i) => ({ item_id: i.id, data: normalizeItem(i) }));
+  return { sessions, items };
+}
+
+// Tooltip lines are "left", "left\tright", optionally followed by "|rrggbb".
+export function tooltipLine(line) {
+  const m = /^(.*?)(?:\|([0-9a-f]{6}))?$/.exec(String(line));
+  const [left, right] = m[1].split('\t');
+  return { left, right: right ?? null, color: m[2] ?? null };
+}
+
+function normalizeItem(i) {
+  const out = { ...i };
+  for (const key of ['tip']) {
+    if (out[key] && !Array.isArray(out[key])) out[key] = Object.values(out[key]);
+  }
+  delete out.scanned;
+  return out;
 }
 
 export function normalizeSession(raw, { flavor, account } = {}) {
@@ -48,13 +73,14 @@ export function normalizeSession(raw, { flavor, account } = {}) {
     flavor: flavor || null,
     account: account || null,
     events,
+    track: Array.isArray(raw.track) ? raw.track : Object.values(raw.track || {}),
   };
 }
 
 function normalizeEvent(e) {
   const out = { ...e };
   // Lists come back as objects when they had gaps; turn them into arrays.
-  for (const key of ['pages', 'options']) {
+  for (const key of ['pages', 'options', 'items', 'sources', 'costs', 'services', 'nodes', 'enemies', 'spells', 'slots', 'tabs', 'talents', 'factions', 'skills', 'members', 'rewards', 'choices']) {
     if (out[key] && !Array.isArray(out[key])) out[key] = Object.values(out[key]);
   }
   return out;

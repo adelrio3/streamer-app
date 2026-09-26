@@ -8,17 +8,29 @@ import { describe, category } from './lib/describe.js';
 import { clockModel, resolveRecordings, buildTimelines, eventMs } from './lib/timeline.js';
 import { toSRT, toCSV, toChapters, toKillsCSV, toFCPXML, lifetimeKillsBefore, stem } from './lib/exports.js';
 import { foldersSupported } from './lib/folders.js';
+import { buildWorld } from './lib/world.js';
+import { buildCharacters, recordingCharacters } from './lib/journey.js';
+import { findSegments, findHighlights, HIGHLIGHT_KINDS, timeOfDay } from './lib/footage.js';
+import { buildIndex, search } from './lib/search.js';
+import { tooltipLine } from './lib/sessions.js';
+import { money, RANKS, qualityName } from './lib/describe.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
 
-const CATS = ['quest', 'lore', 'combat', 'loot', 'mark', 'travel', 'progress'];
-const CAT_NAMES = { quest: 'Quests', lore: 'Lore', combat: 'Combat', loot: 'Loot', mark: 'Marks', travel: 'Travel', progress: 'Progress' };
+const CATS = ['quest', 'lore', 'combat', 'loot', 'mark', 'travel', 'progress', 'world', 'economy', 'character', 'social'];
+const CAT_NAMES = { quest: 'Quests', lore: 'Lore', combat: 'Combat', loot: 'Loot', mark: 'Marks', travel: 'Travel', progress: 'Progress', world: 'NPCs seen', economy: 'Vendors & gold', character: 'Character', social: 'Social' };
+// Busy categories start switched off in timelines and exports.
+const QUIET_CATS = new Set(['travel', 'world', 'economy', 'character', 'social']);
+const REACTION = { 1: 'Hated', 2: 'Hostile', 3: 'Unfriendly', 4: 'Neutral', 5: 'Friendly', 6: 'Honored', 7: 'Revered', 8: 'Exalted' };
 const MARK_NAMES = { lore: 'Lore beat', shot: 'Beautiful shot', funny: 'Funny', redo: 'Redo', mark: 'Mark' };
 const WOWHEAD = { classic: 'https://www.wowhead.com/classic', tbc: 'https://www.wowhead.com/tbc', wrath: 'https://www.wowhead.com/wotlk', cata: 'https://www.wowhead.com/cata', mop: 'https://www.wowhead.com/mop-classic' };
 
 // sessions: from the addon; rows: recording rows; clock: clock samples.
-const state = { client: null, store: null, user: null, machine: null, sessions: [], rows: [], clock: [], settings: {}, cache: null };
+const state = {
+  client: null, store: null, user: null, machine: null, sessions: [], rows: [], clock: [], settings: {}, cache: null,
+  items: [], screenshots: [], schema2: true, tracks: null, shotUrls: new Map(),
+};
 let status = {};
 
 // Helpers -----------------------------------------------------------------
@@ -35,7 +47,11 @@ function derived() {
     const where = new Map();
     for (const [rec, events] of timelines) for (const e of events) where.set(`${e.session}|${e.t}`, { rec, offset: e.offset });
     const codex = buildCodex(state.sessions, (sid, t) => where.get(`${sid}|${t}`) ?? null);
-    state.cache = { clock, recordings, timelines, where, codex };
+    const moment = (sess, e) => ({ session: sess.id, t: e.t, footage: where.get(`${sess.id}|${e.t}`) ?? null });
+    const world = buildWorld(state.sessions, state.items, moment);
+    const characters = buildCharacters(state.sessions, moment, timelines, recordings);
+    const recChars = recordingCharacters(state.sessions, timelines);
+    state.cache = { clock, recordings, timelines, where, codex, moment, world, characters, recChars, index: null };
   }
   return state.cache;
 }
@@ -80,6 +96,31 @@ function wowhead(kind, id) {
   if (!id) return '';
   const base = WOWHEAD[state.sessions.at(-1)?.expansion] || 'https://www.wowhead.com';
   return `<a class="small" href="${base}/${kind}=${id}" target="_blank" rel="noopener">Wowhead ↗</a>`;
+}
+
+const wowheadBase = () => WOWHEAD[state.sessions.at(-1)?.expansion] || 'https://www.wowhead.com';
+
+// An item: its icon (from Wowhead, with Wowhead's tooltip on hover) and its
+// name linking to its page here.
+function itemLink(id, name, quality, { size = 'small', count } = {}) {
+  if (!id) return esc(name ?? '');
+  const info = derived().world.byItem.get(Number(id));
+  const q = quality ?? info?.quality ?? 1;
+  const label = name ?? info?.name ?? `Item ${id}`;
+  return `<span class="item"><a class="wh" href="${wowheadBase()}/item=${id}" target="_blank" rel="noopener" data-wh-icon-size="${size}" data-wh-rename-link="false" aria-label="Wowhead">&#8203;</a><a class="q${q}" href="#/item/${id}">${esc(label)}</a>${count > 1 ? ` <span class="muted">x${count}</span>` : ''}</span>`;
+}
+
+function npcLink(key, name) {
+  return key ? `<a href="#/npc/${enc(key)}">${esc(name ?? 'Unknown')}</a>` : esc(name ?? '');
+}
+
+function levelText(n) {
+  if (n.minLevel == null) return n.ranks.includes('skull') ? '??' : '';
+  return n.minLevel === n.maxLevel ? String(n.minLevel) : `${n.minLevel}–${n.maxLevel}`;
+}
+
+function rankChips(ranks = []) {
+  return ranks.filter((r) => r !== 'skull').map((r) => `<span class="chip ${r.includes('rare') || r === 'worldboss' ? 'active' : ''}">${esc(RANKS[r] ?? r)}</span>`).join(' ');
 }
 
 function lore(text) {
@@ -171,16 +212,15 @@ pages[''] = async () => {
     <h1>Your chronicle</h1>
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
-      ${card(t.kills, 'creatures slain', '#/creatures')}
-      ${card(t.npcs, 'NPCs met', '#/npcs')}
-      ${card(t.items, 'distinct items', '#/items')}
+      ${card(t.kills, 'creatures slain', '#/bestiary?show=killed')}
+      ${card(derived().world.npcs.length, 'NPCs and creatures seen', '#/bestiary')}
+      ${card(derived().world.items.length, 'items catalogued', '#/items')}
+      ${card(derived().world.vendors.length, 'vendors', '#/vendors')}
       ${card(t.books, 'books & plaques', '#/texts')}
       ${card(t.marks, 'marked moments', '#/marks')}
     </div>
     <h2>Characters</h2>
-    ${c.characters.length ? `<div class="cards">${c.characters.map((ch) => `<div class="card"><div class="num">${esc(ch.name ?? '?')}</div>
-      <div class="lbl">Level ${ch.level} ${esc(ch.race ?? '')} ${esc(ch.class ?? '')} · ${esc(ch.realm ?? '')}</div>
-      <div class="lbl">${ch.sessions} sessions · ${duration(ch.playSeconds)} logged</div></div>`).join('')}</div>` : '<p class="muted">No sessions yet. With the app open on your gaming PC, log in to WoW and then log out or type /reload.</p>'}
+    ${derived().characters.length ? `<div class="cards">${derived().characters.map(charCard).join('')}</div>` : '<p class="muted">No sessions yet. With the app open on your gaming PC, log in to WoW and then log out or type /reload.</p>'}
     <h2>Latest marks</h2>
     ${recentMarks.length ? `<table><tbody>${recentMarks.map((mk) => `<tr><td>${play(mk)}</td><td>${esc(MARK_NAMES[mk.kind] ?? mk.kind)}</td><td>${esc(mk.note ?? '')}</td><td class="muted">${esc(mk.sz ? `${mk.z}: ${mk.sz}` : mk.z ?? '')}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Press a Chronicler key binding in game to mark a moment.</p>'}`;
 };
@@ -222,71 +262,387 @@ pages.quest = async (key) => {
     ${q.reward ? `<h3>Completion</h3>${lore(q.reward)}` : ''}`;
 };
 
-pages.creatures = async () => {
-  const c = await codex();
-  return `<h1>Creatures</h1>
-    <p class="muted">Everything you have killed or helped kill. The kill counter export on each recording uses the same numbers.</p>
-    ${table(c.creatures, [
-      { label: 'Creature', value: (k) => k.name, html: (k) => `<a href="#/creature/${enc(k.key)}">${esc(k.name)}</a>` },
-      { label: 'Kills', value: (k) => k.kills, num: true },
-      { label: 'Zones', value: (k) => k.zones.join(', ') },
-      { label: 'First kill', value: (k) => k.moments[0]?.t ?? 0, html: (k) => play(k.moments[0]) },
-      { label: '', html: (k) => wowhead('npc', k.npcId) },
-    ], { search: (k) => `${k.name} ${k.zones.join(' ')}`, sort: 1, desc: true, empty: 'No kills logged yet.' })}`;
-};
+// Bestiary -----------------------------------------------------------------
 
-pages.creature = async (key) => {
-  const c = await codex();
-  const k = c.creatures.find((x) => x.key === key);
-  if (!k) return '<p>Not found.</p>';
-  return `<p><a href="#/creatures">← Creatures</a></p>
-    <div class="row spread"><h1>${esc(k.name)}</h1>${wowhead('npc', k.npcId)}</div>
-    <p class="muted">${k.kills} kills · ${esc(k.zones.join(', '))}${k.npcId ? ` · NPC ID ${k.npcId}` : ''}</p>
-    ${table(k.moments.map((m, i) => ({ ...m, n: i + 1 })), [
-      { label: '#', value: (m) => m.n, num: true },
-      { label: 'Footage', value: (m) => m.t, html: (m) => play(m) },
-      { label: 'When', value: (m) => m.t, html: (m) => esc(when(m.t)) },
-    ], { search: () => '', sort: 0 })}`;
-};
+pages.creatures = (_, params) => pages.bestiary(_, new URLSearchParams('show=killed'));
+pages.npcs = (_, params) => pages.bestiary(_, new URLSearchParams('show=talked'));
+pages.creature = (key) => pages.npc(key);
 
-pages.npcs = async () => {
-  const c = await codex();
-  return `<h1>NPCs</h1>
-    <p class="muted">Everyone who spoke to you, yelled near you, or handed you a quest.</p>
-    ${table(c.npcs, [
-      { label: 'Name', value: (n) => n.name, html: (n) => `<a href="#/npc/${enc(n.key)}">${esc(n.name)}</a>` },
-      { label: 'Lines', value: (n) => n.lines.length, num: true },
-      { label: 'Quests', value: (n) => n.quests.length, num: true },
+pages.bestiary = async (_, params) => {
+  const { world } = derived();
+  const show = params.get('show') || 'all';
+  const filters = {
+    all: () => true, killed: (n) => n.kills > 0, talked: (n) => n.lines.length || n.quests.size || n.vendor || n.trainer || n.taxi,
+    rare: (n) => n.rare || n.ranks.some((r) => r.includes('rare') || r === 'worldboss'), elite: (n) => n.ranks.includes('elite') || n.ranks.includes('rareelite'),
+    objects: (n) => n.object,
+  };
+  const list = world.npcs.filter(filters[show] ?? filters.all);
+  const tabs = [['all', 'Everything'], ['killed', 'Killed'], ['talked', 'Spoke with'], ['rare', 'Rares'], ['elite', 'Elites'], ['objects', 'Herbs, ore & chests']]
+    .map(([k, label]) => `<a class="btn ${k === show ? 'primary' : ''}" href="#/bestiary?show=${k}">${label}</a>`).join(' ');
+  return `<h1>Bestiary</h1>
+    <p class="muted">Every NPC and creature you have targeted, moused over, seen on a nameplate, fought near, heard, talked to or looted.</p>
+    <div class="row">${tabs}</div>
+    ${table(list, [
+      { label: 'Name', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)} ${n.titles[0] ? `<span class="muted small">&lt;${esc(n.titles[0])}&gt;</span>` : ''}` },
+      { label: 'Level', value: (n) => n.minLevel ?? 0, html: (n) => `${levelText(n)} ${rankChips(n.ranks)}` },
+      { label: 'Type', value: (n) => [n.ctype, n.family].filter(Boolean).join(' · ') },
+      { label: 'Seen', value: (n) => n.sightings, num: true },
+      { label: 'Kills', value: (n) => n.kills, num: true },
+      { label: 'Loots', value: (n) => n.loots, num: true },
       { label: 'Zones', value: (n) => n.zones.join(', ') },
-    ], { search: (n) => `${n.name} ${n.lines.map((l) => l.text).join(' ')}`, empty: 'No NPCs yet.' })}`;
+      { label: 'First seen', value: (n) => n.first?.t ?? 0, html: (n) => (n.first ? play(n.first) : '') },
+    ], { search: (n) => `${n.name} ${n.titles.join(' ')} ${n.ctype} ${n.family} ${n.zones.join(' ')} ${n.ranks.join(' ')}`, sort: 3, desc: true, empty: 'Nothing seen yet.' })}`;
 };
 
 pages.npc = async (key) => {
-  const c = await codex();
-  const n = c.npcs.find((x) => x.key === key);
+  const { world, codex } = derived();
+  const n = world.byNpc.get(key);
   if (!n) return '<p>Not found.</p>';
-  const quests = n.quests.map((qk) => c.quests.find((q) => q.key === qk)).filter(Boolean);
-  return `<p><a href="#/npcs">← NPCs</a></p>
-    <div class="row spread"><h1>${esc(n.name)}</h1>${wowhead(n.kind === 'GameObject' ? 'object' : 'npc', n.npcId)}</div>
+  const quests = [...n.quests].map((qk) => codex.quests.find((q) => q.key === qk)).filter(Boolean);
+  const facts = [
+    levelText(n) && `Level ${levelText(n)}`, rankChips(n.ranks), [n.ctype, n.family].filter(Boolean).join(' · '),
+    n.react ? REACTION[n.react] : null, n.faction, n.hp ? `${n.hp.toLocaleString()} health` : null, n.npcId ? `ID ${n.npcId}` : null,
+  ].filter(Boolean).join(' · ');
+  const section = (title, body) => (body ? `<h2>${title}</h2>${body}` : '');
+  return `<p><a href="#/bestiary">← Bestiary</a></p>
+    <div class="row spread"><h1>${esc(n.name)}${n.titles[0] ? ` <span class="muted small">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}</h1>${wowhead(n.object ? 'object' : 'npc', n.npcId)}</div>
+    <p>${facts}</p>
     <p class="muted">${esc(n.zones.join(', '))}</p>
-    ${quests.length ? `<h2>Quests</h2><ul>${quests.map((q) => `<li><a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span></li>`).join('')}</ul>` : ''}
-    ${n.lines.length ? `<h2>Dialogue</h2>${n.lines.map((l) => `<div class="row"><span class="chip">${esc(l.kind)}</span>${play(firstFootage(l.moments))}${l.moments.length > 1 ? `<span class="muted small">heard ${l.moments.length}×</span>` : ''}</div>${lore(l.text)}`).join('')}` : ''}`;
+    <div class="cards">
+      ${card(n.sightings, 'times seen', '#/bestiary')}${card(n.kills, 'killed', '#/bestiary?show=killed')}${card(n.loots, 'looted', '#/bestiary')}${n.killedYou ? card(n.killedYou, 'times it killed you', '#/highlights?kind=death') : ''}
+    </div>
+    <div class="row">${n.first ? `First seen ${play(n.first)}` : ''} ${n.firstKill ? `First kill ${play(n.firstKill)}` : ''}</div>
+    ${section('Drops', n.drops.length ? `<p class="muted small">From ${n.loots} loot${n.loots === 1 ? '' : 's'}${n.moneyDrops ? `, dropped coins ${n.moneyDrops} time${n.moneyDrops === 1 ? '' : 's'}` : ''}.</p>` + table(n.drops, [
+      { label: 'Item', value: (d) => d.name, html: (d) => itemLink(d.id, d.name) },
+      { label: 'Times', value: (d) => d.times, num: true },
+      { label: 'Total', value: (d) => d.qty, num: true },
+      { label: 'Drop rate', value: (d) => d.rate ?? 0, html: (d) => (d.rate != null ? `${Math.round(d.rate * 100)}%` : ''), num: true },
+    ], { sort: 1, desc: true }) : '')}
+    ${section('For sale', n.vendor ? vendorTable(n.vendor) : '')}
+    ${section('Trains', n.trainer ? `${n.trainer.greeting ? lore(n.trainer.greeting) : ''}` + table(n.trainer.services, [
+      { label: 'Skill', value: (x) => x.name, html: (x) => `${esc(x.name)} ${x.rank ? `<span class="muted">${esc(x.rank)}</span>` : ''}` },
+      { label: 'Level', value: (x) => x.level ?? 0, num: true },
+      { label: 'Cost', value: (x) => x.cost ?? 0, html: (x) => (x.cost ? money(x.cost) : ''), num: true },
+      { label: 'Status', value: (x) => x.status },
+    ], { sort: 1 }) : '')}
+    ${section('Flights', n.taxi ? table(n.taxi.nodes, [
+      { label: 'Destination', value: (x) => x.name },
+      { label: 'Cost', value: (x) => x.cost ?? 0, html: (x) => (x.cost ? money(x.cost) : ''), num: true },
+      { label: 'Known', value: (x) => x.type, html: (x) => (x.type === 'CURRENT' ? 'You are here' : x.type === 'REACHABLE' ? 'Yes' : 'Not yet') },
+    ], { sort: 0 }) : '')}
+    ${section('Quests', quests.length ? `<ul>${quests.map((q) => `<li><a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span></li>`).join('')}</ul>` : '')}
+    ${section('Dialogue', n.lines.map((l) => `<div class="row"><span class="chip">${esc(l.kind)}</span>${play(firstFootage(l.moments))}${l.moments.length > 1 ? `<span class="muted small">heard ${l.moments.length}×</span>` : ''}</div>${lore(l.text)}`).join(''))}
+    ${section('Tooltip', n.tip ? tooltipBox(n.tip) : '')}`;
 };
 
+function vendorTable(vendor) {
+  return `<p class="muted small">Seen ${play(vendor.at)}${vendor.repair ? ' · repairs' : ''}</p>` + table(vendor.items, [
+    { label: 'Item', value: (i) => i.name, html: (i) => itemLink(i.id, i.name, null, { count: i.per }) },
+    { label: 'Price', value: (i) => i.price ?? 0, html: (i) => priceText(i), num: true },
+    { label: 'Stock', value: (i) => i.stock ?? Infinity, html: (i) => (i.stock != null ? `${i.stock} (limited)` : 'unlimited'), num: true },
+  ], { sort: 0, limit: 1000 });
+}
+
+function priceText(v) {
+  const parts = [];
+  if (v.price) parts.push(money(v.price));
+  for (const c of v.costs || []) parts.push(`${c.value} × ${itemLink(c.id, c.name)}`);
+  return parts.join(' + ') || 'free';
+}
+
+function tooltipBox(lines) {
+  return `<div class="tooltip">${lines.map((raw) => {
+    const l = tooltipLine(raw);
+    return `<div class="tt-line"${l.color ? ` style="color:#${l.color}"` : ''}><span>${esc(l.left)}</span>${l.right ? `<span>${esc(l.right)}</span>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+// Items -------------------------------------------------------------------
+
 pages.items = async () => {
-  const c = await codex();
+  const { world } = derived();
   return `<h1>Items</h1>
-    <p class="muted">Looted, received from quests or vendors, and crafted.</p>
-    ${table(c.items, [
-      { label: 'Item', value: (i) => i.name, html: (i) => `<span class="q${i.quality ?? 1}">${esc(i.name ?? `Item ${i.id}`)}</span>` },
-      { label: 'Type', value: (i) => [i.type, i.subType].filter(Boolean).join(' · ') },
-      { label: 'iLvl', value: (i) => i.ilvl ?? 0, html: (i) => i.ilvl ?? '', num: true },
-      { label: 'Count', value: (i) => i.count, num: true },
-      { label: 'How', value: (i) => Object.keys(i.sources).join(', ') },
-      { label: 'First', value: (i) => i.moments[0]?.t ?? 0, html: (i) => play(firstFootage(i.moments)) },
-      { label: '', html: (i) => wowhead('item', i.id) },
-    ], { search: (i) => `${i.name} ${i.type} ${i.subType}`, sort: 5, empty: 'No items yet.' })}`;
+    <p class="muted">Every item you have looted, seen dropped, been offered, bought, worn, carried or hovered, with everything the game says about it.</p>
+    ${state.schema2 ? '' : schemaNotice()}
+    ${table(world.items, [
+      { label: 'Item', value: (i) => i.name, html: (i) => itemLink(i.id, i.name, i.quality) },
+      { label: 'Quality', value: (i) => i.quality ?? -1, html: (i) => esc(qualityName(i.quality) ?? ''), num: true },
+      { label: 'Type', value: (i) => [i.info?.type, i.info?.sub].filter(Boolean).join(' · ') },
+      { label: 'iLvl', value: (i) => i.info?.ilvl ?? 0, html: (i) => i.info?.ilvl ?? '', num: true },
+      { label: 'Req', value: (i) => i.info?.req ?? 0, html: (i) => i.info?.req || '', num: true },
+      { label: 'Sells for', value: (i) => i.info?.sell ?? 0, html: (i) => (i.info?.sell ? money(i.info.sell) : ''), num: true },
+      { label: 'Looted', value: (i) => i.looted, num: true },
+      { label: 'Sources', value: (i) => i.droppedBy.length + i.soldBy.length + i.rewardFrom.length, html: (i) => [
+        i.droppedBy.length && `${i.droppedBy.length} drop`, i.soldBy.length && `${i.soldBy.length} vendor`, i.rewardFrom.length && `${i.rewardFrom.length} quest`,
+      ].filter(Boolean).join(', '), num: true },
+    ], { search: (i) => `${i.name} ${i.info?.type} ${i.info?.sub} ${(i.info?.tip || []).join(' ')}`, sort: 1, desc: true, empty: 'No items yet.' })}`;
 };
+
+pages.item = async (id) => {
+  const { world, codex } = derived();
+  const it = world.byItem.get(Number(id));
+  if (!it) return '<p>Item not found.</p>';
+  const info = it.info || {};
+  const stats = info.stats && !Array.isArray(info.stats) ? Object.entries(info.stats) : [];
+  const facts = [
+    qualityName(it.quality), info.type, info.sub, info.slot?.replace('INVTYPE_', '').toLowerCase(), info.ilvl && `item level ${info.ilvl}`,
+    info.req && `requires level ${info.req}`, info.stack > 1 && `stacks to ${info.stack}`, info.sell && `sells for ${money(info.sell)}`,
+    info.icon && `icon ${info.icon}`, `ID ${it.id}`,
+  ].filter(Boolean).map(esc).join(' · ');
+  const section = (title, body) => (body ? `<h2>${title}</h2>${body}` : '');
+  const quest = (r) => codex.quests.find((q) => (r.qid && q.qid === r.qid) || q.title === r.title);
+  return `<p><a href="#/items">← Items</a></p>
+    <div class="row"><span class="item-big">${itemLink(it.id, it.name, it.quality, { size: 'large' })}</span></div>
+    <p class="muted">${facts}</p>
+    ${info.tip ? tooltipBox(info.tip) : '<p class="muted">Full details arrive once the addon has scanned this item (hover it in game, or loot or see it again).</p>'}
+    ${stats.length ? `<p class="small">${stats.map(([k, v]) => `<span class="chip">${esc(k.replace(/^ITEM_MOD_|_SHORT$|_NAME$/g, '').replace(/_/g, ' ').toLowerCase())} ${esc(v)}</span>`).join(' ')}</p>` : ''}
+    ${info.spell ? `<p class="small">Use effect: <b>${esc(info.spell)}</b></p>` : ''}
+    <div class="cards">${card(it.looted, 'looted', '#/items')}${it.created ? card(it.created, 'crafted', '#/items') : ''}${it.received ? card(it.received, 'received', '#/items') : ''}</div>
+    ${it.moments.length ? `<p>First looted ${play(firstFootage(it.moments))}</p>` : ''}
+    ${section('Dropped by', it.droppedBy.length ? table(it.droppedBy, [
+      { label: 'Source', value: (d) => d.name, html: (d) => npcLink(d.key, d.name) },
+      { label: 'Times', value: (d) => d.times, num: true },
+      { label: 'Of loots', value: (d) => d.loots, num: true },
+      { label: 'Drop rate', value: (d) => d.rate ?? 0, html: (d) => (d.rate != null ? `${Math.round(d.rate * 100)}%` : ''), num: true },
+    ], { sort: 3, desc: true }) : '')}
+    ${section('Sold by', it.soldBy.length ? table(it.soldBy, [
+      { label: 'Vendor', value: (v) => v.name, html: (v) => npcLink(v.key, v.name) },
+      { label: 'Price', value: (v) => v.price ?? 0, html: (v) => `${priceText(v)}${v.per > 1 ? ` for ${v.per}` : ''}`, num: true },
+      { label: 'Stock', value: (v) => v.stock ?? Infinity, html: (v) => (v.stock != null ? `${v.stock} (limited)` : 'unlimited'), num: true },
+      { label: 'Zone', value: (v) => v.zone ?? '' },
+    ], { sort: 1 }) : '')}
+    ${section('Quest reward from', it.rewardFrom.length ? `<ul>${it.rewardFrom.map((r) => { const q = quest(r); return `<li>${q ? `<a href="#/quest/${enc(q.key)}">${esc(r.title)}</a>` : esc(r.title)}${r.choice ? ' <span class="muted">(choice)</span>' : ''}</li>`; }).join('')}</ul>` : '')}
+    ${section('Used to buy', it.costOf.length ? `<ul>${it.costOf.map((c) => `<li>${c.value} for ${itemLink(c.id, c.name)} from ${esc(c.vendor)}</li>`).join('')}</ul>` : '')}
+    ${section('Worn by', it.equippedBy.length ? `<ul>${it.equippedBy.map((e) => `<li>${esc(e.char.split('-')[0])} ${play(e.moment)}</li>`).join('')}</ul>` : '')}`;
+};
+
+// Vendors -------------------------------------------------------------------
+
+pages.vendors = async () => {
+  const { world } = derived();
+  return `<h1>Vendors</h1>
+    <p class="muted">Every shop you have opened and what it sold, at what price, the last time you looked.</p>
+    ${table(world.vendors, [
+      { label: 'Vendor', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)} ${n.titles[0] ? `<span class="muted small">&lt;${esc(n.titles[0])}&gt;</span>` : ''}` },
+      { label: 'Zone', value: (n) => n.vendor.zone ?? n.zones[0] ?? '' },
+      { label: 'Items', value: (n) => n.vendor.items.length, num: true },
+      { label: 'Limited', value: (n) => n.vendor.items.filter((i) => i.stock != null).length, num: true },
+      { label: 'Repairs', value: (n) => (n.vendor.repair ? 'yes' : '') },
+      { label: 'Visited', value: (n) => n.vendor.at.t, html: (n) => play(n.vendor.at) },
+    ], { search: (n) => `${n.name} ${n.titles.join(' ')} ${n.zones.join(' ')} ${n.vendor.items.map((i) => i.name).join(' ')}`, sort: 0, empty: 'No vendors yet. Open a shop in game.' })}`;
+};
+
+// Characters --------------------------------------------------------------
+
+function charCard(c) {
+  const i = c.info;
+  return `<a class="card" href="#/character/${enc(c.key)}"><div class="num">${esc(c.name)}</div>
+    <div class="lbl">Level ${c.level} ${esc(i.race ?? '')} ${esc(i.class ?? '')} · ${esc(c.realm ?? '')}</div>
+    <div class="lbl">${c.questsDone} quests · ${c.recordings.length} recordings · ${duration(c.playSeconds)} logged</div></a>`;
+}
+
+pages.characters = async () => {
+  const { characters } = derived();
+  return `<h1>Characters</h1>
+    <p class="muted">Each character's journey: levels, quests, gear, talents, and the footage they appear in.</p>
+    <div class="cards">${characters.map(charCard).join('') || '<p class="muted">No characters yet.</p>'}</div>`;
+};
+
+pages.character = async (key) => {
+  const c = derived().characters.find((x) => x.key === key);
+  if (!c) return '<p>Character not found.</p>';
+  const i = c.info;
+  const tabs = (c.talents?.tabs || []).map((t) => `<div class="panel"><h3>${esc(t.name)} <span class="muted">${t.spent ?? 0}</span></h3>${(t.talents || []).map((x) => `<div>${esc(x.name)} <span class="muted">${x.rank}/${x.max}</span></div>`).join('') || '<span class="muted">none</span>'}</div>`).join('');
+  const statRow = (st) => ['str', 'agi', 'sta', 'int', 'spi', 'armor', 'hp', 'power', 'ap', 'crit', 'dodge'].map((k) => `<td class="num">${st[k] ?? ''}</td>`).join('');
+  const shots = state.screenshots.filter((sh) => c.sessions.some((sid) => sessionCovers(sid, sh)));
+  if (shots.length) setTimeout(() => loadShots(shots));
+  const moneyNow = c.money.at(-1)?.total ?? i.money;
+  return `<p><a href="#/characters">← Characters</a></p>
+    <h1>${esc(c.name)} <span class="muted small">${esc(c.realm ?? '')}</span></h1>
+    <p>Level ${c.level} ${esc(i.race ?? '')} ${esc(i.class ?? '')} · ${esc(i.faction ?? '')}${i.guild ? ` · &lt;${esc(i.guild)}&gt;` : ''}${i.bind ? ` · Hearth: ${esc(i.bind)}` : ''}${moneyNow != null ? ` · ${money(moneyNow)}` : ''}</p>
+    <div class="cards">
+      ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'kills', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
+      ${card(c.zones.length, 'zones visited', '#/zones')}${card(c.recordings.length, 'recordings', '#/recordings')}${card(Math.round(c.playSeconds / 3600), 'hours logged', '#/sessions')}
+    </div>
+    <h2>Journey</h2>
+    ${table(journeyRows(c), [
+      { label: 'When', value: (r) => r.t, html: (r) => `<span class="muted">${esc(when(r.t))}</span>` },
+      { label: 'Footage', value: (r) => r.footage?.offset ?? -1, html: (r) => play(r) },
+      { label: 'Milestone', value: (r) => r.label, html: (r) => r.html },
+    ], { sort: 0, desc: true, limit: 300, search: (r) => r.label })}
+    <h2>Gear</h2>
+    ${table(c.gear, [
+      { label: 'Slot', value: (g) => g.slot, html: (g) => esc(g.slotName) },
+      { label: 'Item', value: (g) => g.name, html: (g) => itemLink(g.id, g.name) },
+      { label: 'Since', value: (g) => g.since.t, html: (g) => play(g.since) },
+    ], { sort: 0, empty: 'No gear logged yet.' })}
+    <h2>Gear progression</h2>
+    ${table(c.gearHistory, [
+      { label: 'When', value: (g) => g.t, html: (g) => `<span class="muted">${esc(when(g.t))}</span>` },
+      { label: 'Slot', value: (g) => g.slotName },
+      { label: 'Equipped', value: (g) => g.name, html: (g) => (g.id ? itemLink(g.id, g.name) : '<span class="muted">(removed)</span>') },
+      { label: 'Replaced', value: (g) => g.was ?? 0, html: (g) => (g.was ? itemLink(g.was) : '') },
+      { label: 'Footage', value: (g) => g.footage?.offset ?? -1, html: (g) => play(g) },
+    ], { sort: 0, desc: true })}
+    ${tabs ? `<h2>Talents</h2><div class="grid3">${tabs}</div>` : ''}
+    ${c.stats.length ? `<h2>Stats by level</h2><div class="scroll"><table><thead><tr><th>Level</th>${['Str', 'Agi', 'Sta', 'Int', 'Spi', 'Armor', 'Health', 'Mana', 'AP', 'Crit %', 'Dodge %'].map((h) => `<th class="num">${h}</th>`).join('')}</tr></thead><tbody>${c.stats.map((st) => `<tr><td>${st.level}</td>${statRow(st)}</tr>`).join('')}</tbody></table></div>` : ''}
+    ${c.reputation.length ? `<h2>Reputation</h2>${table(c.reputation, [
+      { label: 'Faction', value: (f) => f.name },
+      { label: 'Standing', value: (f) => f.standing, html: (f) => esc(REACTION[f.standing] ?? f.standing) },
+      { label: 'Progress', value: (f) => f.value, html: (f) => (f.high > f.low ? `${f.value - f.low} / ${f.high - f.low}` : ''), num: true },
+    ], { sort: 1, desc: true })}` : ''}
+    ${c.skills.length ? `<h2>Skills</h2>${table(c.skills, [
+      { label: 'Skill', value: (k) => k.name }, { label: 'Rank', value: (k) => k.rank, html: (k) => `${k.rank} / ${k.max}`, num: true },
+    ], { sort: 1, desc: true })}` : ''}
+    ${shots.length ? `<h2>Screenshots</h2><div class="shots">${shots.slice(-40).reverse().map(shotTile).join('')}</div>` : ''}
+    <h2>Quests completed</h2>
+    ${table(c.quests, [
+      { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.qid ? `q${q.qid}` : `t${q.title}`)}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
+      { label: 'Zone', value: (q) => q.zone ?? '' },
+      { label: 'Level', value: (q) => q.level ?? 0, num: true },
+      { label: 'Turned in', value: (q) => q.t, html: (q) => play(q) },
+    ], { sort: 3, desc: true, empty: 'No quests turned in yet.' })}
+    <h2>Recordings</h2>
+    ${table(c.recordings, [
+      { label: 'Recording', value: (r) => r.start ?? 0, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>` },
+      { label: 'Length', value: (r) => r.duration ?? 0, html: (r) => (r.duration ? duration(r.duration) : ''), num: true },
+      { label: 'Events', value: (r) => r.events, num: true },
+    ], { sort: 0, desc: true, empty: 'No footage of this character yet.' })}`;
+};
+
+function journeyRows(c) {
+  const rows = [];
+  for (const l of c.levels) rows.push({ ...l, label: `Reached level ${l.level}`, html: `<b>Reached level ${l.level}</b>` });
+  for (const z of c.zones) rows.push({ ...z, label: `First visit to ${z.name}`, html: `First visit to <a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` });
+  for (const g of c.gearHistory) if (!g.first && g.id) rows.push({ ...g, label: `Equipped ${g.name}`, html: `Equipped ${itemLink(g.id, g.name)}` });
+  for (const d of c.deaths) rows.push({ ...d, label: `Died${d.killer ? ` to ${d.killer}` : ''}`, html: `Died${d.killer ? ` to <b>${esc(d.killer)}</b>` : ''}` });
+  for (const q of c.quests) rows.push({ ...q, label: `Completed ${q.title}`, html: `Completed <a href="#/quest/${enc(q.qid ? `q${q.qid}` : `t${q.title}`)}">${esc(q.title)}</a>` });
+  return rows;
+}
+
+// Screenshots ---------------------------------------------------------------
+
+function sessionCovers(sessionId, shot) {
+  const s = state.sessions.find((x) => x.id === sessionId);
+  if (!s || !s.events.length || !shot.taken_ms) return false;
+  const clock = derived().clock;
+  const a = eventMs(s, s.events[0], clock) - 60000;
+  const b = eventMs(s, s.events.at(-1), clock) + 60000;
+  return shot.taken_ms >= a && shot.taken_ms <= b;
+}
+
+function shotTile(sh) {
+  return `<a class="shot" data-shot="${esc(sh.path)}" target="_blank" rel="noopener"><img alt="${esc(sh.name)}" loading="lazy"><span class="muted small">${esc(new Date(sh.taken_ms).toLocaleString())}</span></a>`;
+}
+
+// Screenshots are private: ask Supabase for temporary links, then show them.
+async function loadShots(shots) {
+  const need = shots.map((s) => s.path).filter((p) => !state.shotUrls.has(p));
+  if (need.length) {
+    try {
+      for (const [p, url] of await state.store.screenshotUrls(need)) state.shotUrls.set(p, url);
+    } catch (err) { console.warn(err); }
+  }
+  for (const el of document.querySelectorAll('[data-shot]')) {
+    const url = state.shotUrls.get(el.dataset.shot);
+    if (url) { el.href = url; el.querySelector('img').src = url; }
+  }
+}
+
+pages.screenshots = async () => {
+  const shots = [...state.screenshots].sort((a, b) => (b.taken_ms ?? 0) - (a.taken_ms ?? 0));
+  if (shots.length) setTimeout(() => loadShots(shots.slice(0, 120)));
+  return `<h1>Screenshots</h1>
+    <p class="muted">Taken in game while Chronicler was logging: automatically at rares, level-ups, discoveries and deaths (<code>/chron shots off</code> to stop), and whenever you press Print Screen. Your gaming PC uploads them, shrunk, while the app is open.</p>
+    ${state.schema2 ? '' : schemaNotice()}
+    <div class="shots">${shots.slice(0, 120).map(shotTile).join('') || '<p class="muted">None yet.</p>'}</div>`;
+};
+
+// Footage finder -------------------------------------------------------------
+
+pages.footage = async (_, params) => {
+  if (!state.tracks) {
+    main.innerHTML = '<p class="muted">Loading your routes…</p>';
+    try { state.tracks = state.schema2 ? await state.store.loadTracks() : new Map(); } catch (err) { state.tracks = new Map(); toast(err.message); }
+  }
+  const f = Object.fromEntries(params);
+  const filters = { ui: f.ui || 'any', motion: f.motion || 'any', place: f.place || 'any', time: f.time || 'any', minSeconds: Number(f.min || 60), noCombat: f.combat !== 'include' };
+  const { recordings, clock } = derived();
+  const segs = findSegments(state.sessions, state.tracks, recordings, (s, t) => eventMs(s, { t }, clock), filters)
+    .filter((sg) => !f.zone || sg.zones.some((z) => z.toLowerCase().includes(f.zone.toLowerCase())));
+  const select = (name, label, options) => `<label><span>${label}</span><select name="${name}">${options.map(([v, t]) => `<option value="${v}" ${String(f[name] ?? options[0][0]) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+  setTimeout(() => {
+    document.getElementById('footageForm')?.addEventListener('change', (ev) => {
+      const data = new URLSearchParams(new FormData(ev.currentTarget));
+      location.hash = `#/footage?${data}`;
+    });
+  });
+  return `<h1>Footage finder</h1>
+    <p class="muted">Stretches of your recordings that match, found from where you were and what you were doing every 2 seconds. Great for sleep and ambience videos.</p>
+    ${state.schema2 ? '' : schemaNotice()}
+    <form id="footageForm" class="panel grid4" onsubmit="return false">
+      ${select('ui', 'Interface', [['any', 'Any'], ['hidden', 'Hidden (Alt+Z)']])}
+      ${select('motion', 'Moving', [['any', 'Any'], ['moving', 'Moving'], ['foot', 'On foot'], ['mounted', 'Mounted'], ['flight', 'Flight path'], ['swimming', 'Swimming'], ['still', 'Standing still']])}
+      ${select('place', 'Place', [['any', 'Anywhere'], ['outdoors', 'Outdoors'], ['indoors', 'Indoors']])}
+      ${select('time', 'Time of day (in game)', [['any', 'Any'], ['dawn', 'Dawn'], ['day', 'Day'], ['dusk', 'Dusk'], ['night', 'Night']])}
+      ${select('combat', 'Combat', [['exclude', 'No combat'], ['include', 'Include combat']])}
+      ${select('min', 'At least', [['60', '1 minute'], ['30', '30 seconds'], ['180', '3 minutes'], ['300', '5 minutes'], ['600', '10 minutes']])}
+      <label><span>Zone</span><input type="text" name="zone" value="${esc(f.zone ?? '')}" placeholder="e.g. Duskwood"></label>
+    </form>
+    <p class="muted">${segs.length} stretch${segs.length === 1 ? '' : 'es'}, ${duration(segs.reduce((n, sg) => n + sg.duration, 0))} in total.</p>
+    ${table(segs, [
+      { label: 'Footage', value: (sg) => sg.t, html: (sg) => `<a class="btn play" href="#/recording/${sg.rec}?t=${sg.from.toFixed(2)}">▶ ${tc(sg.from)}</a> <span class="muted small">${esc(sg.recName)}</span>` },
+      { label: 'Length', value: (sg) => sg.duration, html: (sg) => duration(sg.duration), num: true },
+      { label: 'Where', value: (sg) => sg.zones.join(', ') },
+      { label: 'What', value: (sg) => '', html: (sg) => [sg.uiHidden && 'no UI', sg.flight && 'flight path', sg.mounted && 'mounted', sg.swimming && 'swimming', sg.indoors && 'indoors', ...sg.times].filter(Boolean).map((x) => `<span class="chip">${x}</span>`).join(' ') },
+      { label: 'Character', value: (sg) => sg.char ?? '' },
+    ], { sort: 1, desc: true, empty: 'Nothing matches. Tracks come from the addon (0.3.0 or later) while you record.' })}`;
+};
+
+// Highlights ----------------------------------------------------------------
+
+pages.highlights = async (_, params) => {
+  const { world } = derived();
+  const all = findHighlights(state.sessions, derived().moment, (id) => world.byItem.get(id)?.quality ?? null);
+  const kind = params.get('kind') || 'all';
+  const list = kind === 'all' ? all : all.filter((h) => h.kind === kind);
+  const counts = {};
+  for (const h of all) counts[h.kind] = (counts[h.kind] || 0) + 1;
+  const tabs = [['all', 'Everything', all.length], ...Object.entries(HIGHLIGHT_KINDS).map(([k, label]) => [k, label, counts[k] || 0])]
+    .map(([k, label, n]) => `<a class="btn ${k === kind ? 'primary' : ''}" href="#/highlights?kind=${k}">${label} <span class="muted">${n}</span></a>`).join(' ');
+  return `<h1>Highlights</h1>
+    <p class="muted">Moments worth a short, found automatically.</p>
+    <div class="row">${tabs}</div>
+    ${table(list, [
+      { label: 'Footage', value: (h) => h.footage?.offset ?? -1, html: (h) => play(h) },
+      { label: 'What', value: (h) => HIGHLIGHT_KINDS[h.kind], html: (h) => `<span class="chip">${esc(HIGHLIGHT_KINDS[h.kind])}</span>` },
+      { label: 'Moment', value: (h) => h.label },
+      { label: 'Where', value: (h) => h.zone ?? '' },
+      { label: 'Character', value: (h) => h.char ?? '' },
+      { label: 'When', value: (h) => h.t, html: (h) => `<span class="muted">${esc(when(h.t))}</span>` },
+    ], { sort: 5, desc: true, search: (h) => `${h.label} ${h.zone} ${h.char} ${h.kind}`, empty: 'Nothing yet.' })}`;
+};
+
+// Search --------------------------------------------------------------------
+
+pages.search = async (_, params) => {
+  const q = params.get('q') || '';
+  const d = derived();
+  d.index ??= buildIndex({ codex: d.codex, world: d.world, characters: d.characters });
+  const hits = search(d.index, q);
+  const groups = new Map();
+  for (const h of hits) {
+    if (!groups.has(h.type)) groups.set(h.type, []);
+    groups.get(h.type).push(h);
+  }
+  return `<h1>Search</h1>
+    <p class="muted">${q ? `${hits.length}${hits.length === 200 ? '+' : ''} result${hits.length === 1 ? '' : 's'} for <b>${esc(q)}</b>. Searches names, quest and book text, dialogue, item tooltips (flavor text too), vendor stock and zones.` : 'Type in the search box at the top.'}</p>
+    ${[...groups.entries()].map(([type, list]) => `<h2>${esc(type)}s <span class="muted small">${list.length}</span></h2><ul class="results">${list.map((h) => `<li>${h.type === 'Item' ? itemLink(Number(h.href.split('/').pop()), h.title) : `<a href="${h.href}">${esc(h.title)}</a>`} <span class="muted small">${esc(h.sub)}</span></li>`).join('')}</ul>`).join('')}`;
+};
+
+function schemaNotice() {
+  return `<div class="notice">Your database needs the version 2 update for items, routes and screenshots. Copy the setup file again from <a href="https://github.com/adelrio3/streamer-app/blob/claude/wow-lore-youtube-concept-311j74/supabase/schema.sql" target="_blank" rel="noopener">supabase/schema.sql</a> (the two-squares <b>Copy raw file</b> button), paste it into <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> and click <b>Run</b>. Then reload this page.</div>`;
+}
 
 pages.texts = async () => {
   const c = await codex();
@@ -326,7 +682,7 @@ pages.zone = async (name) => {
       { label: 'Turned in', value: (q) => q.turnedIn[0]?.t ?? 0, html: (q) => (q.turnedIn[0] ? play(q.turnedIn[0]) : '') },
     ], { sort: 2 })}
     <h2>Creatures</h2>
-    <p>${creatures.map((k) => `<a href="#/creature/${enc(k.key)}">${esc(k.name)}</a> <span class="muted">${k.kills}</span>`).join(' · ') || '<span class="muted">None</span>'}</p>
+    <p>${creatures.map((k) => `<a href="#/npc/${enc(k.key)}">${esc(k.name)}</a> <span class="muted">${k.kills}</span>`).join(' · ') || '<span class="muted">None</span>'}</p>
     ${marks.length ? `<h2>Marks</h2><table><tbody>${marks.map((m) => `<tr><td>${play(m)}</td><td>${esc(MARK_NAMES[m.kind])}</td><td>${esc(m.note ?? '')}</td></tr>`).join('')}</tbody></table>` : ''}`;
 };
 
@@ -390,7 +746,8 @@ function recSummary(r) {
 }
 
 pages.recordings = async () => {
-  const list = derived().recordings.map(recSummary);
+  const { recChars } = derived();
+  const list = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [] }));
   return `<h1>Recordings</h1>
     <p class="muted">Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.</p>
     ${table(list, [
@@ -400,9 +757,10 @@ pages.recordings = async () => {
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },
       { label: 'Kills', value: (r) => r.counts.combat ?? 0, num: true },
       { label: 'Marks', value: (r) => r.counts.mark ?? 0, num: true },
+      { label: 'Character', value: (r) => r.chars.join(', ') },
       { label: 'Zones', value: (r) => r.zones.join(', ') },
       { label: 'Timing', value: (r) => r.source, html: (r) => `<span class="chip">${esc(r.source)}</span>` },
-    ], { search: (r) => `${r.name} ${r.zones.join(' ')}`, sort: 0, desc: true, empty: 'No recordings yet. Open this app on your recording computer with OBS running.' })}`;
+    ], { search: (r) => `${r.name} ${r.zones.join(' ')} ${r.chars.join(' ')}`, sort: 0, desc: true, empty: 'No recordings yet. Open this app on your recording computer with OBS running.' })}`;
 };
 
 let videoURL = null;
@@ -415,7 +773,7 @@ pages.recording = async (id, params) => {
   setTimeout(() => wirePlayer(r, start));
   const exportBtn = (fmt, label) => `<button data-fmt="${fmt}">${label}</button>`;
   return `<p><a href="#/recordings">← Recordings</a></p>
-    <div class="row spread"><h1>${esc(r.name)}</h1><span class="muted">${esc(new Date(r.start).toLocaleString())} · ${duration(r.duration)}</span></div>
+    <div class="row spread"><h1>${esc(r.name)}</h1><span class="muted">${esc(new Date(r.start).toLocaleString())} · ${duration(r.duration)}${(derived().recChars.get(r.id) || []).length ? ` · ${(derived().recChars.get(r.id)).map((n) => { const c = derived().characters.find((x) => x.name === n); return c ? `<a href="#/character/${enc(c.key)}">${esc(n)}</a>` : esc(n); }).join(', ')}` : ''}</span></div>
     <div class="player">
       <div>
         <video id="video" controls preload="metadata"></video>
@@ -423,7 +781,7 @@ pages.recording = async (id, params) => {
         ${syncPanel(r)}
         <div class="panel">
           <h3>Export for editing</h3>
-          <div class="filters" id="exportCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" checked><span class="cat cat-${c}"></span>${CAT_NAMES[c]} <span class="muted">${r.counts[c] ?? 0}</span></label>`).join('')}</div>
+          <div class="filters" id="exportCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" ${QUIET_CATS.has(c) ? '' : 'checked'}><span class="cat cat-${c}"></span>${CAT_NAMES[c]} <span class="muted">${r.counts[c] ?? 0}</span></label>`).join('')}</div>
           <div class="row">
             ${exportBtn('xml', 'Premiere markers (.xml)')}
             ${exportBtn('srt', 'Captions (.srt)')}
@@ -436,7 +794,7 @@ pages.recording = async (id, params) => {
         </div>
       </div>
       <div>
-        <div class="filters" id="tlCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" ${c === 'travel' ? '' : 'checked'}><span class="cat cat-${c}"></span>${CAT_NAMES[c]}</label>`).join('')}</div>
+        <div class="filters" id="tlCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" ${QUIET_CATS.has(c) ? '' : 'checked'}><span class="cat cat-${c}"></span>${CAT_NAMES[c]}</label>`).join('')}</div>
         <div class="timeline" id="timeline"></div>
       </div>
     </div>`;
@@ -613,7 +971,7 @@ async function wirePlayer(r, start) {
     b.addEventListener('click', () => {
       const fmt = b.dataset.fmt;
       const checked = [...document.querySelectorAll('#exportCats input:checked')].map((i) => i.value);
-      const cats = ['xml', 'srt', 'csv'].includes(fmt) && checked.length < CATS.length ? new Set(checked) : null;
+      const cats = ['xml', 'srt', 'csv'].includes(fmt) ? new Set(checked) : null;
       download(stem(r.name) + EXPORTS[fmt].ext, EXPORTS[fmt].type, renderExport(r, fmt, cats));
     });
   }
@@ -674,7 +1032,9 @@ pages.setup = async () => {
       ${cfg.fresh ? '<p class="muted small">These are guesses for this computer; change them if they are wrong.</p>' : ''}
     </form>
     ${cfg.plays && !cfg.fresh ? `<div class="panel"><h3>World of Warcraft</h3>${wowBody}</div>
-      <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Chronicler. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p></div>` : ''}
+      <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Chronicler. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p>
+        <p class="small">Optional commands: <code>/chron scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/chron scanner off</code> puts them back). <code>/chron shots off</code> stops automatic screenshots. <code>/chron social on</code> also logs group, duels and chat. <code>/chron</code> lists everything.</p></div>` : ''}
+    ${state.schema2 ? '' : schemaNotice()}
     ${cfg.records && !cfg.fresh ? `<form id="obsForm" class="panel"><h3>OBS</h3>
       <p class="small">In OBS: <b>Tools › WebSocket Server Settings</b>, tick <b>Enable WebSocket server</b>, then click <b>Show Connect Info</b> and copy the <b>Server Password</b> here. If Chrome asks to let this site access apps on this device, click <b>Allow</b>.</p>
       <label class="check"><input type="checkbox" name="enabled" ${cfg.obs.enabled ? 'checked' : ''}><span>Connect to OBS on this computer</span></label>
@@ -817,7 +1177,8 @@ async function route({ keepScroll = false } = {}) {
   const params = new URLSearchParams(query);
   for (const a of document.querySelectorAll('#nav a')) {
     const target = a.getAttribute('href').slice(2);
-    a.classList.toggle('active', target === page || target === `${page}s`);
+    const alias = { npc: 'bestiary', item: 'items', character: 'characters', quest: 'quests', zone: 'zones', recording: 'recordings', session: 'sessions' }[page] ?? page;
+    a.classList.toggle('active', target.split('?')[0] === alias);
   }
   const render = state.machine.config.fresh && page !== 'setup' ? pages.setup : pages[page] ?? pages[''];
   const y = window.scrollY;
@@ -825,8 +1186,13 @@ async function route({ keepScroll = false } = {}) {
     main.innerHTML = await render(rest.map(decodeURIComponent).join('/'), params);
   } catch (err) {
     main.innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
+    console.error(err);
   }
   window.scrollTo(0, keepScroll ? y : 0);
+  const box = document.getElementById('searchBox');
+  if (box && page === 'search' && document.activeElement !== box) box.value = params.get('q') || '';
+  // Wowhead's script turns item links into icons with tooltips.
+  setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 50);
 }
 
 async function loadConfig() {
@@ -855,7 +1221,10 @@ async function startApp(user) {
   state.store = new CloudStore(state.client, user.id);
   main.innerHTML = '<p class="muted">Loading your chronicle…</p>';
   const all = await state.store.loadAll();
-  Object.assign(state, { sessions: all.sessions, rows: all.recordings, clock: all.clock, settings: all.settings });
+  Object.assign(state, {
+    sessions: all.sessions, rows: all.recordings, clock: all.clock, settings: all.settings,
+    items: all.items, screenshots: all.screenshots, schema2: all.schema2,
+  });
   state.machine = new Machine({ store: state.store, state, changed, notify: toast });
   document.getElementById('nav').hidden = false;
   renderStatus();
@@ -877,4 +1246,9 @@ async function boot() {
 }
 
 window.addEventListener('hashchange', () => route());
+document.getElementById('search')?.addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const q = document.getElementById('searchBox').value.trim();
+  if (q) location.hash = `#/search?q=${enc(q)}`;
+});
 boot();

@@ -2,11 +2,16 @@
 -- line it up with your OBS recordings.
 --
 -- Everything is appended to ChroniclerDB.sessions[n].events. WoW writes
--- SavedVariables to disk on logout and /reload, and the companion picks the
+-- SavedVariables to disk on logout and /reload, and the web app picks the
 -- file up from there. Nothing here talks to the network or the filesystem.
+--
+-- This file is the core (sessions, time, quests, lore, kills, marks, sync).
+-- Capture.lua adds everything else through the shared `ns` table.
 
-local ADDON_NAME = ...
-local SCHEMA = 1
+local ADDON_NAME, ns = ...
+ns = ns or {}
+local SCHEMA = 2
+local KEEP_DAYS = 30 -- sessions older than this are dropped at login
 local MARK_KINDS = { lore = "Lore beat", shot = "Beautiful shot", funny = "Funny", redo = "Redo", mark = "Mark" }
 
 BINDING_HEADER_CHRONICLER = "Chronicler"
@@ -102,6 +107,26 @@ local function record(kind, data)
 	return data
 end
 
+-- Several listeners per event, so Capture.lua can hook the same events.
+local listeners = {}
+local function on(event, fn)
+	if not listeners[event] then
+		listeners[event] = {}
+		-- Some events only exist in some clients; registering a missing one errors.
+		pcall(frame.RegisterEvent, frame, event)
+	end
+	local list = listeners[event]
+	list[#list + 1] = fn
+end
+frame:SetScript("OnEvent", function(_, event, ...)
+	local list = listeners[event]
+	if not list then return end
+	for i = 1, #list do
+		local ok, err = pcall(list[i], ...)
+		if not ok and geterrorhandler then geterrorhandler()(err) end
+	end
+end)
+
 local function say(msg)
 	if not (ChroniclerDB and ChroniclerDB.settings.silent) then
 		print("|cffd4a017Chronicler|r " .. msg)
@@ -192,6 +217,19 @@ local function startSession()
 	sessions[#sessions + 1] = session
 	lastZone, lastSubZone = GetRealZoneText(), GetSubZoneText()
 	record("session_start")
+	for _, hook in ipairs(ns.sessionStartHooks or {}) do pcall(hook, session) end
+end
+
+-- Old sessions make the SavedVariables file slow to load. The web app keeps
+-- its own copy of everything it uploaded.
+local function prune()
+	local cutoff = time() - KEEP_DAYS * 86400
+	local kept, dropped = {}, 0
+	for _, s in ipairs(ChroniclerDB.sessions) do
+		if (s.started or 0) >= cutoff then kept[#kept + 1] = s else dropped = dropped + 1 end
+	end
+	ChroniclerDB.sessions = kept
+	return dropped
 end
 
 -- Marks (key bindings and /chron mark) -----------------------------------
@@ -248,16 +286,22 @@ function handlers.ADDON_LOADED(name)
 	ChroniclerDB.schema = SCHEMA
 	ChroniclerDB.sessions = ChroniclerDB.sessions or {}
 	ChroniclerDB.settings = ChroniclerDB.settings or { silent = false }
+	ChroniclerDB.items = ChroniclerDB.items or {}
 	buildPatterns()
+	ns.pruned = prune()
 end
 
 function handlers.PLAYER_LOGIN()
 	calibrate()
 	startSession()
 	print("|cffd4a017Chronicler|r is logging. |cffffffff/chron|r for status.")
+	if (ns.pruned or 0) > 0 then
+		print(string.format("|cffd4a017Chronicler|r removed %d sessions older than %d days from the addon (the web app keeps them).", ns.pruned, KEEP_DAYS))
+	end
 end
 
 function handlers.PLAYER_LOGOUT()
+	for _, hook in ipairs(ns.sessionEndHooks or {}) do pcall(hook, session) end
 	record("session_end")
 end
 
@@ -285,12 +329,37 @@ local function currentQuestID()
 	if id and id ~= 0 then return id end
 end
 
+-- Items and money a quest offers, as shown in the quest window.
+local function questRewards(data)
+	local function list(kind, count)
+		local out
+		for i = 1, count or 0 do
+			local link = GetQuestItemLink and GetQuestItemLink(kind, i)
+			local id = link and tonumber(link:match("|Hitem:(%d+)"))
+			if id then
+				local _, _, n = GetQuestItemInfo(kind, i)
+				out = out or {}
+				out[#out + 1] = { id = id, name = link:match("%[(.-)%]"), n = n }
+				if ns.wantItem then ns.wantItem(id) end
+			end
+		end
+		return out
+	end
+	data.rewards = list("reward", GetNumQuestRewards and GetNumQuestRewards())
+	data.choices = list("choice", GetNumQuestChoices and GetNumQuestChoices())
+	local money = GetRewardMoney and GetRewardMoney()
+	if money and money > 0 then data.rewardMoney = money end
+	local xp = GetRewardXP and GetRewardXP()
+	if xp and xp > 0 then data.rewardXp = xp end
+	return data
+end
+
 function handlers.QUEST_DETAIL()
 	local qid, title = currentQuestID(), GetTitleText()
 	if qid then questTitles[qid] = title end
-	record("quest_detail", questNPC({
+	record("quest_detail", questRewards(questNPC({
 		qid = qid, title = title, text = GetQuestText(), obj = GetObjectiveText(),
-	}))
+	})))
 end
 
 function handlers.QUEST_ACCEPTED(a, b)
@@ -314,7 +383,7 @@ end
 function handlers.QUEST_COMPLETE()
 	local qid, title = currentQuestID(), GetTitleText()
 	if qid then questTitles[qid] = title end
-	record("quest_complete", questNPC({ qid = qid, title = title, text = GetRewardText() }))
+	record("quest_complete", questRewards(questNPC({ qid = qid, title = title, text = GetRewardText() })))
 end
 
 function handlers.QUEST_TURNED_IN(qid, xp, money)
@@ -443,7 +512,10 @@ function handlers.CHAT_MSG_LOOT(msg)
 		local link, count = msg:match(spec[1])
 		if link then
 			local item = itemFromLink(link, tonumber(count), spec[2])
-			if item then record("loot", item) end
+			if item then
+				record("loot", item)
+				if ns.wantItem then ns.wantItem(item.id) end
+			end
 			return
 		end
 	end
@@ -459,7 +531,8 @@ function handlers.CHAT_MSG_SYSTEM(msg)
 		local what = msg:match(p)
 		if what then
 			local id = tonumber(what:match("|H%a+:(%d+)"))
-			record("learn", { what = what:match("%[(.-)%]") or what, spellId = id })
+			local desc = id and GetSpellDescription and GetSpellDescription(id)
+			record("learn", { what = what:match("%[(.-)%]") or what, spellId = id, desc = desc ~= "" and desc or nil })
 			return
 		end
 	end
@@ -470,7 +543,7 @@ function handlers.PLAYER_LEVEL_UP(level)
 end
 
 function handlers.PLAYER_DEAD()
-	record("death")
+	record("death", ns.deathInfo and ns.deathInfo() or nil)
 end
 
 function handlers.CINEMATIC_START()
@@ -491,15 +564,25 @@ if hooksecurefunc and AbandonQuest then
 	end)
 end
 
-frame:SetScript("OnEvent", function(_, event, ...)
-	local handler = handlers[event]
-	if handler then handler(...) end
-end)
+for event, fn in pairs(handlers) do on(event, fn) end
 
-for event in pairs(handlers) do
-	-- Some events only exist in some clients; registering a missing one errors.
-	pcall(frame.RegisterEvent, frame, event)
-end
+-- Shared with Capture.lua.
+ns.on = on
+ns.record = record
+ns.now = now
+ns.say = say
+ns.round = round
+ns.parseGUID = parseGUID
+ns.isCreature = isCreature
+ns.where = where
+ns.toPattern = toPattern
+ns.itemFromLink = itemFromLink
+ns.session = function() return session end
+ns.playerGUID = function() return playerGUID end
+ns.commands = ns.commands or {}
+ns.helpLines = ns.helpLines or {}
+ns.sessionStartHooks = ns.sessionStartHooks or {}
+ns.sessionEndHooks = ns.sessionEndHooks or {}
 
 -- Slash commands ----------------------------------------------------------
 
@@ -519,7 +602,8 @@ local function help()
 	print("  /chron note <text> - a mark with a note")
 	print("  /chron sync - sync flash and sound, for lining up recordings made on another PC")
 	print("  /chron silent - toggle chat feedback for marks")
-	print("  /chron clear - forget all logged sessions (after the companion has ingested them)")
+	print("  /chron clear - forget all logged sessions (after the web app has uploaded them)")
+	for _, line in ipairs(ns.helpLines) do print("  " .. line) end
 end
 
 SLASH_CHRONICLER1 = "/chron"
@@ -554,6 +638,8 @@ SlashCmdList.CHRONICLER = function(input)
 			local sessions, events = countEvents()
 			print(string.format("|cffd4a017Chronicler|r this deletes %d sessions / %d events from the addon. The companion keeps its own copy of everything it has ingested. Type /chron clear confirm to go ahead.", sessions, events))
 		end
+	elseif ns.commands[cmd] then
+		ns.commands[cmd](rest)
 	else
 		help()
 	end

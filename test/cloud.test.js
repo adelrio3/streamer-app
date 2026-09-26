@@ -7,8 +7,9 @@ import { CloudStore, measureClock } from '../web/lib/cloud.js';
 import { projectUrl } from '../netlify/functions/config.mjs';
 
 export function fakeClient() {
-  const tables = { sessions: [], recordings: [], clock_samples: [], settings: [] };
-  const keys = { sessions: ['user_id', 'id'], recordings: ['user_id', 'name'], settings: ['user_id'] };
+  const tables = { sessions: [], recordings: [], clock_samples: [], settings: [], items: [], tracks: [], screenshots: [] };
+  const keys = { sessions: ['user_id', 'id'], recordings: ['user_id', 'name'], settings: ['user_id'], items: ['user_id', 'item_id'], tracks: ['user_id', 'session_id', 'chunk'], screenshots: ['user_id', 'name'] };
+  const files = new Map();
   const query = (table) => {
     let rows = () => tables[table];
     const q = {
@@ -17,17 +18,25 @@ export function fakeClient() {
       gt(col, v) { const prev = rows; rows = () => prev().filter((r) => r[col] > v); return q; },
       range(from, to) { return Promise.resolve({ data: rows().slice(from, to + 1), error: null }); },
       maybeSingle() { return Promise.resolve({ data: rows()[0] ?? null, error: null }); },
-      upsert(row, { onConflict }) {
+      upsert(rows, { onConflict }) {
         assert.equal(onConflict, keys[table].join(','));
-        const i = tables[table].findIndex((r) => keys[table].every((k) => r[k] === row[k]));
-        if (i >= 0) tables[table][i] = { ...tables[table][i], ...row }; else tables[table].push(row);
+        for (const row of Array.isArray(rows) ? rows : [rows]) {
+          const i = tables[table].findIndex((r) => keys[table].every((k) => r[k] === row[k]));
+          if (i >= 0) tables[table][i] = { ...tables[table][i], ...row }; else tables[table].push(row);
+        }
         return Promise.resolve({ error: null });
       },
       insert(row) { tables[table].push(row); return Promise.resolve({ error: null }); },
     };
     return q;
   };
-  return { tables, from: query, rpc: async (name) => (name === 'server_time' ? { data: Date.now() + 5000, error: null } : { error: { message: 'no' } }) };
+  const storage = {
+    from: () => ({
+      upload: async (path, blob) => { files.set(path, blob); return { error: null }; },
+      createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: files.has(p) ? `https://signed/${p}` : null })), error: null }),
+    }),
+  };
+  return { tables, files, storage, from: query, rpc: async (name) => (name === 'server_time' ? { data: Date.now() + 5000, error: null } : { error: { message: 'no' } }) };
 }
 
 test('stores and reloads sessions, recordings, clock samples and settings', async () => {
@@ -71,4 +80,33 @@ test('config function turns any Supabase URL form into the project URL', () => {
   assert.equal(projectUrl('postgresql://postgres:pw@db.abcd.supabase.co:5432/postgres'), 'https://abcd.supabase.co');
   assert.equal(projectUrl('postgresql://postgres.abcd:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres'), 'https://abcd.supabase.co');
   assert.equal(projectUrl(undefined), null);
+});
+
+test('item catalog, tracks and screenshots', async () => {
+  const client = fakeClient();
+  const store = new CloudStore(client, 'u1');
+  await store.saveItems(Array.from({ length: 450 }, (_, i) => ({ item_id: i + 1, data: { name: `Item ${i + 1}` } })));
+  await store.saveItems([{ item_id: 1, data: { name: 'Item 1 again' } }]);
+  await store.saveTrack('s1', 1, ['3,b'], 'Gaming PC');
+  await store.saveTrack('s1', 0, ['1,a', '2,a'], 'Gaming PC');
+  await store.saveScreenshot({ name: 'WoWScrnShot_092526_201500.jpg', taken_ms: 5 }, 'jpegbytes');
+  const all = await store.loadAll();
+  assert.equal(all.items.length, 450);
+  assert.equal(all.items.find((i) => i.item_id === 1).data.name, 'Item 1 again');
+  assert.equal(all.schema2, true);
+  assert.deepEqual((await store.loadTracks()).get('s1'), ['1,a', '2,a', '3,b'], 'chunks in order');
+  assert.equal(all.screenshots[0].path, 'u1/WoWScrnShot_092526_201500.jpg');
+  const urls = await store.screenshotUrls([all.screenshots[0].path]);
+  assert.equal(urls.get('u1/WoWScrnShot_092526_201500.jpg'), 'https://signed/u1/WoWScrnShot_092526_201500.jpg');
+});
+
+test('works before the version 2 tables exist', async () => {
+  const client = fakeClient();
+  const from = client.from;
+  client.from = (t) => (['items', 'screenshots'].includes(t)
+    ? { select: () => ({ range: async () => ({ data: null, error: { message: `relation "public.${t}" does not exist` } }), order: () => ({ range: async () => ({ data: null, error: { message: 'Could not find the table in the schema cache' } }) }) }) }
+    : from(t));
+  const all = await new CloudStore(client, 'u').loadAll();
+  assert.equal(all.schema2, false);
+  assert.deepEqual(all.items, []);
 });

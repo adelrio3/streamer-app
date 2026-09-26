@@ -3,17 +3,24 @@
 A companion for playing through World of Warcraft on camera. You play once, record everything, and Chronicler keeps the notes for you.
 
 - **The addon** (`addon/Chronicler`) runs in game and logs, with timestamps accurate to about a frame:
-  - every quest's full text as you read it (description, objectives, progress, completion), who gave it, where, and at what level
-  - NPC speech, yells and emotes, gossip text, books and plaques page by page, cinematics
-  - every kill (creature ID, killing blow or not), every item looted, received or crafted (with quality, item level and icon)
-  - zone and subzone changes, discoveries, level-ups, deaths, spells and recipes learned, skill-ups
-  - **marks**: one key press flags a moment as *lore beat*, *beautiful shot*, *funny* or *redo*
-  - **sync flash**: a white flash and sound that lines footage up exactly
+  - every quest's full text as you read it, who gave it, its rewards, where, and at what level
+  - NPC speech, gossip, books and plaques page by page, cinematics
+  - **every NPC and creature near you**: targeted, moused over, on a nameplate, fighting within combat-log range, or speaking; with level, elite/rare rank, type, family, reaction and subtitle. `/chron scanner on` adds invisible nameplates to catch everything within about 40 yards
+  - **every loot window**: what dropped and from whom (including what you left behind), coins, herbs, ore and chests
+  - **a full item catalog**: every tooltip line (flavor text included), stats, sell price, icon, use effect, for anything you loot, see, buy, wear, carry or hover
+  - **vendors** with stock, prices, limited quantities and item costs; **trainers** and their prices; **flight masters**, routes and costs, flights taken; hearthstone location
+  - **fights**: duration, damage dealt and taken, abilities, enemies, close calls, and who killed you
+  - **your character over time**: gear and every change, talents, stats per level, reputation, gold with where it came from, XP, skills and bags
+  - **position and state every 2 seconds** (mounted, flight path, UI hidden, indoors, swimming, in-game time of day) for the footage finder
+  - **automatic screenshots** at rares, level-ups, discoveries and deaths, plus your own
+  - optional group, duel and chat logging (`/chron social on`)
+  - **marks** (lore beat, beautiful shot, funny, redo) and the **sync flash**
 - **The web app** (`web/`, hosted on Netlify, data in Supabase) is open in Chrome on each computer and bridges them:
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
   - on the **recording computer** it listens to OBS for when each recording starts and stops, and reads the recordings folder
   - both computers measure their clocks against the server, so game events land on the right second of footage automatically, and a sync flash makes it exact
-  - the Codex: every quest, creature, NPC, item, text and mark, each with a ▶ link into the footage
+  - pages for every character's journey, quests, a bestiary with drop rates, items with icons and full tooltips, vendors, zones, texts, highlights, a footage finder, screenshots and marks, each with ▶ links into the footage
+  - one search box across all of it
   - per recording: **Premiere markers** (.xml), **captions** (.srt), **kill counter data** (.csv), **YouTube chapters** and a full event list
 
 Videos never leave the recording computer. Only the logs and recording times are stored in Supabase.
@@ -37,7 +44,12 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 | `/chron mark lore <note>` | Mark a lore beat. Other kinds: `shot`, `funny`, `redo`, or leave the kind out |
 | `/chron note <text>` | A mark with a note |
 | `/chron silent` | Stop marks from printing to chat (so it stays out of footage) |
-| `/chron clear` | Empty the addon's log once it has been uploaded, to keep the SavedVariables file small |
+| `/chron scanner on\|off` | Log every NPC within about 40 yards using invisible nameplates (changes your nameplate settings; `off` restores them) |
+| `/chron shots on\|off` | Automatic screenshots at rares, level-ups, discoveries and deaths (on by default) |
+| `/chron social on\|off` | Also log group, duels and chat (off by default) |
+| `/chron track on\|off` | Position tracking for the footage finder (on by default) |
+| `/chron items` | Size of the item catalog |
+| `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 
 Key bindings: Options › Keybindings › AddOns › Chronicler.
 

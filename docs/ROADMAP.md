@@ -15,6 +15,18 @@ The addon logs everything and the web app ties it to footage across two computer
 5. On the Mac, open the recording, line it up with the flash, click a few events: the video should land within a frame or two.
 6. Download the Premiere markers (.xml) and import them in Premiere.
 
+## Captured since 0.3.0
+
+NPCs near you, loot windows and drop rates, the full item catalog, vendors, trainers, flight masters, fights, character progression, the 2-second position track, screenshots and optional social logging; with Characters, Bestiary, Items, Vendors, Highlights, Footage finder, Screenshots and global search in the web app.
+
+## Next ideas
+
+- Import WoW's own combat log (`/combatlog`) for exact fight replays.
+- Mic on its own OBS track, transcribed and lined up with game events.
+- Near-live markers in OBS through WoW's chat log file.
+- Zone maps drawn from the position track, with pins for quests, NPCs, vendors and drops.
+- Item cards and kill counters rendered as overlays (Phase 4).
+
 ## Phase 2: the guide (completion without a scout)
 
 - **Quest database.** Import a complete quest list for Classic, with quest givers, coordinates, level ranges, prerequisites, faction and class/profession restrictions. The open-source Questie addon's database is the obvious source. It is GPL-licensed, so it can be used by a personal tool; check the licence before redistributing anything built from it.

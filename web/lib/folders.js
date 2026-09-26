@@ -134,6 +134,17 @@ export function isHiddenFile(name) {
   return name.startsWith('.');
 }
 
+// Screenshot image files in <flavor>/Screenshots: [{ name, handle }].
+export async function listScreenshots(flavorDir) {
+  const dir = await child(flavorDir, 'Screenshots');
+  if (!dir) return [];
+  const out = [];
+  for await (const entry of entries(dir)) {
+    if (entry.kind === 'file' && /\.(jpe?g|png)$/i.test(entry.name) && !isHiddenFile(entry.name)) out.push({ name: entry.name, handle: entry });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.mov', '.flv', '.ts', '.m4v', '.webm'];
 
 // Video files in the recordings folder (and one level of subfolders):

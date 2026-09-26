@@ -87,3 +87,79 @@ volatile
 as $$ select extract(epoch from clock_timestamp()) * 1000 $$;
 
 grant execute on function public.server_time() to authenticated;
+
+-- Version 2 ------------------------------------------------------------------
+-- Item catalog, position tracks and screenshots. Running this whole file again
+-- adds these without touching anything you already have.
+
+-- Everything the game knows about each item you have come across.
+create table if not exists public.items (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  item_id integer not null,
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, item_id)
+);
+
+-- Position and state every 2 seconds, in chunks of up to 1000 points.
+create table if not exists public.tracks (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  session_id text not null,
+  chunk integer not null,
+  machine text,
+  points jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, session_id, chunk)
+);
+
+-- Screenshots uploaded from the gaming PC (the images are in Storage).
+create table if not exists public.screenshots (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name text not null,
+  flavor text,
+  machine text,
+  taken_ms bigint,
+  path text not null,
+  width integer,
+  height integer,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, name)
+);
+
+alter table public.items enable row level security;
+alter table public.tracks enable row level security;
+alter table public.screenshots enable row level security;
+
+drop policy if exists "own items" on public.items;
+create policy "own items" on public.items for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+drop policy if exists "own tracks" on public.tracks;
+create policy "own tracks" on public.tracks for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+drop policy if exists "own screenshots" on public.screenshots;
+create policy "own screenshots" on public.screenshots for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+grant select, insert, update, delete on public.items, public.tracks, public.screenshots to authenticated;
+
+-- A private storage bucket for screenshot images, one folder per user.
+insert into storage.buckets (id, name, public) values ('screenshots', 'screenshots', false)
+  on conflict (id) do nothing;
+
+drop policy if exists "chronicler screenshots read" on storage.objects;
+create policy "chronicler screenshots read" on storage.objects for select to authenticated
+  using (bucket_id = 'screenshots' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "chronicler screenshots write" on storage.objects;
+create policy "chronicler screenshots write" on storage.objects for insert to authenticated
+  with check (bucket_id = 'screenshots' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "chronicler screenshots update" on storage.objects;
+create policy "chronicler screenshots update" on storage.objects for update to authenticated
+  using (bucket_id = 'screenshots' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "chronicler screenshots delete" on storage.objects;
+create policy "chronicler screenshots delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'screenshots' and (storage.foldername(name))[1] = (select auth.uid())::text);

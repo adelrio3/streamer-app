@@ -6,22 +6,30 @@
   <title>Chronicler</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 4h16l4 4v20H6z' fill='%23d4a017'/%3E%3Cpath d='M10 12h12M10 17h12M10 22h8' stroke='%231a1712' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
+  <!-- Wowhead item icons and tooltips (https://www.wowhead.com/tooltips) -->
+  <script>const whTooltips = { colorLinks: false, iconizeLinks: true, renameLinks: false, iconSize: 'small' };</script>
+  <script src="https://wow.zamimg.com/js/tooltips.js" async></script>
 </head>
 <body>
   <header class="top">
     <a class="brand" href="#/">Chronicler</a>
     <nav id="nav" hidden>
+      <a href="#/characters">Characters</a>
       <a href="#/quests">Quests</a>
-      <a href="#/creatures">Creatures</a>
-      <a href="#/npcs">NPCs</a>
+      <a href="#/bestiary">Bestiary</a>
       <a href="#/items">Items</a>
-      <a href="#/texts">Texts</a>
+      <a href="#/vendors">Vendors</a>
       <a href="#/zones">Zones</a>
+      <a href="#/texts">Texts</a>
+      <a href="#/highlights">Highlights</a>
+      <a href="#/footage">Footage finder</a>
+      <a href="#/recordings">Recordings</a>
+      <a href="#/screenshots">Screenshots</a>
       <a href="#/marks">Marks</a>
       <a href="#/sessions">Sessions</a>
-      <a href="#/recordings">Recordings</a>
       <a href="#/setup">This computer</a>
     </nav>
+    <form id="search" role="search"><input type="search" id="searchBox" placeholder="Search everything…" aria-label="Search everything"></form>
     <div class="status" id="status"></div>
   </header>
   <main id="main"><p class="muted">Loading…</p></main>
