@@ -4,9 +4,7 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + a no-build web app (`web/`) hosted on 
 
 ## Working with the user
 
-- End every message that delivers changes with the ZIP download link for the branch that was pushed:
-  `https://github.com/adelrio3/streamer-app/archive/refs/heads/<branch>.zip`
-  They install the addon by copying `addon/Chronicler` from that ZIP into `Interface\AddOns\`.
+- Don't include the ZIP download link in messages. The addon installs and updates from the web app (This computer › Update addon), and the site deploys itself from this branch on Netlify.
 - Whenever you mention a file, say where it is or how to open it: a GitHub link for files in this repo
   (`https://github.com/adelrio3/streamer-app/blob/<branch>/<path>`), the full Windows path for files on their PC
   (e.g. `C:\Program Files (x86)\World of Warcraft\_classic_era_\WTF\Account\<ACCOUNT>\SavedVariables\Chronicler.lua`),
