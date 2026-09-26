@@ -85,6 +85,15 @@ export class CloudStore {
     return full;
   }
 
+  // Your own map image for a zone (a cropped screenshot of the in-game map),
+  // kept next to the screenshots. Returns the storage path.
+  async saveMapImage(mapId, blob) {
+    const path = `${this.userId}/maps/${mapId}.jpg`;
+    const { error } = await this.client.storage.from('screenshots').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw new Error(error.message);
+    return path;
+  }
+
   // Temporary links to private screenshot images: Map<path, url>.
   async screenshotUrls(paths) {
     const out = new Map();

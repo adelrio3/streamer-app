@@ -12,6 +12,11 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + a no-build web app (`web/`) hosted on 
 - They play Classic Era (interface 11509 as of 1.15.9) on a Windows PC (Chrome can't open Program Files, so WoW gets moved to `C:\Games\World of Warcraft`) and record with OBS on a separate Mac (no file sharing between them), editing in Premiere Pro.
 - Give exact values to enter and direct links (Supabase dashboard links can use `https://supabase.com/dashboard/project/_/...`), so they don't have to hunt or guess.
 
+## Web app layout
+
+- `web/index.html` is a sidebar shell (Chronicle / World / Footage / System groups); pages live in `web/app.js` as `pages.<name>` and use `pageHead`, `tabsHtml`, `crumb`, `facts`, `table`. Bestiary = `world.creatures` (attackable), People = `world.people`, objects (herbs/ore/chests) under Items. Maps: `web/lib/maps.js` + `wireMap` in app.js.
+- The headless two-computer smoke test lives in the session scratchpad (`cloud-smoke.cjs`), not the repo; it fakes Supabase, folders and OBS.
+
 ## Checks
 
 - `npm test` runs everything. The addon tests need `lua5.1` (apt-get install lua5.1); they run the real addon against `test/addon/harness.lua`.

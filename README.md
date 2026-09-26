@@ -19,7 +19,9 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
   - on the **recording computer** it listens to OBS for when each recording starts and stops, and reads the recordings folder
   - both computers measure their clocks against the server, so game events land on the right second of footage automatically, and a sync flash makes it exact
-  - pages for every character's journey, quests, a bestiary with drop rates, items with icons and full tooltips, vendors, zones, texts, highlights, a footage finder, screenshots and marks, each with ▶ links into the footage
+  - **Chronicle**: Overview, Characters (each one's full journey), Quests, Zones, Lore (every text and line of dialogue, filterable by zone for scripts), Locations (zone maps with everything pinned where it happened, plus the route you walked)
+  - **World**: Bestiary (creatures you can fight, with drop rates and every sighting's coordinates), People (quest givers, vendors, trainers, flight masters, townsfolk), Items (icons, full tooltips, every source) and the herbs, ore and chests you opened
+  - **Footage**: Recordings, Highlights, Footage finder, Screenshots, Marks; every entry links to the second of footage it happened in
   - one search box across all of it
   - per recording: **Premiere markers** (.xml), **captions** (.srt), **kill counter data** (.csv), **YouTube chapters** and a full event list
 

@@ -4,35 +4,59 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chronicler</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 4h16l4 4v20H6z' fill='%23d4a017'/%3E%3Cpath d='M10 12h12M10 17h12M10 22h8' stroke='%231a1712' stroke-width='2'/%3E%3C/svg%3E">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#14110c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 4h16l4 4v20H6z' fill='%23d9a52a'/%3E%3Cpath d='M10 12h12M10 17h12M10 22h8' stroke='%2314110c' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="styles.css">
   <!-- Wowhead item icons and tooltips (https://www.wowhead.com/tooltips) -->
   <script>const whTooltips = { colorLinks: false, iconizeLinks: true, renameLinks: false, iconSize: 'small' };</script>
   <script src="https://wow.zamimg.com/js/tooltips.js" async></script>
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="#/">Chronicler</a>
-    <nav id="nav" hidden>
-      <a href="#/characters">Characters</a>
-      <a href="#/quests">Quests</a>
-      <a href="#/bestiary">Bestiary</a>
-      <a href="#/items">Items</a>
-      <a href="#/vendors">Vendors</a>
-      <a href="#/zones">Zones</a>
-      <a href="#/texts">Texts</a>
-      <a href="#/highlights">Highlights</a>
-      <a href="#/footage">Footage finder</a>
-      <a href="#/recordings">Recordings</a>
-      <a href="#/screenshots">Screenshots</a>
-      <a href="#/marks">Marks</a>
-      <a href="#/sessions">Sessions</a>
-      <a href="#/setup">This computer</a>
-    </nav>
-    <form id="search" role="search"><input type="search" id="searchBox" placeholder="Search everything…" aria-label="Search everything"></form>
-    <div class="status" id="status"></div>
-  </header>
-  <main id="main"><p class="muted">Loading…</p></main>
+  <div class="shell">
+    <aside class="side" id="side">
+      <div class="side-top">
+        <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true"></span>Chronicler</a>
+        <button class="menu-toggle" id="menuToggle" aria-label="Menu" aria-expanded="false">☰</button>
+      </div>
+      <form id="search" role="search"><input type="search" id="searchBox" placeholder="Search everything…" aria-label="Search everything"></form>
+      <nav id="nav" hidden>
+        <div class="nav-group">
+          <div class="nav-label">Chronicle</div>
+          <a href="#/"><span class="ico">◈</span>Overview</a>
+          <a href="#/characters"><span class="ico">✦</span>Characters</a>
+          <a href="#/quests"><span class="ico">❖</span>Quests</a>
+          <a href="#/zones"><span class="ico">◬</span>Zones</a>
+          <a href="#/locations"><span class="ico">⌖</span>Locations</a>
+          <a href="#/lore"><span class="ico">❡</span>Lore</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">World</div>
+          <a href="#/bestiary"><span class="ico">☠</span>Bestiary</a>
+          <a href="#/people"><span class="ico">☺</span>People</a>
+          <a href="#/items"><span class="ico">⚔</span>Items</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Footage</div>
+          <a href="#/recordings"><span class="ico">▶</span>Recordings</a>
+          <a href="#/highlights"><span class="ico">★</span>Highlights</a>
+          <a href="#/footage"><span class="ico">◎</span>Footage finder</a>
+          <a href="#/screenshots"><span class="ico">▣</span>Screenshots</a>
+          <a href="#/marks"><span class="ico">⚑</span>Marks</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">System</div>
+          <a href="#/sessions"><span class="ico">≡</span>Sessions</a>
+          <a href="#/setup"><span class="ico">⚙</span>This computer</a>
+        </div>
+      </nav>
+      <div class="status" id="status"></div>
+    </aside>
+    <main id="main"><p class="muted">Loading…</p></main>
+  </div>
   <script type="module" src="app.js"></script>
 </body>
 </html>

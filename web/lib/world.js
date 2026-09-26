@@ -20,7 +20,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
         key, npcId: npcId ?? null, name: name ?? null, titles: new Set(), levels: [], ranks: new Set(), ctype: null, family: null,
         react: null, faction: null, hp: null, zones: new Set(), sightings: 0, sources: {}, first: null, last: null,
         kills: 0, firstKill: null, loots: 0, drops: new Map(), moneyDrops: 0, vendor: null, trainer: null, taxi: null,
-        lines: [], quests: new Set(), killedYou: 0, fights: 0, tip: null, rare: false,
+        lines: [], quests: new Set(), killedYou: 0, fights: 0, tip: null, rare: false, spots: [],
       };
       npcs.set(key, n);
     }
@@ -47,6 +47,13 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
     it.info = row.data;
   }
 
+  // Where something was seen: map coordinates in percent, with footage.
+  const MAX_SPOTS = 400;
+  const spot = (n, s, e, kind) => {
+    if (!n || e.x == null || !e.m || n.spots.length >= MAX_SPOTS) return;
+    n.spots.push({ m: e.m, z: e.z ?? null, sz: e.sz ?? null, x: e.x, y: e.y, kind, ...moment(s, e) });
+  };
+
   for (const s of sessions) {
     const who = s.char?.name ? `${s.char.name}-${s.char.realm ?? ''}` : 'unknown';
     for (const e of s.events) {
@@ -55,6 +62,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           const n = npc(e.npcId, e.name);
           if (!n) break;
           n.sightings++;
+          spot(n, s, e, e.src);
           n.sources[e.src] = (n.sources[e.src] || 0) + 1;
           const m = moment(s, e);
           n.first ??= m;
@@ -76,6 +84,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           n.kills++;
           n.firstKill ??= moment(s, e);
           if (e.z) n.zones.add(e.z);
+          spot(n, s, e, 'kill');
           break;
         }
         case 'loot_window': {
@@ -84,6 +93,8 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
             if (!n) continue;
             if (src.kind === 'GameObject') n.object = true;
             n.loots++;
+            spot(n, s, e, 'loot');
+            if (e.z) n.zones.add(e.z);
             if (e.money) n.moneyDrops++;
             for (const i of e.items || []) {
               const d = n.drops.get(i.id) || { id: i.id, name: i.name, times: 0, qty: 0 };
@@ -112,6 +123,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           if (!n) break;
           n.vendor = { items: e.items || [], repair: Boolean(e.repair), at: moment(s, e), zone: e.z ?? null };
           if (e.z) n.zones.add(e.z);
+          spot(n, s, e, 'vendor');
           for (const v of e.items || []) {
             const it = item(v.id, v.name);
             if (!it) continue;
@@ -126,12 +138,12 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
         }
         case 'trainer': {
           const n = npc(e.npcId, e.npc);
-          if (n) n.trainer = { services: e.services || [], greeting: e.greeting ?? null, at: moment(s, e) };
+          if (n) { n.trainer = { services: e.services || [], greeting: e.greeting ?? null, at: moment(s, e) }; spot(n, s, e, 'trainer'); if (e.z) n.zones.add(e.z); }
           break;
         }
         case 'taxi_map': {
           const n = npc(e.npcId, e.npc);
-          if (n) n.taxi = { nodes: e.nodes || [], at: moment(s, e) };
+          if (n) { n.taxi = { nodes: e.nodes || [], at: moment(s, e) }; spot(n, s, e, 'taxi'); if (e.z) n.zones.add(e.z); }
           break;
         }
         case 'gossip':
@@ -145,7 +157,12 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
         }
         case 'quest_detail':
         case 'quest_complete': {
-          if (e.npc) npc(e.npcId, e.npc)?.quests.add(e.qid ? `q${e.qid}` : `t${e.title}`);
+          if (e.npc) {
+            const n = npc(e.npcId, e.npc);
+            n?.quests.add(e.qid ? `q${e.qid}` : `t${e.title}`);
+            spot(n, s, e, 'quest');
+            if (n && e.z) n.zones.add(e.z);
+          }
           for (const r of [...(e.rewards || []), ...(e.choices || [])]) {
             const it = item(r.id, r.name);
             if (it) it.rewardFrom.set(e.qid ?? e.title, { qid: e.qid ?? null, title: e.title ?? null, choice: (e.choices || []).includes(r) });
@@ -180,6 +197,7 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
 
   const npcList = [...npcs.values()].map((n) => ({
     ...n,
+    ...classify(n),
     titles: [...n.titles], ranks: [...n.ranks], zones: [...n.zones],
     minLevel: n.levels.length ? Math.min(...n.levels) : null,
     maxLevel: n.levels.length ? Math.max(...n.levels) : null,
@@ -203,9 +221,32 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
   });
   return {
     npcs: npcList,
+    creatures: npcList.filter((n) => n.attackable),
+    people: npcList.filter((n) => !n.attackable && !n.object),
+    objects: npcList.filter((n) => n.object),
     items: itemList,
     vendors: npcList.filter((n) => n.vendor),
     byNpc: new Map(npcList.map((n) => [n.key, n])),
     byItem: new Map(itemList.map((i) => [i.id, i])),
   };
+}
+
+export const ROLE_NAMES = { quest: 'Quest giver', vendor: 'Vendor', trainer: 'Trainer', taxi: 'Flight master', innkeeper: 'Innkeeper', banker: 'Banker', talker: 'Speaks', other: 'Other' };
+
+// Is this something you can fight (bestiary) or someone you deal with (people)?
+function classify(n) {
+  const roles = [];
+  if (n.quests.size) roles.push('quest');
+  if (n.vendor) roles.push('vendor');
+  if (n.trainer) roles.push('trainer');
+  if (n.taxi) roles.push('taxi');
+  const titles = [...n.titles].join(' ').toLowerCase();
+  if (/innkeeper/.test(titles)) roles.push('innkeeper');
+  if (/banker/.test(titles)) roles.push('banker');
+  if (!roles.length && n.lines.length) roles.push('talker');
+  if (!roles.length) roles.push('other');
+  const friendlyRole = roles.some((r) => r !== 'talker' && r !== 'other');
+  const hostile = n.kills > 0 || n.fights > 0 || n.killedYou > 0 || (n.react != null && n.react <= 4);
+  const attackable = !n.object && (hostile || (!friendlyRole && n.react == null && (n.ranks.size > 0 || n.ctype === 'Beast')));
+  return { roles, attackable: attackable && !friendlyRole };
 }
