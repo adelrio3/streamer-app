@@ -257,3 +257,27 @@ export function searchEntries(db) {
   }
   return out;
 }
+
+// Item classes and subclasses as the game names them (ItemClass.db2).
+export const ITEM_CLASSES = {
+  0: ['Consumable', { 0: 'Consumable', 1: 'Potion', 2: 'Elixir', 3: 'Flask', 4: 'Scroll', 5: 'Food & Drink', 6: 'Item Enhancement', 7: 'Bandage', 8: 'Other' }],
+  1: ['Container', { 0: 'Bag', 1: 'Soul Bag', 2: 'Herb Bag', 3: 'Enchanting Bag', 4: 'Engineering Bag' }],
+  2: ['Weapon', { 0: 'One-Handed Axes', 1: 'Two-Handed Axes', 2: 'Bows', 3: 'Guns', 4: 'One-Handed Maces', 5: 'Two-Handed Maces', 6: 'Polearms', 7: 'One-Handed Swords', 8: 'Two-Handed Swords', 10: 'Staves', 13: 'Fist Weapons', 14: 'Miscellaneous', 15: 'Daggers', 16: 'Thrown', 17: 'Spears', 18: 'Crossbows', 19: 'Wands', 20: 'Fishing Poles' }],
+  3: ['Gem', {}],
+  4: ['Armor', { 0: 'Miscellaneous', 1: 'Cloth', 2: 'Leather', 3: 'Mail', 4: 'Plate', 6: 'Shields', 7: 'Librams', 8: 'Idols', 9: 'Totems' }],
+  5: ['Reagent', {}],
+  6: ['Projectile', { 2: 'Arrow', 3: 'Bullet' }],
+  7: ['Trade Goods', { 0: 'Trade Goods', 1: 'Parts', 2: 'Explosives', 3: 'Devices', 5: 'Cloth', 6: 'Leather', 7: 'Metal & Stone', 8: 'Meat', 9: 'Herb', 10: 'Elemental', 11: 'Other', 12: 'Enchanting' }],
+  9: ['Recipe', { 0: 'Book', 1: 'Leatherworking', 2: 'Tailoring', 3: 'Engineering', 4: 'Blacksmithing', 5: 'Cooking', 6: 'Alchemy', 7: 'First Aid', 8: 'Enchanting', 9: 'Fishing' }],
+  10: ['Money', {}],
+  11: ['Quiver', { 2: 'Quiver', 3: 'Ammo Pouch' }],
+  12: ['Quest', {}],
+  13: ['Key', { 0: 'Key', 1: 'Lockpick' }],
+  15: ['Miscellaneous', { 0: 'Junk', 1: 'Reagent', 2: 'Pet', 3: 'Holiday', 4: 'Other', 5: 'Mount' }],
+};
+export const ITEM_CLASS_ORDER = ['Weapon', 'Armor', 'Consumable', 'Trade Goods', 'Recipe', 'Quest', 'Container', 'Reagent', 'Projectile', 'Quiver', 'Key', 'Gem', 'Miscellaneous', 'Money', 'Unknown'];
+export function itemClassName(cls, sub) {
+  const c = ITEM_CLASSES[cls];
+  if (!c) return { type: 'Unknown', sub: null };
+  return { type: c[0], sub: c[1][sub] ?? null };
+}

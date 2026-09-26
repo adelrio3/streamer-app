@@ -17,6 +17,12 @@ const debug = params.get('debug') === '1';
 const POS = { toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
 for (const k of Object.keys(POS)) POS[k] = params.get(k) || POS[k];
 document.documentElement.style.setProperty('--scale', String(Number(params.get('scale')) || 1));
+// One widget on its own (?widget=toasts): it fills this window, so OBS can place the window anywhere.
+const widget = params.get('widget');
+if (widget) { show.clear(); show.add(widget); document.body.classList.add('single'); }
+// A chroma key background (?bg=00ff00) for feeds that cannot carry transparency.
+const bg = params.get('bg');
+if (/^[0-9a-f]{6}$/i.test(bg || '')) document.body.style.background = `#${bg}`;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,9 +31,10 @@ const QCOLOR = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000'
 const STREAKS = [[30, 'LEGENDARY', 'thirty kills without a pause'], [20, 'UNSTOPPABLE', 'twenty in a row'], [10, 'RAMPAGE', 'ten in a row'], [5, 'KILLING SPREE', 'five in a row']];
 
 for (const [k, el] of Object.entries({ toasts: $('toasts'), tracker: $('tracker'), counters: $('counters'), kills: $('kills'), timer: $('timer') })) {
-  el.className = `widget pos-${POS[k]}`;
+  el.className = widget ? 'widget pos-fill' : `widget pos-${POS[k]}`;
   el.hidden = !show.has(k);
 }
+$('callouts').hidden = !show.has('callouts');
 const icons = () => setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 40);
 
 // Particles ------------------------------------------------------------------

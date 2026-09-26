@@ -129,6 +129,17 @@ export class CloudStore {
     return now;
   }
 
+  // Removes sessions (and their position tracks) for good, e.g. a deleted character.
+  async deleteSessions(ids) {
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      const { error: e1 } = await this.client.from('tracks').delete().eq('user_id', this.userId).in('session_id', batch);
+      if (e1 && !/does not exist|schema cache/i.test(e1.message)) throw new Error(e1.message);
+      const { error } = await this.client.from('sessions').delete().eq('user_id', this.userId).in('id', batch);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   async saveRecording(row) {
     const now = this.nowIso();
     const full = { ...row, user_id: this.userId, updated_at: now };

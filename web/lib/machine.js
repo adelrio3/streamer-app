@@ -209,9 +209,10 @@ export class Machine {
       if (this.seen.get(key) === file.lastModified) continue;
       const log = readAddonLog(await file.text(), { flavor: f.flavor, account: f.account });
       const resetAt = this.state.settings.resetAt || 0;
+      const deleted = new Set(this.state.settings.deletedSessions || []);
       for (const s of log.sessions) {
-        // Sessions from before "delete everything" stay deleted.
-        if ((s.started || 0) < resetAt) continue;
+        // Sessions from before "delete everything", and deleted characters, stay deleted.
+        if ((s.started || 0) < resetAt || deleted.has(s.id)) continue;
         const i = this.state.sessions.findIndex((x) => x.id === s.id);
         const merged = mergeSession(i >= 0 ? this.state.sessions[i] : null, s);
         if (merged) {
@@ -569,7 +570,9 @@ export class Machine {
       if (!this.state.screenshots.some((x) => x.name === r.name)) { this.state.screenshots.push(r); n++; }
     }
     if (sessions.length) this.state.tracks = null; // reload routes when next needed
+    const deleted = new Set(this.state.settings.deletedSessions || []);
     for (const s of sessions) {
+      if (deleted.has(s.id)) continue;
       const i = this.state.sessions.findIndex((x) => x.id === s.id);
       if (i >= 0) this.state.sessions[i] = s; else this.state.sessions.push(s);
       n++;

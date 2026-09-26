@@ -123,6 +123,10 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           }
           break;
         }
+        case 'bags': { // what you carry counts as obtained
+          for (const i of e.items || []) { const it = item(i.id, i.name); if (it) it.carried = true; }
+          break;
+        }
         case 'loot': {
           const it = item(e.id, e.name);
           if (!it) break;
@@ -234,6 +238,8 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
       name: info.name ?? it.name,
       quality: info.q ?? null,
       icon: info.icon ?? null,
+      // Obtained: it was yours at some point (looted, handed over, made, worn or carried), not merely seen.
+      obtained: it.looted > 0 || it.received > 0 || it.created > 0 || it.equippedBy.length > 0 || Boolean(it.carried),
       droppedBy: [...it.droppedBy.values()].map((d) => {
         const n = npcs.get(d.key);
         return { ...d, loots: n?.loots ?? 0, rate: n?.loots ? d.times / n.loots : null };
@@ -275,6 +281,8 @@ function classify(n) {
   if (!roles.length) roles.push('other');
   const friendlyRole = roles.some((r) => r !== 'talker' && r !== 'other');
   const hostile = n.kills > 0 || n.fights > 0 || n.killedYou > 0 || (n.react != null && n.react <= 4);
-  const attackable = !n.object && (hostile || (!friendlyRole && n.react == null && (n.ranks.size > 0 || n.ctype === 'Beast')));
-  return { roles, attackable: attackable && !friendlyRole };
+  const attackable = !n.object && (hostile || n.ctype === 'Critter' || (!friendlyRole && n.react == null && (n.ranks.size > 0 || n.ctype === 'Beast')));
+  // Met: dealt with directly (a quest, a purchase, training, a flight, a talk), not just walked past.
+  const met = n.quests.size > 0 || Boolean(n.vendor || n.trainer || n.taxi) || n.lines.some((l) => l.kind === 'gossip');
+  return { roles, attackable, met };
 }

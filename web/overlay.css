@@ -33,6 +33,13 @@ body.shake.big { animation-name: shakebig; animation-duration: .8s; }
 .pos-bl { bottom: 28px; left: 28px; flex-direction: column-reverse; }
 .pos-bc { bottom: 28px; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; align-items: center; }
 .pos-br { bottom: 28px; right: 28px; flex-direction: column-reverse; align-items: flex-end; }
+/* A widget on its own in its own window */
+.pos-fill { top: 12px; left: 12px; right: 12px; bottom: 12px; align-items: stretch; }
+body.single #toasts.pos-fill { flex-direction: column; }
+body.single .toast { max-width: none; }
+body.single #tracker.pos-fill { width: auto; }
+body.single #callouts { top: 50%; transform: translate(-50%, -50%); }
+body.single .callout .ctitle { font-size: 64px; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(255, 255, 255, .04); }
 .label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-weight: 700; }

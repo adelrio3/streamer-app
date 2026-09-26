@@ -135,3 +135,28 @@ test('objects keep the name they were opened under, not the last tooltip on scre
   const none = buildWorld([{ id: 'x', char: {}, events: [win(1, null), win(2, null)] }], [], (s, e) => ({ session: s.id, t: e.t, footage: null }));
   assert.deepEqual([none.objects[0].name, none.objects[0].unnamed], ['Object 171938', true]);
 });
+
+test('journal flags: items obtained versus seen, people met versus seen, critters in the bestiary', () => {
+  const m = (s, e) => ({ session: s.id, t: e.t, footage: null });
+  const sessions = [{ id: 'j', char: { name: 'Aldric', realm: 'Mankrik' }, events: [
+    { e: 'npc', t: 1, name: 'Rabbit', npcId: 721, npcKind: 'Creature', ctype: 'Critter', z: 'Elwynn Forest' },
+    { e: 'npc', t: 2, name: 'Innkeeper Farley', npcId: 295, npcKind: 'Creature', react: 5, z: 'Elwynn Forest' },
+    { e: 'npc', t: 3, name: 'Marshal Dughan', npcId: 240, npcKind: 'Creature', react: 5, z: 'Elwynn Forest' },
+    { e: 'gossip', t: 4, npc: 'Marshal Dughan', npcId: 240, text: 'Greetings.' },
+    { e: 'loot', t: 5, id: 2589, name: 'Linen Cloth', n: 2 },
+    { e: 'bags', t: 6, items: [{ id: 159, n: 3 }], money: 100 },
+    { e: 'equip', t: 7, slot: 16, id: 2488, name: 'Gladius' },
+  ] }];
+  const world = buildWorld(sessions, [{ item_id: 6948, data: { name: 'Hearthstone', type: 'Miscellaneous' } }], m);
+  const by = (id) => world.byItem.get(id);
+  assert.equal(by(2589).obtained, true, 'looted');
+  assert.equal(by(159).obtained, true, 'carried in bags');
+  assert.equal(by(2488).obtained, true, 'worn');
+  assert.equal(by(6948).obtained, false, 'only catalogued');
+  const rabbit = world.creatures.find((n) => n.name === 'Rabbit');
+  assert.ok(rabbit && rabbit.ctype === 'Critter', 'critters belong in the bestiary');
+  const farley = world.people.find((n) => n.name === 'Innkeeper Farley');
+  const dughan = world.people.find((n) => n.name === 'Marshal Dughan');
+  assert.equal(farley.met, false, 'walked past');
+  assert.equal(dughan.met, true, 'talked to');
+});

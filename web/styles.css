@@ -74,13 +74,13 @@ li { margin-bottom: .25em; }
 .brand-mark { width: 12px; height: 12px; border: 2px solid var(--gold); transform: rotate(45deg); border-radius: 2px; box-shadow: 0 0 10px rgba(var(--gold-rgb), .35), 0 0 22px rgba(var(--cyan-rgb), .25); }
 .menu-toggle { display: none; background: none; border: 1px solid var(--line-2); color: var(--text); border-radius: 8px; padding: 4px 9px; font-size: 1.05rem; }
 
-#search input { width: 100%; }
-nav { display: flex; flex-direction: column; gap: 14px; position: relative; }
+#search input { width: 100%; min-width: 0; }
+nav { display: flex; flex-direction: column; gap: 10px; position: relative; }
 .nav-glow { position: absolute; left: 0; right: 0; top: 0; height: 32px; border-radius: 8px; background: linear-gradient(90deg, rgba(var(--cyan-rgb), .14), rgba(var(--gold-rgb), .08) 55%, transparent); box-shadow: inset 3px 0 0 var(--cyan), 0 0 18px -6px rgba(var(--cyan-rgb), .6); pointer-events: none; transition: transform .35s cubic-bezier(.2, .8, .2, 1), height .35s, opacity .2s; opacity: 0; z-index: 0; }
 nav a { position: relative; z-index: 1; }
 .nav-group { display: flex; flex-direction: column; gap: 1px; }
 .nav-label { font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); padding: 0 10px 6px; }
-nav a { display: flex; align-items: center; gap: 10px; color: var(--text-2); padding: 6px 10px; border-radius: 8px; font-size: .94rem; transition: color .15s, background-color .15s; overflow: hidden; }
+nav a { display: flex; align-items: center; gap: 10px; color: var(--text-2); padding: 5px 10px; border-radius: 8px; font-size: .93rem; transition: color .15s, background-color .15s; overflow: hidden; }
 nav a .ico { width: 18px; text-align: center; color: var(--faint); font-size: .95rem; transition: color .2s, text-shadow .25s, transform .25s cubic-bezier(.2, 1.2, .3, 1); }
 nav a::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 3px; height: 1px; background: linear-gradient(90deg, var(--cyan), transparent); opacity: 0; transform: scaleX(0); transform-origin: left; transition: transform .3s cubic-bezier(.2, .8, .2, 1), opacity .2s; pointer-events: none; }
 nav a:hover { color: var(--text); background: rgba(var(--cyan-rgb), .06); text-decoration: none; }
@@ -509,3 +509,26 @@ a:focus-visible, button:focus-visible, .pin:focus-visible { outline: 2px solid v
 .pack-opts select, .pack-opts input[type=text] { width: auto; }
 .pack-opts input[type=text] { min-width: 320px; }
 .note-text { font-family: var(--serif); font-size: 1.1rem; }
+
+/* The sidebar scrolls when it must, without a scrollbar eating the width. */
+.side { scrollbar-width: none; }
+.side::-webkit-scrollbar { display: none; }
+
+/* Overview: four small charts and the live feed */
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.chart svg { width: 100%; height: 64px; display: block; margin: 6px 0 4px; overflow: visible; }
+.chart h3 { font-size: 1.05rem; margin: 0; }
+.chart .bar rect:first-child { transition: opacity .15s; }
+.chart .bar:hover rect:first-child { opacity: 1; filter: brightness(1.25); }
+.feed-live { margin-bottom: 18px; }
+.feed-live .feed { max-height: 300px; overflow-y: auto; }
+.feed-live h3 .dot { margin-right: 6px; }
+.hero-pct { display: flex; gap: 22px; align-items: center; margin: 6px 0 22px; padding: 18px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.hero-pct .big { font-family: var(--serif); font-weight: 600; font-size: 4rem; line-height: 1; color: var(--gold-2); background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; min-width: 3.2em; }
+.hero-pct .big span { font-size: .45em; }
+.hero-pct > div:last-child { flex: 1; min-width: 0; }
+.hero-pct .lead { font-size: 1.05rem; margin-bottom: 8px; }
+.hero-pct .cov { margin: 0 0 8px; }
+.widget-list td { padding: 6px 8px; }
+button.danger { border-color: color-mix(in srgb, var(--red) 50%, transparent); color: var(--red); }
+button.danger:hover { background: color-mix(in srgb, var(--red) 15%, var(--panel)); }

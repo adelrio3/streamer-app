@@ -28,10 +28,11 @@ export function buildCodex(sessions, resolve = () => null) {
     for (const e of s.events) {
       if (e.lvl) c.level = Math.max(c.level, e.lvl);
       if (e.z) {
-        const z = getOr(zones, e.z, () => ({ name: e.z, subzones: new Set(), quests: new Set(), kills: 0, events: 0, first: moment(s, e), last: moment(s, e) }));
+        const z = getOr(zones, e.z, () => ({ name: e.z, subzones: new Set(), discovered: new Set(), quests: new Set(), kills: 0, events: 0, first: moment(s, e), last: moment(s, e) }));
         z.events++;
         z.last = moment(s, e);
         if (e.sz) z.subzones.add(e.sz);
+        if (e.e === 'explore' && e.area) z.discovered.add(e.area);
       }
       switch (e.e) {
         case 'quest_detail':

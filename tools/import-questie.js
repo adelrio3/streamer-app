@@ -248,8 +248,10 @@ console.log('Reading quests, NPCs, objects and items…');
 const quests = rows('classicQuestDB.lua', 'questData');
 const npcs = rows('classicNpcDB.lua', 'npcData');
 const objects = rows('classicObjectDB.lua', 'objectData');
+const itemRows = rows('classicItemDB.lua', 'itemData');
+const IK = { name: 1, itemLevel: 9, requiredLevel: 10, class: 12, subClass: 13 };
 const itemNames = new Map();
-for (const m of read(dataDir, 'classicItemDB.lua').matchAll(/^\[(\d+)\] = \{(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/gm)) itemNames.set(Number(m[1]), (m[2] ?? m[3]).replace(/\\(['"])/g, '$1'));
+for (const [id, row] of itemRows) if (at(row, IK.name)) itemNames.set(id, at(row, IK.name));
 console.log(`  ${quests.size} quests, ${npcs.size} NPCs, ${objects.size} objects, ${itemNames.size} item names`);
 
 console.log('Applying corrections…');
@@ -457,6 +459,14 @@ write('quests.json', { quests: questOut });
 write('npcs.json', { npcs: npcOut });
 write('objects.json', { objects: objectOut });
 write('items.json', { items: itemOut });
+// Every item in the game, for the completion journal: [name, class, subclass, item level, required level].
+const itemDb = {};
+for (const [id, row] of itemRows) {
+  const name = at(row, IK.name);
+  if (!name) continue;
+  itemDb[id] = [name, Number(at(row, IK.class) ?? -1), Number(at(row, IK.subClass) ?? -1), Number(at(row, IK.itemLevel) ?? 0), Number(at(row, IK.requiredLevel) ?? 0)];
+}
+write('itemdb.json', { items: itemDb });
 write('zones.json', { zones });
 write('spawns.json', { spawns: spawnsOut });
 console.log(`Done: ${Object.keys(questOut).length} quests (${Object.values(questOut).filter((q) => q.hidden).length} hidden), ${Object.keys(npcOut).length} NPCs, ${Object.keys(objectOut).length} objects, ${Object.keys(itemOut).length} item names, ${Object.keys(zones).length} zones and categories.`);

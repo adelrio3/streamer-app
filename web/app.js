@@ -17,7 +17,7 @@ import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
 import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS } from './lib/maps.js';
 import { looseEnds } from './lib/coverage.js';
-import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS } from './lib/questdb.js';
+import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS, itemClassName, ITEM_CLASS_ORDER } from './lib/questdb.js';
 import { pastLoot, dropsBetween } from './lib/live.js';
 import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
 import { makeZip } from './lib/zip.js';
@@ -55,7 +55,9 @@ function derived() {
     const recordings = resolveRecordings(state.rows);
     // Marks you deleted stay in the addon's log; they are hidden here.
     const gone = new Set(state.settings.deletedMarks || []);
-    const sessions = gone.size ? state.sessions.map((sess) => ({ ...sess, events: sess.events.filter((e) => e.e !== 'mark' || !gone.has(markKey(sess.id, e))) })) : state.sessions;
+    const goneSessions = new Set(state.settings.deletedSessions || []);
+    const kept = goneSessions.size ? state.sessions.filter((sess) => !goneSessions.has(sess.id)) : state.sessions;
+    const sessions = gone.size ? kept.map((sess) => ({ ...sess, events: sess.events.filter((e) => e.e !== 'mark' || !gone.has(markKey(sess.id, e))) })) : kept;
     const timelines = buildTimelines(sessions, recordings, clock, state.voice || []);
     const where = new Map();
     for (const [rec, events] of timelines) for (const e of events) where.set(`${e.session}|${e.t}`, { rec, offset: e.offset });
@@ -506,6 +508,7 @@ pages[''] = async () => {
   const m = state.machine;
   const needsSetup = m.config.fresh || (m.config.plays && m.wow.state !== 'ok') || (m.config.records && m.rec.state !== 'ok');
   const feed = activityFeed(12);
+  setTimeout(startFeedTimer);
   const [manifest, db] = await Promise.all([fetch('addon/manifest.json', { cache: 'no-store' }).then((r) => r.json()).catch(() => null), questDB()]);
   const installed = m.wow.installs?.map((i) => i.addonVersion).filter(Boolean)[0];
   const lastSession = state.sessions.at(-1);
@@ -524,7 +527,7 @@ pages[''] = async () => {
   return `
     ${needsSetup ? `<div class="notice">This computer (<b>${esc(m.name)}</b>) isn't fully set up yet. <a href="#/setup">Open This computer</a> to finish.</div>` : ''}
     ${pageHead('Chronicle', 'Overview', 'What you have seen, done and recorded so far.')}
-    ${activityChart()}
+    ${progressCharts()}
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
       ${db ? card(progressSets(c.quests).done.size, `of ${db.countable.toLocaleString()} Classic quests done`, '#/quests?show=db') : ''}
@@ -540,6 +543,7 @@ pages[''] = async () => {
       <div>
         <h2 style="margin-top:0">Characters</h2>
         ${d.characters.length ? `<div class="cards" style="margin-top:8px">${d.characters.map(charCard).join('')}</div>` : empty('No sessions yet. With the app open on your gaming PC, log in to WoW and then log out or type <code>/reload</code>.')}
+        ${liveFeed()}
         <h2>Recent activity</h2>
         ${feed.length ? `<div class="feed">${feed.map((f) => `<div class="row"><span class="when">${esc(when(f.t))}</span><span>${f.html}</span><span style="margin-left:auto">${play(f)}</span></div>`).join('')}</div>` : empty('Milestones appear here as you play.')}
       </div>
@@ -552,37 +556,114 @@ pages[''] = async () => {
 
 // Events per day for the last five weeks, as thin gold bars. One series, so
 // the title names it and no legend is needed; each bar carries a tooltip.
-function activityChart() {
+// Four small charts, last five weeks: playtime, gold, level and quests turned in.
+function progressCharts() {
   const days = 35;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const counts = new Array(days).fill(0);
+  const dayOf = (sec) => Math.floor((today.getTime() - new Date(sec * 1000).setHours(0, 0, 0, 0)) / 86400000);
+  const play = new Array(days).fill(0);
+  const quests = new Array(days).fill(0);
+  const gold = [];
+  const levels = [];
   for (const s of state.sessions) {
+    if (s.events.length > 1) {
+      const d = dayOf(s.events[0].t);
+      if (d >= 0 && d < days) play[days - 1 - d] += s.events.at(-1).t - s.events[0].t;
+    }
+    if (s.char?.level) levels.push({ t: s.started ?? s.events[0]?.t, v: s.char.level, who: s.char.name });
+    if (s.char?.money != null) gold.push({ t: s.started ?? s.events[0]?.t, v: s.char.money });
     for (const e of s.events) {
-      const d = Math.floor((today.getTime() - new Date(e.t * 1000).setHours(0, 0, 0, 0)) / 86400000);
-      if (d >= 0 && d < days) counts[days - 1 - d]++;
+      if (e.e === 'quest_turnin') { const d = dayOf(e.t); if (d >= 0 && d < days) quests[days - 1 - d]++; }
+      else if (e.e === 'level') levels.push({ t: e.t, v: e.level, who: s.char?.name });
+      else if (e.e === 'money' && e.total != null) gold.push({ t: e.t, v: e.total });
+      else if (e.e === 'bags' && e.money != null) gold.push({ t: e.t, v: e.money });
     }
   }
-  const max = Math.max(1, ...counts);
-  const total = counts.reduce((a, b) => a + b, 0);
-  if (!total) return '';
-  const W = 700;
-  const H = 72;
-  const gap = 2;
-  const bw = (W - gap * (days - 1)) / days;
-  const busiest = counts.indexOf(max);
-  const bars = counts.map((n, i) => {
-    const h = n ? Math.max(3, (n / max) * (H - 18)) : 1.5;
-    const x = i * (bw + gap);
-    const date = new Date(today.getTime() - (days - 1 - i) * 86400000);
-    return `<g class="bar" style="--i:${i}"><title>${esc(date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}: ${n} events</title>
-      <rect x="${x.toFixed(1)}" y="${(H - 4 - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${n ? 'var(--gold)' : 'var(--line-2)'}" opacity="${n ? (0.55 + 0.45 * n / max).toFixed(2) : 1}"/>
-      ${i === busiest ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - 8 - h).toFixed(1)}" text-anchor="middle" class="bar-label">${n}</text>` : ''}
-      <rect x="${x.toFixed(1)}" y="0" width="${(bw + gap).toFixed(1)}" height="${H}" fill="transparent"/></g>`;
+  if (!play.some(Boolean) && !levels.length) return '';
+  const since = today.getTime() / 1000 - (days - 1) * 86400;
+  const recent = (list) => list.filter((p) => p.t >= since).sort((a, b) => a.t - b.t);
+  const fmtDay = (i) => new Date(today.getTime() - (days - 1 - i) * 86400000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const hours = (sec) => (sec >= 3600 ? `${(sec / 3600).toFixed(1)} h` : `${Math.round(sec / 60)} min`);
+  return `<div class="charts">
+    ${miniBars(play, { title: 'Playtime', total: hours(play.reduce((a, b) => a + b, 0)), color: 'var(--gold)', label: (v, i) => `${fmtDay(i)}: ${hours(v)}` })}
+    ${miniLine(recent(gold).map((p) => ({ x: p.t, y: p.v })), { title: 'Gold', total: gold.length ? money(gold.sort((a, b) => a.t - b.t).at(-1).v) : '', color: 'var(--cat-economy)', label: (p) => `${when(p.x)}: ${money(p.y)}`, since, until: today.getTime() / 1000 + 86400 })}
+    ${miniLine(recent(levels).map((p) => ({ x: p.t, y: p.v })), { title: 'Level', total: levels.length ? `level ${Math.max(...levels.map((p) => p.v))}` : '', color: 'var(--cat-character)', step: true, label: (p) => `${when(p.x)}: level ${p.y}`, since, until: today.getTime() / 1000 + 86400 })}
+    ${miniBars(quests, { title: 'Quests turned in', total: `${quests.reduce((a, b) => a + b, 0)}`, color: 'var(--cat-quest)', label: (v, i) => `${fmtDay(i)}: ${v} quest${v === 1 ? '' : 's'}` })}
+  </div>`;
+}
+
+function miniBars(values, { title, total, color, label }) {
+  const W = 300; const H = 64; const gap = 1.5;
+  const bw = (W - gap * (values.length - 1)) / values.length;
+  const max = Math.max(1, ...values);
+  const bars = values.map((v, i) => {
+    const h = v ? Math.max(3, (v / max) * (H - 6)) : 1.5;
+    return `<g class="bar" style="--i:${i}"><title>${esc(label(v, i))}</title><rect x="${(i * (bw + gap)).toFixed(1)}" y="${(H - 2 - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${v ? color : 'var(--line-2)'}"/><rect x="${(i * (bw + gap)).toFixed(1)}" y="0" width="${(bw + gap).toFixed(1)}" height="${H}" fill="transparent"/></g>`;
   }).join('');
-  return `<div class="panel activity"><div class="row spread"><h3>Activity, last five weeks</h3><span class="muted small">${total.toLocaleString()} events logged</span></div>
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Events per day for the last ${days} days">${bars}</svg>
-    <div class="row spread muted small"><span>${esc(new Date(today.getTime() - (days - 1) * 86400000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span><span>today</span></div></div>`;
+  return `<div class="panel chart"><div class="row spread"><h3>${esc(title)}</h3><span class="muted small">${esc(total)}</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(title)} per day">${bars}</svg><div class="row spread muted small"><span>5 weeks ago</span><span>today</span></div></div>`;
+}
+
+function miniLine(points, { title, total, color, label, step = false, since, until }) {
+  const W = 300; const H = 64;
+  if (!points.length) return `<div class="panel chart"><div class="row spread"><h3>${esc(title)}</h3><span class="muted small">${esc(total)}</span></div><p class="muted small" style="margin:18px 0 0">Nothing in the last five weeks.</p></div>`;
+  const lo = Math.min(...points.map((p) => p.y)); const hi = Math.max(...points.map((p) => p.y));
+  const x = (t) => (((t - since) / (until - since)) * (W - 4) + 2);
+  const y = (v) => (hi === lo ? H / 2 : H - 4 - ((v - lo) / (hi - lo)) * (H - 10));
+  let d = '';
+  points.forEach((p, i) => {
+    const px = x(p.x).toFixed(1); const py = y(p.y).toFixed(1);
+    if (i === 0) d += `M${px} ${py}`;
+    else if (step) d += `H${px} V${py}`;
+    else d += `L${px} ${py}`;
+  });
+  d += `H${(W - 2).toFixed(1)}`;
+  const dots = points.filter((_, i) => i === points.length - 1 || points.length <= 40).map((p) => `<circle cx="${x(p.x).toFixed(1)}" cy="${y(p.y).toFixed(1)}" r="2.5" fill="${color}"><title>${esc(label(p))}</title></circle>`).join('');
+  return `<div class="panel chart"><div class="row spread"><h3>${esc(title)}</h3><span class="muted small">${esc(total)}</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(title)} over time"><path d="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>${dots}</svg><div class="row spread muted small"><span>5 weeks ago</span><span>today</span></div></div>`;
+}
+
+// What the game is doing right now, from the live link (the same events the
+// overlay shows), newest first. Refreshed every few seconds while on screen.
+function liveFeed() {
+  const row = state.live;
+  const snap = row?.state;
+  const m = state.machine;
+  const events = (snap?.events || []).slice().reverse().slice(0, 25);
+  const age = row?.updated_at ? Date.now() + (m.offset ?? 0) - Date.parse(row.updated_at) : null;
+  const live = age != null && age < 90000;
+  return `<div class="panel feed-live" id="liveFeed"><div class="row spread"><h3><span class="dot ${live ? 'live' : ''}"></span> Live</h3><span class="muted small">${snap ? `${esc(snap.machine ?? 'gaming PC')}${snap.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}` : 'not connected'}</span></div>
+    <div class="feed">${events.length ? events.map((e) => `<div class="row"><span class="when">${esc(new Date(e.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span><span>${liveLine(e)}</span></div>`).join('') : `<p class="muted small">${snap ? 'Nothing yet this session. Play, and it shows up here as it happens.' : 'Open Chronicler on the gaming PC with addon 0.4.0 to see the game live.'}</p>`}</div>
+  </div>`;
+}
+
+function liveLine(e) {
+  switch (e.kind) {
+    case 'loot': return `${itemLink(e.id, e.name, e.q, { count: e.n })}${e.source ? ` <span class="muted">from ${esc(e.source)}</span>` : ''}`;
+    case 'kill': return `Killed <b>${esc(e.name ?? '?')}</b>`;
+    case 'death': return `<span style="color:var(--red)">Died${e.killer ? ` to ${esc(e.killer)}` : ''}</span>`;
+    case 'level': return `<b>Level ${e.level}</b>`;
+    case 'quest': return e.action === 'progress' ? esc(e.text ?? '') : `${{ accept: 'Accepted', turnin: 'Turned in', complete: 'Ready to turn in', abandon: 'Abandoned' }[e.action] ?? e.action} <b>${esc(e.title ?? '')}</b>`;
+    case 'zone': return `Entered <b>${esc(e.zone ?? '')}</b>${e.sub ? ` · ${esc(e.sub)}` : ''}`;
+    case 'rare': return `<span style="color:var(--purple)">Rare spotted: <b>${esc(e.name ?? '')}</b></span>`;
+    case 'money': return `Looted ${money(e.delta || 0)}`;
+    case 'xp': return `<span class="muted">+${e.amount ?? 0} XP</span>`;
+    case 'skill': return `<span class="muted">${esc(e.text ?? '')}</span>`;
+    case 'explore': return `Discovered <b>${esc(e.area ?? '')}</b>`;
+    case 'mark': return `Marked: ${esc(e.markKind ?? '')}${e.note ? ` · ${esc(e.note)}` : ''}`;
+    case 'screenshot': return `<span class="muted">Screenshot (${esc(e.reason ?? '')})</span>`;
+    default: return esc(e.kind);
+  }
+}
+
+function startFeedTimer() {
+  clearInterval(state.feedTimer);
+  state.feedTimer = setInterval(async () => {
+    if (!/^#\/?$/.test(location.hash)) { clearInterval(state.feedTimer); return; }
+    const m = state.machine;
+    if (!(m.liveEnabled?.() && m.wow.state === 'ok')) { try { const row = await state.store.loadLive(); if (row) state.live = row; } catch { /* offline */ } }
+    const el = document.getElementById('liveFeed');
+    if (el) el.outerHTML = liveFeed();
+  }, 5000);
 }
 
 // The latest milestones across every character.
@@ -641,9 +722,10 @@ function animateNumbers(root) {
 pages.quests = async (_, params) => {
   const c = await codex();
   const db = await questDB();
-  const show = db && params.get('show') === 'db' ? 'db' : 'logged';
-  const tabs = tabsHtml([['logged', 'Logged', c.quests.length], ...(db ? [['db', 'Every Classic quest', db.countable]] : [])], show, '#/quests?show=');
-  if (show === 'db') return dbQuestsPage(db, params, tabs);
+  const show = params.get('show') || (db ? 'zones' : 'logged');
+  const tabs = tabsHtml([...(db ? [['zones', 'Completion by zone'], ['db', 'Every quest', db.countable]] : []), ['logged', 'Logged', c.quests.length]], show, '#/quests?show=');
+  if (show === 'db' && db) return dbQuestsPage(db, params, tabs);
+  if (show === 'zones' && db) return questZonesPage(db, tabs);
   return `${pageHead('Chronicle', 'Quests', 'Every quest you have been offered, accepted or turned in, with the text exactly as you read it.')}
     ${tabs}
     ${table(c.quests, [
@@ -658,11 +740,55 @@ pages.quests = async (_, params) => {
     ], { search: (q) => `${q.title} ${q.zone} ${q.giver?.name} ${q.text}`, sort: 5, empty: 'No quests logged yet.' })}`;
 };
 
+// The heart of it: how much of every zone's quests the character has done.
+function questZonesPage(db, tabs) {
+  const cov = coverageWho();
+  const zones = allZones(db, cov.ctx).filter((z) => z.total || z.counts.done);
+  const total = zones.reduce((n, z) => n + z.total, 0);
+  const done = zones.reduce((n, z) => n + z.done, 0);
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const complete = zones.filter((z) => z.total && z.done === z.total).length;
+  const sorts = [...db.questsBySort.keys()].map((id) => { const s = sortCoverageFor(db, id, cov.ctx); return { id, name: db.zoneName(id), kind: db.zones[id]?.kind ?? 'category', ...s }; }).filter((s) => s.total || s.counts.done).sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+  const bar = (z) => `<div class="cov small"><div class="bar"><div style="width:${pct(z.done, z.total)}%"></div></div><b>${pct(z.done, z.total)}%</b></div>`;
+  const cols = (kind) => [
+    { label: kind, value: (z) => z.name, html: (z) => (z.zoneId ? `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` : `<a href="#/quests?show=db&sort=${z.id}">${esc(z.name)}</a>`) },
+    { label: 'Done', value: (z) => pct(z.done, z.total), html: bar, num: true },
+    { label: 'Quests', value: (z) => z.done, html: (z) => `${z.done} / ${z.total}`, num: true },
+    { label: 'Ready now', value: (z) => z.counts.ready ?? 0, html: (z) => (z.counts.ready ? `<span class="chip st-ready">${z.counts.ready}</span>` : ''), num: true },
+    { label: 'In progress', value: (z) => z.counts.active ?? 0, html: (z) => (z.counts.active ? `<span class="chip st-active">${z.counts.active}</span>` : ''), num: true },
+    { label: 'Later', value: (z) => z.counts.later ?? 0, num: true },
+    { label: 'Other faction/class', value: (z) => z.counts.other ?? 0, num: true },
+    ...(kind === 'Zone' ? [{ label: 'Map', value: () => '', html: (z) => (z.mapId ? `<a class="chip" href="#/map/${z.mapId}?show=unfound,rares">map</a>` : '') }] : [{ label: 'Kind', value: (z) => z.kind }]),
+  ];
+  return `${pageHead('Chronicle', 'Quests', 'Every quest in Classic, zone by zone, and how much of each the character has done. The quests you have not found yet count too, so 100% means the whole zone.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${tabs}
+    <div class="hero-pct">
+      <div class="big">${pct(done, total)}<span>%</span></div>
+      <div><div class="lead">${cov.char ? esc(cov.char.name) : 'Everyone'} has turned in <b>${done.toLocaleString()}</b> of <b>${total.toLocaleString()}</b> quests ${cov.char ? 'available to them' : 'in Classic'}.</div>
+      <div class="cov"><div class="bar"><div style="width:${pct(done, total)}%"></div></div></div>
+      <div class="muted small">${complete} zone${complete === 1 ? '' : 's'} complete · ${zones.filter((z) => z.counts.ready).length} zones with quests ready to pick up · repeatable and no-longer-offered quests do not count</div></div>
+    </div>
+    <h2>By zone</h2>
+    ${table(zones, cols('Zone'), { search: (z) => z.name, sort: 1, desc: true, limit: 200, empty: 'No zones with quests for this character.' })}
+    <h2>Class, profession and event quests</h2>
+    <p class="muted">These cut across zones, so they are counted here on their own.</p>
+    ${table(sorts, cols('Category'), { search: (z) => `${z.name} ${z.kind}`, sort: 1, desc: true, limit: 200, empty: 'Nothing here for this character.' })}`;
+}
+
+function sortCoverageFor(db, sortId, ctx) {
+  const rows = (db.questsBySort.get(sortId) || []).filter((q) => !q.hidden).map((q) => ({ q, state: questState(q, ctx) }));
+  const counts = {};
+  for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
+  const countable = rows.filter((r) => !r.q.rep && r.state !== 'other' && r.state !== 'excluded');
+  return { rows, counts, total: countable.length, done: countable.filter((r) => r.state === 'done').length };
+}
+
 // Every quest in the game, with where the character stands on each.
 function dbQuestsPage(db, params, tabs) {
   const cov = coverageWho();
   const filter = params.get('state') || 'all';
-  const rows = [...db.quests.values()].filter((q) => !q.hidden).map((q) => ({ q, state: questState(q, cov.ctx) }));
+  const sortId = Number(params.get('sort')) || 0;
+  const rows = [...db.quests.values()].filter((q) => !q.hidden && (!sortId || q.sort === sortId)).map((q) => ({ q, state: questState(q, cov.ctx) }));
   const counts = {};
   for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
   const shown = filter === 'all' ? rows : rows.filter((r) => r.state === filter);
@@ -746,26 +872,68 @@ function creatureColumns() {
   ];
 }
 
+const CREATURE_TYPES = ['Beast', 'Humanoid', 'Undead', 'Demon', 'Elemental', 'Dragonkin', 'Giant', 'Mechanical', 'Aberration', 'Critter', 'Totem', 'Not specified'];
+const CREATURE_BLURB = {
+  Beast: 'Wolves, boars, spiders, raptors: the wild things of every zone, and what hunters tame.',
+  Humanoid: 'Kobolds, gnolls, defias, trolls, ogres: they talk, they carry coin, and they drop cloth.',
+  Undead: 'Zombies, skeletons and ghouls raised by the Scourge and the Cult of the Damned.',
+  Demon: 'Imps, felguards and the Burning Legion\'s servants, called through portals and warlocks.',
+  Elemental: 'Earth, fire, water and air given form, bound or wild.',
+  Dragonkin: 'Whelps, drakes and drakonids of the five flights.',
+  Giant: 'Ettins, sea giants and the stone colossi left over from the Titans.',
+  Mechanical: 'Gnomish and goblin contraptions, harvest golems and clockwork.',
+  Aberration: 'Oozes, slimes and things from the Old Gods that should not be.',
+  Critter: 'Rabbits, squirrels, deer and frogs: the harmless life you can still, regrettably, kill.',
+  Totem: 'Totems dropped by shaman and the like.',
+  'Not specified': 'Creatures the game gives no type.',
+};
+
 pages.bestiary = async (_, params) => {
   const { world } = derived();
+  const type = params.get('type') || 'all';
   const show = params.get('show') || 'all';
   const zone = params.get('zone') || '';
+  const kindOf = (n) => n.ctype || 'Not specified';
   const filters = {
     all: () => true, killed: (n) => n.kills > 0, unkilled: (n) => n.kills === 0,
     rare: (n) => n.rare || n.ranks.some((r) => r.includes('rare') || r === 'worldboss'), elite: (n) => n.ranks.includes('elite') || n.ranks.includes('rareelite'),
     killers: (n) => n.killedYou > 0,
   };
-  let list = world.creatures.filter(filters[show] ?? filters.all);
+  const order = (t) => (CREATURE_TYPES.indexOf(t) + 1 || 99);
+  const types = [...new Set(world.creatures.map(kindOf))].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+  const ofType = (t) => (t === 'all' ? world.creatures : world.creatures.filter((n) => kindOf(n) === t));
+  const killed = (arr) => arr.filter((n) => n.kills > 0).length;
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  let list = ofType(type).filter(filters[show] ?? filters.all);
   if (zone) list = list.filter((n) => n.zones.includes(zone));
-  const count = (k) => world.creatures.filter(filters[k]).length;
   const zones = [...new Set(world.creatures.flatMap((n) => n.zones))].sort();
-  setTimeout(() => document.getElementById('zoneSel')?.addEventListener('change', (ev) => { location.hash = `#/bestiary?show=${show}${ev.target.value ? `&zone=${enc(ev.target.value)}` : ''}`; }));
-  return `${pageHead('World', 'Bestiary', 'Every creature you can fight: seen on a nameplate, targeted, fought near, killed or looted. Drop rates come from your own loot windows.')}
-    <div class="row spread">
-      ${tabsHtml([['all', 'All', world.creatures.length], ['killed', 'Killed', count('killed')], ['unkilled', 'Not yet killed', count('unkilled')], ['rare', 'Rares', count('rare')], ['elite', 'Elites', count('elite')], ['killers', 'Killed you', count('killers')]], show, '#/bestiary?show=')}
-      <select id="zoneSel"><option value="">All zones</option>${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select>
+  const link = (t = type, sh = show, z = zone) => `#/bestiary?type=${enc(t)}&show=${sh}${z ? `&zone=${enc(z)}` : ''}`;
+  setTimeout(() => {
+    document.getElementById('zoneSel')?.addEventListener('change', (ev) => { location.hash = link(type, show, ev.target.value); });
+    document.getElementById('showSel')?.addEventListener('change', (ev) => { location.hash = link(type, ev.target.value, zone); });
+  });
+  const inType = ofType(type);
+  const rares = world.creatures.filter(filters.rare);
+  return `${pageHead('World', 'Bestiary', 'An encyclopedia of every creature you have met, by kind. Each one stays "seen" until you kill it. Drop rates come from your own loot windows.')}
+    <div class="cards">
+      ${card(world.creatures.length, 'creatures met', link('all', 'all', ''))}
+      ${card(killed(world.creatures), 'killed', link('all', 'killed', ''))}
+      ${card(pct(killed(world.creatures), world.creatures.length), '% of those met', link('all', 'unkilled', ''))}
+      ${card(rares.length, `rares met, ${killed(rares)} killed`, link('all', 'rare', ''))}
+      ${card(world.creatures.filter(filters.killers).length, 'have killed you', link('all', 'killers', ''))}
     </div>
-    ${table(list, creatureColumns(), { search: (n) => `${n.name} ${n.ctype} ${n.family} ${n.zones.join(' ')} ${n.ranks.join(' ')} ${n.drops.map((d) => d.name).join(' ')}`, sort: 4, desc: true, empty: 'No creatures yet. They appear as you fight, target and loot.' })}`;
+    ${tabsHtml([['all', 'All kinds', world.creatures.length], ...types.map((t) => [t, t, `${killed(ofType(t))}/${ofType(t).length}`])], type, '#/bestiary?type=')}
+    <div class="row spread" style="margin-bottom:10px">
+      <span class="muted">${type === 'all' ? 'Every kind' : esc(type)}: killed <b>${killed(inType)}</b> of <b>${inType.length}</b> met (${pct(killed(inType), inType.length)}%).${CREATURE_BLURB[type] ? ` ${esc(CREATURE_BLURB[type])}` : ''}</span>
+      <span class="row">
+        <select id="showSel">${[['all', 'Everything'], ['killed', 'Killed'], ['unkilled', 'Not yet killed'], ['rare', 'Rares'], ['elite', 'Elites'], ['killers', 'Killed you']].map(([k, l]) => `<option value="${k}" ${k === show ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="zoneSel"><option value="">All zones</option>${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select>
+      </span>
+    </div>
+    ${table(list, [
+      { label: 'Status', value: (n) => (n.kills > 0 ? 1 : 0), html: (n) => `${n.kills > 0 ? '<span class="chip done">killed</span>' : '<span class="chip seen">seen</span>'}${n.killedYou ? ` <span class="chip bad" title="Killed you ${n.killedYou} time${n.killedYou === 1 ? '' : 's'}">killed you</span>` : ''}` },
+      ...creatureColumns(),
+    ], { search: (n) => `${n.name} ${n.ctype} ${n.family} ${n.zones.join(' ')} ${n.ranks.join(' ')} ${n.drops.map((d) => d.name).join(' ')}`, sort: 1, empty: 'No creatures of this kind yet. They appear as you fight, target and loot.' })}`;
 };
 
 // People: everyone you deal with rather than fight ----------------------------
@@ -775,11 +943,27 @@ pages.vendors = (_, params) => pages.people(_, new URLSearchParams('show=vendor'
 pages.people = async (_, params) => {
   const { world } = derived();
   const show = params.get('show') || 'all';
-  const list = show === 'all' ? world.people : world.people.filter((n) => n.roles.includes(show));
-  const count = (k) => world.people.filter((n) => n.roles.includes(k)).length;
-  return `${pageHead('World', 'People', 'Everyone you have talked to, bought from, trained with or passed by: quest givers, vendors, trainers, flight masters and the townsfolk in between.')}
-    ${tabsHtml([['all', 'Everyone', world.people.length], ['quest', 'Quest givers', count('quest')], ['vendor', 'Vendors', count('vendor')], ['trainer', 'Trainers', count('trainer')], ['taxi', 'Flight masters', count('taxi')], ['innkeeper', 'Innkeepers', count('innkeeper')], ['talker', 'Just talked', count('talker')], ['other', 'Passed by', count('other')]], show, '#/people?show=')}
+  const met = params.get('met') || 'all';
+  let list = show === 'all' ? world.people : world.people.filter((n) => n.roles.includes(show));
+  if (met === 'met') list = list.filter((n) => n.met); else if (met === 'seen') list = list.filter((n) => !n.met);
+  const count = (k) => world.people.filter((n) => n.roles.includes(k));
+  const metCount = (arr) => arr.filter((n) => n.met).length;
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const inRole = show === 'all' ? world.people : count(show);
+  setTimeout(() => document.getElementById('metSel')?.addEventListener('change', (ev) => { location.hash = `#/people?show=${show}&met=${ev.target.value}`; }));
+  return `${pageHead('World', 'People', 'Everyone you have dealt with or passed by: quest givers, vendors, trainers, flight masters and the townsfolk in between. Each one stays "seen" until you take a quest, buy, train, fly or talk with them.')}
+    <div class="cards">
+      ${card(world.people.length, 'people seen', '#/people')}
+      ${card(metCount(world.people), 'met', '#/people?met=met')}
+      ${card(pct(metCount(world.people), world.people.length), '% of those seen', '#/people?met=seen')}
+      ${card(count('quest').length, 'quest givers', '#/people?show=quest')}
+      ${card(count('vendor').length, 'vendors', '#/people?show=vendor')}
+    </div>
+    ${tabsHtml([['all', 'Everyone', `${metCount(world.people)}/${world.people.length}`], ...[['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['other', 'Passed by']].filter(([k]) => count(k).length).map(([k, l]) => [k, l, `${metCount(count(k))}/${count(k).length}`])], show, '#/people?show=')}
+    <div class="row spread" style="margin-bottom:10px"><span class="muted">${show === 'all' ? 'Everyone' : esc(ROLE_NAMES[show] ?? show)}: met <b>${metCount(inRole)}</b> of <b>${inRole.length}</b> (${pct(metCount(inRole), inRole.length)}%).</span>
+      <select id="metSel">${[['all', 'Everyone'], ['met', 'Met'], ['seen', 'Only seen']].map(([k, l]) => `<option value="${k}" ${k === met ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     ${table(list, [
+      { label: 'Status', value: (n) => (n.met ? 1 : 0), html: (n) => (n.met ? '<span class="chip done">met</span>' : '<span class="chip seen">seen</span>') },
       { label: 'Name', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)} ${n.titles[0] ? `<span class="muted small">&lt;${esc(n.titles[0])}&gt;</span>` : ''}` },
       { label: 'Role', value: (n) => n.roles.join(' '), html: (n) => n.roles.filter((r) => r !== 'other').map((r) => `<span class="chip">${esc(ROLE_NAMES[r])}</span>`).join(' ') },
       { label: 'Zone', value: (n) => n.zones.join(', ') },
@@ -788,7 +972,7 @@ pages.people = async (_, params) => {
       { label: 'Sells', value: (n) => n.vendor?.items.length ?? 0, html: (n) => (n.vendor ? n.vendor.items.length : ''), num: true },
       { label: 'Seen', value: (n) => n.sightings, num: true },
       { label: 'First seen', value: (n) => n.first?.t ?? 0, html: (n) => (n.first ? play(n.first) : '') },
-    ], { search: (n) => `${n.name} ${n.titles.join(' ')} ${n.roles.join(' ')} ${n.zones.join(' ')} ${n.lines.map((l) => l.text).join(' ')}`, sort: 7, desc: true, empty: 'Nobody yet.' })}`;
+    ], { search: (n) => `${n.name} ${n.titles.join(' ')} ${n.roles.join(' ')} ${n.zones.join(' ')} ${n.lines.map((l) => l.text).join(' ')}`, sort: 8, desc: true, empty: 'Nobody yet.' })}`;
 };
 
 // One NPC, creature or object -------------------------------------------------
@@ -868,34 +1052,87 @@ function tooltipBox(lines) {
 
 // Items -------------------------------------------------------------------
 
+// Every item in Classic, for the completion journal: id -> [name, class, subclass, item level, required level].
+async function itemTable() {
+  if (state.itemdb !== undefined) return state.itemdb;
+  try {
+    const data = (await fetch('data/classic/itemdb.json').then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })).items;
+    state.itemdb = new Map(Object.entries(data).map(([id, v]) => [Number(id), v]));
+  } catch { state.itemdb = null; }
+  return state.itemdb;
+}
+
 pages.items = async (_, params) => {
   const { world } = derived();
-  const show = params.get('show') || 'items';
-  const tabs = tabsHtml([['items', 'Items', world.items.length], ['objects', 'Herbs, ore & chests', world.objects.length]], show, '#/items?show=');
-  if (show === 'objects') {
-    return `${pageHead('World', 'Herbs, ore & chests', 'Everything you gathered or opened, and what came out of it.')}${tabs}
+  const show = params.get('show') || 'all';
+  if (show === 'objects' || show === 'gathering') {
+    return `${pageHead('World', 'Gathering', 'Everything you gathered or opened, and what came out of it: herbs, ore, chests, and anything else you can pick from (a cactus, a crate).', '<div class="row"><a class="btn ghost" href="#/items">Items</a></div>')}
       ${table(world.objects, [
-        { label: 'Object', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)}${n.unnamed && n.drops.size ? ` <span class="muted small">gives ${esc([...n.drops.values()].sort((a, b) => b.times - a.times)[0].name)}</span>` : ''}` },
+        { label: 'Object', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)}${n.unnamed && n.drops.length ? ` <span class="muted small">gives ${esc(n.drops[0].name)}</span>` : ''}` },
         { label: 'Opened', value: (n) => n.loots, num: true },
         { label: 'Gave', value: (n) => n.drops.length, html: (n) => n.drops.slice(0, 4).map((d) => itemLink(d.id, d.name)).join(' ') + (n.drops.length > 4 ? ` <span class="muted">+${n.drops.length - 4}</span>` : ''), num: true },
         { label: 'Zones', value: (n) => n.zones.join(', ') },
         { label: 'First', value: (n) => n.first?.t ?? n.spots[0]?.t ?? 0, html: (n) => (n.first ? play(n.first) : n.spots[0] ? play(n.spots[0]) : '') },
-      ], { sort: 1, desc: true, empty: 'Nothing gathered yet. Herbs, ore and chests appear here after you loot them.' })}`;
+      ], { sort: 1, desc: true, empty: 'Nothing gathered yet. Herbs, ore, chests and the like appear here after you open them.' })}`;
   }
-  return `${pageHead('World', 'Items', 'Every item you have looted, seen dropped, been offered, bought, worn, carried or hovered, with everything the game says about it.')}
-    ${state.schema2 ? '' : schemaNotice()}${tabs}
-    ${table(world.items, [
-      { label: 'Item', value: (i) => i.name, html: (i) => itemLink(i.id, i.name, i.quality) },
-      { label: 'Quality', value: (i) => i.quality ?? -1, html: (i) => esc(qualityName(i.quality) ?? ''), num: true },
-      { label: 'Type', value: (i) => [i.info?.type, i.info?.sub].filter(Boolean).join(' · ') },
-      { label: 'iLvl', value: (i) => i.info?.ilvl ?? 0, html: (i) => i.info?.ilvl ?? '', num: true },
-      { label: 'Req', value: (i) => i.info?.req ?? 0, html: (i) => i.info?.req || '', num: true },
-      { label: 'Sells for', value: (i) => i.info?.sell ?? 0, html: (i) => (i.info?.sell ? money(i.info.sell) : ''), num: true },
-      { label: 'Looted', value: (i) => i.looted, num: true },
-      { label: 'Sources', value: (i) => i.droppedBy.length + i.soldBy.length + i.rewardFrom.length, html: (i) => [
-        i.droppedBy.length && `${i.droppedBy.length} drop`, i.soldBy.length && `${i.soldBy.length} vendor`, i.rewardFrom.length && `${i.rewardFrom.length} quest`,
-      ].filter(Boolean).join(', '), num: true },
-    ], { search: (i) => `${i.name} ${i.info?.type} ${i.info?.sub} ${(i.info?.tip || []).join(' ')}`, sort: 1, desc: true, empty: 'No items yet.' })}`;
+  const everything = params.get('all') === '1';
+  const itemdb = await itemTable();
+  const dbClass = (id) => { const v = itemdb?.get(id); return v ? itemClassName(v[1], v[2]) : null; };
+  const classOf = (i) => i.info?.type || dbClass(i.id)?.type || 'Unknown';
+  const subOf = (i) => i.info?.sub || dbClass(i.id)?.sub || '';
+  // Rows: what you have come across, or every item in the game when asked.
+  let rows;
+  if (everything && itemdb) {
+    rows = [...itemdb.entries()].map(([id, v]) => {
+      const seen = world.byItem.get(id);
+      const { type, sub } = itemClassName(v[1], v[2]);
+      return { id, name: seen?.name ?? v[0], type, sub, ilvl: seen?.info?.ilvl ?? v[3], req: seen?.info?.req ?? v[4], quality: seen?.quality ?? null, obtained: Boolean(seen?.obtained), seen: Boolean(seen), looted: seen?.looted ?? 0, sources: seen ? seen.droppedBy.length + seen.soldBy.length + seen.rewardFrom.length : 0, sell: seen?.info?.sell ?? 0, tip: seen?.info?.tip ?? [] };
+    });
+  } else {
+    rows = world.items.map((i) => ({ id: i.id, name: i.name, type: classOf(i), sub: subOf(i), ilvl: i.info?.ilvl ?? 0, req: i.info?.req ?? 0, quality: i.quality, obtained: i.obtained, seen: true, looted: i.looted, sources: i.droppedBy.length + i.soldBy.length + i.rewardFrom.length, sell: i.info?.sell ?? 0, tip: i.info?.tip ?? [] }));
+  }
+  const order = (t) => (ITEM_CLASS_ORDER.indexOf(t) + 1 || 99);
+  const classes = [...new Set(rows.map((r) => r.type))].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+  const ofClass = (t) => (t === 'all' ? rows : rows.filter((r) => r.type === t));
+  const got = (arr) => arr.filter((r) => r.obtained).length;
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const status = params.get('status') || 'all';
+  let list = ofClass(show);
+  if (status === 'obtained') list = list.filter((r) => r.obtained); else if (status === 'seen') list = list.filter((r) => r.seen && !r.obtained); else if (status === 'missing') list = list.filter((r) => !r.obtained);
+  const total = itemdb ? itemdb.size : world.items.length;
+  const obtainedAll = world.items.filter((i) => i.obtained).length;
+  const link = (t = show, all = everything, st = status) => `#/items?show=${enc(t)}${all ? '&all=1' : ''}${st !== 'all' ? `&status=${st}` : ''}`;
+  setTimeout(() => {
+    document.getElementById('statusSel')?.addEventListener('change', (ev) => { location.hash = link(show, everything, ev.target.value); });
+    document.getElementById('allItems')?.addEventListener('change', (ev) => { location.hash = link(show, ev.target.checked, status); });
+  });
+  return `${pageHead('World', 'Items', 'A completion journal of every item: the ones you have obtained (looted, handed over, made, worn or carried), the ones you have only seen, and, from the item database, every item in Classic you have yet to find.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
+    ${state.schema2 ? '' : schemaNotice()}
+    <div class="cards">
+      ${card(obtainedAll, 'items obtained', link('all', false, 'obtained'))}
+      ${card(pct(obtainedAll, total), itemdb ? `% of ${total.toLocaleString()} items in Classic` : '% of items seen', link('all', true, 'missing'))}
+      ${card(world.items.length - obtainedAll, 'seen, not yet yours', link('all', false, 'seen'))}
+      ${card(world.items.length, 'items catalogued', link('all', false, 'all'))}
+    </div>
+    ${tabsHtml([['all', 'All', `${got(rows)}/${rows.length}`], ...classes.map((t) => [t, t, `${got(ofClass(t))}/${ofClass(t).length}`])], show, `#/items?${everything ? 'all=1&' : ''}${status !== 'all' ? `status=${status}&` : ''}show=`)}
+    <div class="row spread" style="margin-bottom:10px">
+      <span class="muted">${show === 'all' ? 'Everything' : esc(show)}: obtained <b>${got(ofClass(show))}</b> of <b>${ofClass(show).length}</b> (${pct(got(ofClass(show)), ofClass(show).length)}%)${everything ? ' in the game' : ' you have come across'}.</span>
+      <span class="row">
+        <select id="statusSel">${[['all', 'Everything'], ['obtained', 'Obtained'], ['seen', 'Seen, not yet yours'], ['missing', 'Not yet obtained']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        ${itemdb ? `<label class="check" style="margin:0"><input type="checkbox" id="allItems" ${everything ? 'checked' : ''}><span>Every item in Classic</span></label>` : ''}
+      </span>
+    </div>
+    ${table(list, [
+      { label: 'Status', value: (r) => (r.obtained ? 2 : r.seen ? 1 : 0), html: (r) => (r.obtained ? '<span class="chip done">obtained</span>' : r.seen ? '<span class="chip seen">seen</span>' : '<span class="chip">not yet</span>') },
+      { label: 'Item', value: (r) => r.name, html: (r) => (r.seen ? itemLink(r.id, r.name, r.quality) : `<a href="#/item/${r.id}">${esc(r.name)}</a>`) },
+      { label: 'Type', value: (r) => [r.type, r.sub].filter(Boolean).join(' · ') },
+      { label: 'Quality', value: (r) => r.quality ?? -1, html: (r) => esc(qualityName(r.quality) ?? ''), num: true },
+      { label: 'iLvl', value: (r) => r.ilvl || 0, html: (r) => r.ilvl || '', num: true },
+      { label: 'Req', value: (r) => r.req || 0, html: (r) => r.req || '', num: true },
+      { label: 'Sells for', value: (r) => r.sell || 0, html: (r) => (r.sell ? money(r.sell) : ''), num: true },
+      { label: 'Looted', value: (r) => r.looted, num: true },
+      { label: 'Sources', value: (r) => r.sources, num: true },
+    ], { search: (r) => `${r.name} ${r.type} ${r.sub} ${(r.tip || []).join(' ')}`, sort: 0, desc: true, limit: 300, empty: everything ? 'No items of this kind in the database.' : 'No items yet.' })}`;
 };
 
 pages.item = async (id) => {
@@ -954,6 +1191,11 @@ pages.characters = async () => {
 pages.character = async (key) => {
   const c = derived().characters.find((x) => x.key === key);
   if (!c) return '<p>Character not found.</p>';
+  setTimeout(() => document.getElementById('delChar')?.addEventListener('click', async () => {
+    if (document.getElementById('delCharName').value.trim().toLowerCase() !== c.name.toLowerCase()) { toast(`Type ${c.name} to confirm.`); return; }
+    if (!window.confirm(`Delete ${c.name} and ${c.sessions.length} session${c.sessions.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    try { await deleteCharacter(c); toast(`${c.name} deleted.`); location.hash = '#/characters'; } catch (err) { toast(err.message); }
+  }));
   const i = c.info;
   const tabs = (c.talents?.tabs || []).map((t) => `<div class="panel"><h3>${esc(t.name)} <span class="muted">${t.spent ?? 0}</span></h3>${(t.talents || []).map((x) => `<div>${esc(x.name)} <span class="muted">${x.rank}/${x.max}</span></div>`).join('') || '<span class="muted">none</span>'}</div>`).join('');
   const statRow = (st) => ['str', 'agi', 'sta', 'int', 'spi', 'armor', 'hp', 'power', 'ap', 'crit', 'dodge'].map((k) => `<td class="num">${st[k] ?? ''}</td>`).join('');
@@ -1023,8 +1265,22 @@ pages.character = async (key) => {
       { label: 'Recording', value: (r) => r.start ?? 0, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>` },
       { label: 'Length', value: (r) => r.duration ?? 0, html: (r) => (r.duration ? duration(r.duration) : ''), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
-    ], { sort: 0, desc: true, empty: 'No footage of this character yet.' })}`;
+    ], { sort: 0, desc: true, empty: 'No footage of this character yet.' })}
+    <div class="panel danger"><h3>Delete ${esc(c.name)}</h3>
+      <p class="small">Removes this character's ${c.sessions.length} session${c.sessions.length === 1 ? '' : 's'} and their routes from the chronicle, on every computer. Recordings and screenshots stay. The addon's own log on the gaming PC is not changed, and these sessions will not be uploaded again. Type the character's name to confirm.</p>
+      <div class="row"><input type="text" id="delCharName" placeholder="${esc(c.name)}" autocomplete="off"><button id="delChar" class="danger">Delete character</button></div>
+    </div>`;
 };
+
+async function deleteCharacter(c) {
+  const ids = c.sessions.slice();
+  await state.store.deleteSessions(ids);
+  state.settings = { ...state.settings, deletedSessions: [...new Set([...(state.settings.deletedSessions || []), ...ids])] };
+  await state.store.saveSettings(state.settings);
+  state.sessions = state.sessions.filter((s) => !ids.includes(s.id));
+  state.tracks = null;
+  invalidate();
+}
 
 function journeyRows(c) {
   const rows = [];
@@ -1143,18 +1399,25 @@ pages.highlights = async (_, params) => {
 // Locations: maps with everything pinned -------------------------------------
 
 pages.locations = async () => {
-  const { maps } = derived();
-  return `${pageHead('Chronicle', 'Locations', 'Every map you have set foot on, with everything pinned where it happened: quests, creatures, people, vendors, loot, deaths, marks, and the route you walked.')}
+  const { maps, codex } = derived();
+  const zoneOf = (m) => codex.zones.find((z) => z.name === m.zone);
+  const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const discoveredAll = codex.zones.reduce((n, z) => n + (z.discovered?.length || 0), 0);
+  const knownAll = codex.zones.reduce((n, z) => n + known(z).size, 0);
+  return `${pageHead('World', 'Locations', 'Every map you have set foot on, with everything pinned where it happened. Discovery counts the areas the game announced ("Discovered: …") against every area Chronicler knows of in that zone, so it grows as you explore.')}
     ${state.schema2 ? '' : schemaNotice()}
+    <div class="cards">${card(maps.length, 'maps explored', '#/locations')}${card(discoveredAll, 'areas discovered', '#/locations')}${card(pct(discoveredAll, knownAll), '% of known areas', '#/locations')}</div>
     ${table(maps, [
       { label: 'Map', value: (m) => m.zone ?? `Map ${m.id}`, html: (m) => `<a href="#/map/${m.id}">${esc(m.zone ?? `Map ${m.id}`)}</a> <span class="muted small">${m.id}</span>` },
+      { label: 'Discovered', value: (m) => { const z = zoneOf(m); return z ? pct(z.discovered?.length || 0, known(z).size) : 0; }, html: (m) => { const z = zoneOf(m); if (!z) return ''; const k = known(z).size; const d = z.discovered?.length || 0; return `<div class="cov small"><div class="bar"><div style="width:${pct(d, k)}%"></div></div><b>${d}/${k}</b></div>`; }, num: true },
       { label: 'Areas', value: (m) => m.subzones.join(', ') },
       { label: 'Pins', value: (m) => m.markers.length, num: true },
       { label: 'Quests', value: (m) => m.counts.quest ?? 0, num: true },
       { label: 'Creatures', value: (m) => m.counts.creature ?? 0, num: true },
       { label: 'People', value: (m) => (m.counts.person ?? 0) + (m.counts.vendor ?? 0), num: true },
       { label: 'First visit', value: (m) => m.first?.t ?? 0, html: (m) => (m.first ? play(m.first) : '') },
-    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 2, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}
+    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 3, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}
     ${await otherMaps(maps)}`;
 };
 
@@ -1181,8 +1444,12 @@ pages.map = async (id, params) => {
   if (!state.tracks && state.schema2) {
     try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); }
   }
-  const hidden = new Set((params.get('hide') || 'loot,lore,time').split(',').filter(Boolean));
-  for (const k of (params.get('show') || '').split(',')) hidden.delete(k);
+  // Layers: what you last chose (remembered on this computer), plus whatever
+  // the page that sent you here asks to show. Fresh: quests and your route.
+  const shown = new Set(savedLayers() ?? MAP_DEFAULT_LAYERS);
+  for (const k of (params.get('show') || '').split(',').filter(Boolean)) shown.add(k);
+  for (const k of (params.get('hide') || '').split(',').filter(Boolean)) shown.delete(k);
+  const hidden = new Set(Object.keys(LAYERS).filter((k) => !shown.has(k)));
   const dbPins = await dbMapPins(db, areaId);
   const markers = [...m.markers, ...dbPins];
   const counts = { ...m.counts };
@@ -1201,6 +1468,17 @@ pages.map = async (id, params) => {
           <p class="muted small" style="margin-top:8px">Click a pin for its moments, or anywhere else for what is nearby.</p>`;
       },
     });
+    const layerBox = document.getElementById('mapLayers');
+    const setAll = (on, only = null) => {
+      for (const cb of layerBox.querySelectorAll('input[type=checkbox]')) {
+        const want = only ? only.includes(cb.value) : on;
+        if (cb.checked !== want) { cb.checked = want; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+    };
+    layerBox?.addEventListener('change', () => saveLayers([...layerBox.querySelectorAll('input:checked')].map((cb) => cb.value)));
+    document.getElementById('layersAll')?.addEventListener('click', () => setAll(true));
+    document.getElementById('layersNone')?.addEventListener('click', () => setAll(false));
+    document.getElementById('layersDefault')?.addEventListener('click', () => setAll(false, MAP_DEFAULT_LAYERS));
     document.getElementById('geojson')?.addEventListener('click', () => {
       const routes = routesFor(m.id, derived().sessions, state.tracks);
       download(`${(m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: m.zone ?? `Map ${m.id}`, mapId: m.id, zone: m.zone, markers: cluster(markers), routes }), null, 1));
@@ -1209,9 +1487,18 @@ pages.map = async (id, params) => {
   const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : counts[k]);
   return `${crumb('#/locations', 'Locations')}
     ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
-    <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}</div>
+    <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}<span class="row" style="margin-left:auto"><button class="ghost small" id="layersDefault" title="Quests and your route">Default</button><button class="ghost small" id="layersAll">All</button><button class="ghost small" id="layersNone">None</button></span></div>
     <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>`;
 };
+
+const MAP_DEFAULT_LAYERS = ['quest', 'route'];
+const MAP_LAYERS_KEY = 'chronicler.mapLayers';
+function savedLayers() {
+  try { const v = JSON.parse(localStorage.getItem(MAP_LAYERS_KEY) || 'null'); return Array.isArray(v) ? v : null; } catch { return null; }
+}
+function saveLayers(list) {
+  try { localStorage.setItem(MAP_LAYERS_KEY, JSON.stringify(list)); } catch { /* storage off */ }
+}
 
 // Draws a map: the image, the route from the position track, and clustered
 // pins. Clicking a pin shows its moments in #mapInfo (when present).
@@ -1546,7 +1833,9 @@ pages.marks = async () => {
 
 const OVERLAY_WIDGETS = [['toasts', 'Drop toasts'], ['tracker', 'Quest tracker'], ['counters', 'Item counters'], ['kills', 'Kills & streaks'], ['timer', 'Session timer & XP'], ['callouts', 'Callouts (levels, deaths, rares, quests)']];
 const OVERLAY_POSITIONS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['ml', 'Middle left'], ['mr', 'Middle right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
-const DEFAULT_OVERLAY = { show: ['toasts', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
+const DEFAULT_OVERLAY = { show: ['toasts', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc', bg: '' };
+// One window per widget: the size to give the OBS browser source.
+const WIDGET_SIZES = { toasts: [520, 460], tracker: [420, 380], counters: [320, 340], kills: [340, 170], timer: [500, 120], callouts: [1100, 300] };
 const LIVE_TESTS = {
   'loot:1': ['Common drop', { kind: 'loot', id: 2589, name: 'Linen Cloth', q: 1, n: 3, source: 'Kobold Vermin', sourceId: 6 }],
   'loot:2': ['Uncommon drop', { kind: 'loot', id: 1121, name: 'Feet of the Lynx', q: 2, n: 1, source: 'Mother Fang', sourceId: 471 }],
@@ -1569,13 +1858,14 @@ function overlayConfig() {
   return c;
 }
 
-function overlayUrl(cfg, token, { demo = false } = {}) {
+function overlayUrl(cfg, token, { demo = false, widget = null } = {}) {
   const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}overlay.html`;
   const p = new URLSearchParams();
   if (demo) p.set('demo', '1'); else if (token) p.set('token', token);
-  p.set('show', cfg.show.join(','));
+  if (widget) p.set('widget', widget); else p.set('show', cfg.show.join(','));
   if (Number(cfg.scale) !== 1) p.set('scale', String(cfg.scale));
-  for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k] && cfg[k] && cfg[k] !== DEFAULT_OVERLAY[k]) p.set(k, cfg[k]);
+  if (!widget) for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k] && cfg[k] && cfg[k] !== DEFAULT_OVERLAY[k]) p.set(k, cfg[k]);
+  if (/^[0-9a-f]{6}$/i.test(String(cfg.bg || '').replace('#', ''))) p.set('bg', String(cfg.bg).replace('#', '').toLowerCase());
   return `${base}?${p}`;
 }
 
@@ -1642,7 +1932,12 @@ pages.live = async () => {
         </form>
       </div>
       <div>
-        <form id="overlayForm" class="panel"><h3>Overlay address for OBS</h3>
+        <form id="overlayForm" class="panel"><h3>One window per widget</h3>
+          <p class="small muted">Each widget as its own OBS Browser source, so you place and size them however you like. Pop out a preview to see it run on its own with demo events.</p>
+          <table class="widget-list"><tbody>${OVERLAY_WIDGETS.map(([k, label]) => `<tr><td><b>${esc(label)}</b><br><span class="muted small">${WIDGET_SIZES[k][0]} × ${WIDGET_SIZES[k][1]}</span></td><td><button type="button" class="small" data-copy-widget="${k}" ${token ? '' : 'disabled'}>Copy address</button> <button type="button" class="ghost small" data-pop-widget="${k}">Pop out preview</button></td></tr>`).join('')}</tbody></table>
+          <label class="row" style="margin-top:10px"><span>Chroma key background</span><input type="color" name="bgPick" value="${/^[0-9a-f]{6}$/i.test(String(cfg.bg || '').replace('#', '')) ? `#${String(cfg.bg).replace('#', '')}` : '#00ff00'}" style="width:48px;padding:0"><input type="text" name="bg" value="${esc(cfg.bg || '')}" placeholder="transparent (empty) or a hex like 00ff00" style="max-width:220px"></label>
+          <p class="small muted">Leave it empty for a transparent background (an OBS Browser source needs nothing more). Set a hex colour when the overlay goes through a capture or a feed that cannot carry transparency, and key it out with OBS's Chroma Key filter.</p>
+          <h3 style="margin-top:18px">Everything in one window</h3>
           <div class="widgets">${OVERLAY_WIDGETS.map(([k, label]) => `<label><input type="checkbox" name="show" value="${k}" ${cfg.show.includes(k) ? 'checked' : ''}><span>${esc(label)}</span>${DEFAULT_OVERLAY[k] ? `<select name="${k}">${OVERLAY_POSITIONS.map(([p, pl]) => `<option value="${p}" ${cfg[k] === p ? 'selected' : ''}>${pl}</option>`).join('')}</select>` : ''}</label>`).join('')}</div>
           <label style="margin-top:10px"><span>Size <b id="scaleOut">${Number(cfg.scale).toFixed(2)}×</b></span><input type="range" name="scale" min="0.6" max="1.8" step="0.05" value="${cfg.scale}"></label>
           <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Chronicler has run on the gaming PC.'}</p>
@@ -1659,7 +1954,7 @@ function wireLive(cfg, token) {
   const form = document.getElementById('overlayForm');
   const readForm = () => {
     const f = new FormData(form);
-    const next = { ...cfg, show: f.getAll('show'), scale: Number(f.get('scale')) || 1 };
+    const next = { ...cfg, show: f.getAll('show'), scale: Number(f.get('scale')) || 1, bg: String(f.get('bg') || '').trim().replace('#', '') };
     for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k]) next[k] = f.get(k) || DEFAULT_OVERLAY[k];
     return next;
   };
@@ -1689,6 +1984,20 @@ function wireLive(cfg, token) {
   document.getElementById('copyUrl')?.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(overlayUrl(readForm(), token)); toast('Overlay address copied. Paste it into an OBS Browser source.'); } catch (err) { toast(err.message); }
   });
+  for (const b of document.querySelectorAll('[data-copy-widget]')) {
+    b.addEventListener('click', async () => {
+      const w = b.dataset.copyWidget;
+      try { await navigator.clipboard.writeText(overlayUrl(readForm(), token, { widget: w })); toast(`${OVERLAY_WIDGETS.find(([k]) => k === w)[1]} address copied. In OBS: Browser source, ${WIDGET_SIZES[w][0]} × ${WIDGET_SIZES[w][1]}.`); } catch (err) { toast(err.message); }
+    });
+  }
+  for (const b of document.querySelectorAll('[data-pop-widget]')) {
+    b.addEventListener('click', () => {
+      const w = b.dataset.popWidget;
+      const [width, height] = WIDGET_SIZES[w];
+      window.open(overlayUrl(readForm(), token, { widget: w, demo: true }), `chronicler-${w}`, `popup=yes,width=${width},height=${height}`);
+    });
+  }
+  form?.querySelector('[name=bgPick]')?.addEventListener('input', (ev) => { form.querySelector('[name=bg]').value = ev.target.value.replace('#', ''); form.dispatchEvent(new Event('input')); });
   for (const b of document.querySelectorAll('[data-test]')) {
     b.addEventListener('click', async () => {
       try { await liveTestEvent(LIVE_TESTS[b.dataset.test][1]); toast(`${LIVE_TESTS[b.dataset.test][0]} sent to the overlay.`); } catch (err) { toast(err.message); }
