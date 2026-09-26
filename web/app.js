@@ -10,12 +10,12 @@ import { toSRT, toCSV, toChapters, toKillsCSV, toFCPXML, lifetimeKillsBefore, st
 import { foldersSupported } from './lib/folders.js';
 import { buildWorld } from './lib/world.js';
 import { buildCharacters, recordingCharacters } from './lib/journey.js';
-import { findSegments, findHighlights, HIGHLIGHT_KINDS, timeOfDay } from './lib/footage.js';
+import { findSegments, findHighlights, HIGHLIGHT_KINDS, timeOfDay, parsePoint } from './lib/footage.js';
 import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
 import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
-import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates } from './lib/maps.js';
+import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail } from './lib/maps.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -45,22 +45,30 @@ function derived() {
   if (!state.cache) {
     const clock = clockModel(state.clock);
     const recordings = resolveRecordings(state.rows);
-    const timelines = buildTimelines(state.sessions, recordings, clock);
+    // Marks you deleted stay in the addon's log; they are hidden here.
+    const gone = new Set(state.settings.deletedMarks || []);
+    const sessions = gone.size ? state.sessions.map((sess) => ({ ...sess, events: sess.events.filter((e) => e.e !== 'mark' || !gone.has(markKey(sess.id, e))) })) : state.sessions;
+    const timelines = buildTimelines(sessions, recordings, clock);
     const where = new Map();
     for (const [rec, events] of timelines) for (const e of events) where.set(`${e.session}|${e.t}`, { rec, offset: e.offset });
-    const codex = buildCodex(state.sessions, (sid, t) => where.get(`${sid}|${t}`) ?? null);
-    const moment = (sess, e) => ({ session: sess.id, t: e.t, footage: where.get(`${sess.id}|${e.t}`) ?? null });
-    const world = buildWorld(state.sessions, state.items, moment);
-    const characters = buildCharacters(state.sessions, moment, timelines, recordings);
-    const recChars = recordingCharacters(state.sessions, timelines);
-    const maps = buildMaps(state.sessions, world, codex, moment);
-    state.cache = { clock, recordings, timelines, where, codex, moment, world, characters, recChars, maps, index: null };
+    const codex = buildCodex(sessions, (sid, t) => where.get(`${sid}|${t}`) ?? null);
+    const moment = (sess, e) => ({ session: sess.id, t: e.t, footage: where.get(`${sess.id}|${e.t}`) ?? null, m: e.m ?? null, x: e.x ?? null, y: e.y ?? null, z: e.z ?? null, sz: e.sz ?? null });
+    const world = buildWorld(sessions, state.items, moment);
+    const characters = buildCharacters(sessions, moment, timelines, recordings);
+    const recChars = recordingCharacters(sessions, timelines);
+    const maps = buildMaps(sessions, world, codex, moment);
+    state.cache = { sessions, clock, recordings, timelines, where, codex, moment, world, characters, recChars, maps, index: null };
   }
   return state.cache;
 }
 
 async function codex() {
   return derived().codex;
+}
+
+// Identifies one mark for deletion, even if two were logged in the same frame.
+function markKey(sessionId, m) {
+  return `${sessionId}|${m.t}|${m.kind ?? ''}|${m.note ?? ''}`;
 }
 
 function invalidate() {
@@ -307,6 +315,7 @@ pages.quests = async () => {
 
 pages.quest = async (key) => {
   const c = await codex();
+  if (!state.tracks && state.schema2) { try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); } }
   const q = c.quests.find((x) => x.key === key);
   if (!q) return '<p>Quest not found.</p>';
   const moments = [
@@ -317,6 +326,7 @@ pages.quest = async (key) => {
     ${pageHead('Quest', esc(q.title ?? `Quest ${q.qid}`), '', `<div class="row"><span class="chip ${q.status}">${q.status}</span>${wowhead('quest', q.qid)}</div>`)}
     ${facts([esc(q.zone ?? ''), q.giver ? `from <a href="#/npc/${enc(q.giver.npcId ? `n${q.giver.npcId}` : `s${q.giver.name}`)}">${esc(q.giver.name)}</a>` : '', q.turnInNpc && q.turnInNpc.name !== q.giver?.name ? `turn in to ${esc(q.turnInNpc.name)}` : '', q.level ? `accepted at level ${q.level}` : '', (q.characters || []).length ? `by ${esc(q.characters.map((k) => k.split('-')[0]).join(', '))}` : '', q.qid ? `ID ${q.qid}` : ''])}
     <div class="panel"><h3>Moments</h3><table><tbody>${moments.map(([what, m]) => `<tr><td>${esc(what)}</td><td>${play(m)}</td><td class="muted">${esc(when(m.t))}</td></tr>`).join('')}</tbody></table></div>
+    ${questWhere(q)}
     ${q.text ? `<h3>Description</h3>${lore(q.text)}` : ''}
     ${q.objectives ? `<h3>Objectives</h3>${lore(q.objectives)}` : ''}
     ${q.progress ? `<h3>Progress</h3>${lore(q.progress)}` : ''}
@@ -324,6 +334,35 @@ pages.quest = async (key) => {
 };
 
 // Bestiary: things you can fight -------------------------------------------
+
+// The quest's map: pickup, objective progress, kills while active, turn-in.
+function questWhere(q) {
+  const d = derived();
+  const trail = questTrail(q, d.sessions, state.tracks, d.moment);
+  if (!trail || !trail.mapId) return '';
+  const pin = (mo, layer, label, extra = {}) => (mo?.x != null && mo.m === trail.mapId ? [{ x: mo.x, y: mo.y, zone: mo.z, sub: mo.sz, session: mo.session, t: mo.t, footage: mo.footage, layer, label, ...extra }] : []);
+  const markers = [
+    ...q.offered.flatMap((mo) => pin(mo, 'quest', `Offered: ${q.title}`, { key: 'offer' })),
+    ...q.accepted.flatMap((mo) => pin(mo, 'quest', `Accepted: ${q.title}`, { key: 'accept' })),
+    ...trail.objectives.flatMap((o) => pin(o, 'mark', o.text, { key: `o${o.text}` })),
+    ...trail.killSpots.map((k) => ({ x: k.x, y: k.y, session: k.session, t: k.t, footage: k.footage, layer: 'creature', label: k.name, key: `k${k.npcId ?? k.name}`, href: `#/npc/${enc(k.npcId ? `n${k.npcId}` : `s${k.name}`)}` })),
+    ...q.turnedIn.flatMap((mo) => pin(mo, 'quest', `Turned in: ${q.title}`, { key: 'turnin' })),
+  ];
+  const zoneName = d.maps.find((m) => m.id === trail.mapId)?.zone ?? `Map ${trail.mapId}`;
+  setTimeout(() => wireMap('questMap', trail.mapId, markers, { routes: trail.routes, heat: { density: heatCells(trail.killSpots, 3) }, hidden: new Set(['density']) }));
+  const at = (mo) => (mo?.x != null ? `${coords(mo.x, mo.y)}${mo.sz ? ` <span class="muted small">${esc(mo.sz)}</span>` : ''}` : '<span class="muted small">no position</span>');
+  return `<h2>Where</h2>
+    ${facts([`<a href="#/map/${trail.mapId}">${esc(zoneName)}</a>`, q.accepted[0] ? `picked up at ${at(q.accepted[0])}` : q.offered[0] ? `offered at ${at(q.offered[0])}` : '', q.turnedIn[0] ? `turned in at ${at(q.turnedIn[0])}` : '', trail.minutes != null ? `${trail.minutes} min from pickup to turn-in` : ''])}
+    <div class="filters" id="mapLayers">${['quest', 'creature', 'mark', 'route', 'density'].map((k) => `<label><input type="checkbox" value="${k}" ${k === 'density' ? '' : 'checked'}><span class="cat" style="background:${LAYERS[k].color}"></span>${k === 'mark' ? 'Objective progress' : k === 'creature' ? 'Kills while active' : k === 'density' ? 'Kill density' : LAYERS[k].name}</label>`).join('')}</div>
+    <div class="map-wrap"><div class="map" id="questMap"></div><div class="map-info panel" id="mapInfo">
+      ${trail.kills.length ? `<h3>Killed while active</h3>${trail.kills.slice(0, 12).map((k) => `<div class="row spread"><a href="#/npc/${enc(k.npcId ? `n${k.npcId}` : `s${k.name}`)}">${esc(k.name)}</a><b>${k.n}</b></div>`).join('')}` : '<p class="muted">Click a pin.</p>'}
+    </div></div>
+    ${trail.objectives.length ? table(trail.objectives, [
+      { label: 'Progress', value: (o) => o.text },
+      { label: 'Where', value: (o) => o.sz ?? '', html: (o) => `${esc(o.sz ?? o.z ?? '')} ${coords(o.x, o.y)}` },
+      { label: 'Footage', value: (o) => o.footage?.offset ?? -1, html: (o) => play(o) },
+    ], { sort: 2, limit: 100 }) : ''}`;
+}
 
 pages.creatures = (_, params) => pages.bestiary(_, params);
 pages.npcs = (_, params) => pages.people(_, params);
@@ -401,7 +440,8 @@ pages.npc = async (key) => {
   const byMap = new Map();
   for (const sp of n.spots) { if (!byMap.has(sp.m)) byMap.set(sp.m, []); byMap.get(sp.m).push(sp); }
   const mapId = [...byMap.entries()].sort((a, b) => b[1].length - a[1].length)[0]?.[0];
-  if (mapId) setTimeout(() => wireMap('npcMap', mapId, n.spots.filter((sp) => sp.m === mapId).map((sp) => ({ ...sp, layer: n.object ? 'object' : n.attackable ? 'creature' : 'person', label: n.name, sub2: sp.kind, key: n.key })), { routes: false }));
+  const onMap = n.spots.filter((sp) => sp.m === mapId);
+  if (mapId) setTimeout(() => wireMap('npcMap', mapId, onMap.map((sp) => ({ ...sp, layer: n.object ? 'object' : n.attackable ? 'creature' : 'person', label: n.name, sub2: sp.kind, key: n.key })), { routes: false, heat: n.attackable ? { density: heatCells(onMap, 3) } : {} }));
   return `${crumb(back[0], back[1])}
     ${pageHead(kicker, `${esc(n.name)}${n.titles[0] ? ` <span class="muted" style="font-size:.55em;font-family:var(--sans);font-weight:400">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}`, '', `<div class="row">${wowhead(n.object ? 'object' : 'npc', n.npcId)}</div>`)}
     ${facts([levelText(n) && `Level ${levelText(n)}`, rankChips(n.ranks), [n.ctype, n.family].filter(Boolean).join(' · '), n.react ? REACTION[n.react] : '', esc(n.faction ?? ''), n.hp ? `${n.hp.toLocaleString()} health` : '', esc(n.zones.join(', ')), n.npcId ? `ID ${n.npcId}` : ''])}
@@ -429,7 +469,7 @@ pages.npc = async (key) => {
     ], { sort: 0 }) : '')}
     ${section('Quests', quests.length ? `<ul>${quests.map((q) => `<li><a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span></li>`).join('')}</ul>` : '')}
     ${section('Dialogue', n.lines.map((l) => `<div class="row"><span class="chip">${esc(l.kind)}</span>${play(firstFootage(l.moments))}${l.moments.length > 1 ? `<span class="muted small">heard ${l.moments.length}×</span>` : ''}</div>${lore(l.text)}`).join(''))}
-    ${section('Where', n.spots.length ? `${mapId ? `<div class="map-wrap"><div class="map" id="npcMap"></div></div>` : ''}${[...byMap.keys()].length > 1 ? `<p class="small muted">Also on: ${[...byMap.entries()].filter(([id]) => id !== mapId).map(([id, sp]) => `<a href="#/map/${id}">${esc(sp[0].z ?? `Map ${id}`)}</a> (${sp.length})`).join(', ')}</p>` : ''}` + table(n.spots.slice().reverse(), [
+    ${section('Where', n.spots.length ? `${mapId ? `${n.attackable && onMap.length > 2 ? `<div class="filters" id="mapLayers"><label><input type="checkbox" value="creature" checked><span class="cat" style="background:${LAYERS.creature.color}"></span>Sightings</label><label><input type="checkbox" value="density" checked><span class="cat" style="background:${LAYERS.density.color}"></span>Density</label></div>` : ''}<div class="map-wrap"><div class="map" id="npcMap"></div></div>` : ''}${[...byMap.keys()].length > 1 ? `<p class="small muted">Also on: ${[...byMap.entries()].filter(([id]) => id !== mapId).map(([id, sp]) => `<a href="#/map/${id}">${esc(sp[0].z ?? `Map ${id}`)}</a> (${sp.length})`).join(', ')}</p>` : ''}` + table(n.spots.slice().reverse(), [
       { label: 'When', value: (sp) => sp.t, html: (sp) => `<span class="muted">${esc(when(sp.t))}</span>` },
       { label: 'Footage', value: (sp) => sp.footage?.offset ?? -1, html: (sp) => play(sp) },
       { label: 'How', value: (sp) => sp.kind },
@@ -699,7 +739,7 @@ pages.footage = async (_, params) => {
 
 pages.highlights = async (_, params) => {
   const { world } = derived();
-  const all = findHighlights(state.sessions, derived().moment, (id) => world.byItem.get(id)?.quality ?? null);
+  const all = findHighlights(derived().sessions, derived().moment, (id) => world.byItem.get(id)?.quality ?? null);
   const kind = params.get('kind') || 'all';
   const list = kind === 'all' ? all : all.filter((h) => h.kind === kind);
   const counts = {};
@@ -741,9 +781,11 @@ pages.map = async (id, params) => {
   if (!state.tracks && state.schema2) {
     try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); }
   }
-  const hidden = new Set((params.get('hide') || 'loot').split(',').filter(Boolean));
-  setTimeout(() => wireMap('zoneMap', m.id, m.markers, { routes: true, hidden }));
-  const layers = Object.entries(LAYERS).filter(([k]) => k === 'route' ? true : m.counts[k]);
+  const hidden = new Set((params.get('hide') || 'loot,lore,time').split(',').filter(Boolean));
+  const timePoints = routesFor(m.id, derived().sessions, state.tracks).flatMap((r) => r.points.map(([x, y]) => ({ x, y })));
+  const heat = { density: heatCells(m.markers.filter((mk) => mk.layer === 'creature'), 4), time: heatCells(timePoints, 3) };
+  setTimeout(() => wireMap('zoneMap', m.id, m.markers, { routes: true, hidden, heat }));
+  const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : m.counts[k]);
   return `${crumb('#/locations', 'Locations')}
     ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
     <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${m.counts[k] ? ` <span class="muted">${m.counts[k]}</span>` : ''}</label>`).join('')}</div>
@@ -752,9 +794,9 @@ pages.map = async (id, params) => {
 
 // Draws a map: the image, the route from the position track, and clustered
 // pins. Clicking a pin shows its moments in #mapInfo (when present).
-async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set() } = {}) {
+async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set(), heat = {} } = {}) {
   const el = document.getElementById(elId);
-  if (!el) return;
+  if (!el) return null;
   const own = state.settings.maps?.[mapId];
   const candidates = mapImageCandidates(mapId);
   if (own) {
@@ -765,11 +807,13 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
   }
   const src = candidates[0];
   const pins = cluster(markers);
-  const routeLines = routes ? routesFor(mapId, state.sessions, state.tracks) : [];
+  const routeLines = Array.isArray(routes) ? routes : routes ? routesFor(mapId, derived().sessions, state.tracks) : [];
   const path = (r) => r.points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+  const heatSvg = Object.entries(heat).map(([layer, cells]) => `<g class="heat layer-${layer}" fill="${LAYERS[layer]?.color ?? '#fff'}">${cells.map((c) => `<ellipse cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" rx="${(2 + 3 * c.w).toFixed(2)}" ry="${(3 + 4.5 * c.w).toFixed(2)}" opacity="${(0.15 + 0.45 * c.w).toFixed(2)}"/>`).join('')}</g>`).join('');
   el.className = `map ${[...hidden].map((h) => `hide-${h}`).join(' ')}`;
   el.innerHTML = `<img src="${src}" alt="" draggable="false" referrerpolicy="no-referrer" crossorigin="anonymous">
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none">${routeLines.map((r) => `<path d="${path(r)}" class="route" vector-effect="non-scaling-stroke"/>`).join('')}</svg>
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none">${heatSvg}${routeLines.map((r) => `<path d="${path(r)}" class="route" vector-effect="non-scaling-stroke"/>`).join('')}</svg>
+    <div class="you" hidden></div>
     ${pins.map((p, i) => `<a class="pin layer-${p.layer}" style="left:${p.x}%;top:${p.y}%;--c:${LAYERS[p.layer]?.color ?? '#fff'}" data-i="${i}" href="${p.href ?? '#'}" title="${esc(p.label)}${p.n > 1 ? ` (${p.n})` : ''}">${p.n > 1 ? `<b>${p.n}</b>` : ''}</a>`).join('')}
     <div class="map-legend muted small">${pins.length} pins${routeLines.length ? ` · ${routeLines.length} route segment${routeLines.length === 1 ? '' : 's'}` : ''} · coordinates are the game's map percentages</div>
     <div class="map-missing" hidden><b>No map image for this zone yet.</b><br>Open the map in game (M), take a screenshot, crop it to just the map, and use <i>Use my own map image</i> above. Pins are still placed correctly.</div>`;
@@ -797,6 +841,16 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
   document.getElementById('mapLayers')?.addEventListener('change', (ev) => {
     el.classList.toggle(`hide-${ev.target.value}`, !ev.target.checked);
   });
+  const you = el.querySelector('.you');
+  const api = {
+    // Moves the "you are here" marker to a map position (percent).
+    setYou(x, y) {
+      if (x == null) { you.hidden = true; return; }
+      you.hidden = false;
+      you.style.left = `${x}%`;
+      you.style.top = `${y}%`;
+    },
+  };
   document.getElementById('mapUpload')?.addEventListener('change', async (ev) => {
     const file = ev.target.files?.[0];
     if (!file) return;
@@ -816,6 +870,7 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
       route();
     } catch (err) { toast(err.message); }
   });
+  return api;
 }
 
 // Lets you drag a box around the map artwork in a screenshot. Resolves to
@@ -990,13 +1045,34 @@ pages.zone = async (name) => {
 
 pages.marks = async () => {
   const c = await codex();
-  return `${pageHead('Footage', 'Marks', 'Moments you flagged in game with a Chronicler key binding or <code>/chron mark</code>.')}
+  setTimeout(() => {
+    main.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-del-mark]');
+      if (!b) return;
+      if (!window.confirm('Delete this mark? It disappears from every page and export. The addon\'s own log is not changed.')) return;
+      const gone = new Set(state.settings.deletedMarks || []);
+      gone.add(b.dataset.delMark);
+      state.settings = { ...state.settings, deletedMarks: [...gone] };
+      try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); return; }
+      invalidate();
+      route({ keepScroll: true });
+    });
+  });
+  const deleted = (state.settings.deletedMarks || []).length;
+  setTimeout(() => document.getElementById('undeleteMarks')?.addEventListener('click', async () => {
+    state.settings = { ...state.settings, deletedMarks: [] };
+    try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); return; }
+    invalidate();
+    route();
+  }));
+  return `${pageHead('Footage', 'Marks', 'Moments you flagged in game with a Chronicler key binding or <code>/chron mark</code>. Deleting a mark hides it everywhere; the addon\'s log is untouched.', deleted ? `<div class="row"><button class="ghost" id="undeleteMarks">Restore ${deleted} deleted mark${deleted === 1 ? '' : 's'}</button></div>` : '')}
     ${table(c.marks.slice().reverse(), [
       { label: 'Footage', value: (m) => m.t, html: (m) => play(m) },
       { label: 'Kind', value: (m) => MARK_NAMES[m.kind] ?? m.kind },
       { label: 'Note', value: (m) => m.note ?? '' },
-      { label: 'Where', value: (m) => (m.sz ? `${m.z}: ${m.sz}` : m.z ?? '') },
+      { label: 'Where', value: (m) => (m.sz ? `${m.z}: ${m.sz}` : m.z ?? ''), html: (m) => `${esc(m.sz ? `${m.z}: ${m.sz}` : m.z ?? '')} ${m.m ? `<a class="small" href="#/map/${m.m}">map</a>` : ''}` },
       { label: 'When', value: (m) => m.t, html: (m) => esc(when(m.t)) },
+      { label: '', value: () => '', html: (m) => `<button class="ghost small" data-del-mark="${esc(markKey(m.session, m))}" title="Delete this mark">✕</button>` },
     ], { search: (m) => `${m.kind} ${m.note} ${m.z} ${m.sz}`, sort: 4, desc: true, empty: 'No marks yet.' })}`;
 };
 
@@ -1093,6 +1169,7 @@ pages.recording = async (id, params) => {
         </div>
       </div>
       <div>
+        <div class="map recording-map" id="recMap" hidden></div>
         <div class="filters" id="tlCats">${CATS.map((c) => `<label><input type="checkbox" value="${c}" ${QUIET_CATS.has(c) ? '' : 'checked'}><span class="cat cat-${c}"></span>${CAT_NAMES[c]}</label>`).join('')}</div>
         <div class="timeline" id="timeline"></div>
       </div>
@@ -1242,6 +1319,7 @@ async function wirePlayer(r, start) {
     if (local) note.textContent = 'Chrome cannot play this file. Set OBS to record MP4 (Settings › Output › Recording Format), or remux it (File › Remux Recordings). Timestamps and exports still work.';
   });
   wireSync(r, video);
+  const follow = await recordingMap(r);
   const shownCats = () => new Set([...document.querySelectorAll('#tlCats input:checked')].map((i) => i.value));
   const draw = () => {
     const cats = shownCats();
@@ -1257,6 +1335,7 @@ async function wirePlayer(r, start) {
   });
   let lastNow = null;
   video.addEventListener('timeupdate', () => {
+    follow?.(video.currentTime);
     let cur = null;
     for (const row of tl.querySelectorAll('.ev')) { if (Number(row.dataset.o) <= video.currentTime + 0.25) cur = row; else break; }
     if (cur !== lastNow) {
@@ -1274,6 +1353,41 @@ async function wirePlayer(r, start) {
       download(stem(r.name) + EXPORTS[fmt].ext, EXPORTS[fmt].type, renderExport(r, fmt, cats));
     });
   }
+}
+
+// A small map beside the video: the route during this recording and a marker
+// that follows playback. Returns a function (seconds) => void, or null.
+async function recordingMap(r) {
+  const el = document.getElementById('recMap');
+  if (!el) return null;
+  if (!state.tracks && state.schema2) { try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); } }
+  const { clock, sessions } = derived();
+  const points = [];
+  for (const s of sessions) {
+    for (const str of (state.tracks?.get(s.id) || s.track || [])) {
+      const p = parsePoint(str);
+      const offset = (eventMs(s, { t: p.t }, clock) - r.start) / 1000;
+      if (offset >= -2 && offset <= r.duration + 2 && p.map && (p.x > 0 || p.y > 0)) points.push({ ...p, offset });
+    }
+  }
+  if (points.length < 2) return null;
+  points.sort((a, b) => a.offset - b.offset);
+  const counts = new Map();
+  for (const p of points) counts.set(p.map, (counts.get(p.map) || 0) + 1);
+  const mapId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const onMap = points.filter((p) => p.map === mapId);
+  el.hidden = false;
+  const api = await wireMap('recMap', mapId, [], { routes: [{ points: onMap.map((p) => [p.x, p.y, p.t, p.flags]) }] });
+  if (!api) return null;
+  return (seconds) => {
+    // Nearest track point at or before this second, if it is close enough.
+    let lo = 0;
+    let hi = onMap.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (onMap[mid].offset <= seconds) lo = mid; else hi = mid - 1; }
+    const p = onMap[lo];
+    if (!p || Math.abs(p.offset - seconds) > 45) api.setYou(null);
+    else api.setYou(p.x, p.y);
+  };
 }
 
 // This computer -------------------------------------------------------------

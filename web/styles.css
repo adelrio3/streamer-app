@@ -303,3 +303,9 @@ ol.steps li { margin-bottom: 6px; }
 .crop-box i { position: absolute; width: 14px; height: 14px; background: var(--gold-2); border: 2px solid #1a1408; border-radius: 3px; }
 .crop-box i[data-h=nw] { left: -8px; top: -8px; cursor: nwse-resize; } .crop-box i[data-h=se] { right: -8px; bottom: -8px; cursor: nwse-resize; }
 .crop-box i[data-h=ne] { right: -8px; top: -8px; cursor: nesw-resize; } .crop-box i[data-h=sw] { left: -8px; bottom: -8px; cursor: nesw-resize; }
+
+.map .heat ellipse { mix-blend-mode: screen; }
+.map.hide-density .heat.layer-density, .map.hide-time .heat.layer-time, .map.hide-lore .layer-lore { display: none; }
+.map .you { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff; border: 3px solid var(--gold); box-shadow: 0 0 0 4px rgba(217, 165, 42, .3), 0 2px 8px rgba(0, 0, 0, .8); z-index: 4; pointer-events: none; transition: left .3s linear, top .3s linear; }
+.recording-map { margin-bottom: 10px; }
+button.small { padding: 2px 8px; font-size: .8rem; }

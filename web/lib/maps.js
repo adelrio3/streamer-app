@@ -11,9 +11,12 @@ export const LAYERS = {
   vendor: { name: 'Vendors & trainers', color: '#e0b95a' },
   object: { name: 'Herbs, ore & chests', color: '#5cc8a8' },
   loot: { name: 'Loot', color: '#9fd68a' },
-  death: { name: 'Deaths', color: '#ff4d4d' },
-  mark: { name: 'Marks & screenshots', color: '#b48cf0' },
+  death: { name: 'Deaths & close calls', color: '#ff4d4d' },
+  lore: { name: 'Lore (books, dialogue)', color: '#c9b6f5' },
+  mark: { name: 'Marks, screenshots, level-ups', color: '#b48cf0' },
   route: { name: 'Your route', color: '#f2cc6b' },
+  density: { name: 'Creature density', color: '#e06a5f', heat: true },
+  time: { name: 'Where you spent time', color: '#f2cc6b', heat: true },
 };
 
 // world: from buildWorld; codex: from buildCodex; moment(s, e).
@@ -48,6 +51,11 @@ export function buildMaps(sessions, world, codex, moment) {
         case 'quest_detail': add(e.m, { ...base, layer: 'quest', label: `Quest: ${e.title ?? ''}`, sub2: 'offered', href: `#/quest/${encodeURIComponent(e.qid ? `q${e.qid}` : `t${e.title}`)}`, key: `q${e.qid ?? e.title}` }); break;
         case 'quest_turnin': add(e.m, { ...base, layer: 'quest', label: `Turned in: ${e.title ?? ''}`, href: `#/quest/${encodeURIComponent(e.qid ? `q${e.qid}` : `t${e.title}`)}`, key: `q${e.qid ?? e.title}` }); break;
         case 'death': add(e.m, { ...base, layer: 'death', label: e.killer ? `Died to ${e.killer}` : 'Died', href: '#/highlights?kind=death' }); break;
+        case 'fight': if (e.close) add(e.m, { ...base, layer: 'death', label: `Close call: ${(e.enemies || []).map((x) => x.name).filter(Boolean).slice(0, 3).join(', ')} (${e.minHp}% health)`, href: '#/highlights?kind=close' }); break;
+        case 'level': add(e.m, { ...base, layer: 'mark', label: `Reached level ${e.level}`, href: '#/characters' }); break;
+        case 'book': add(e.m, { ...base, layer: 'lore', label: `Read: ${e.title ?? 'text'}`, href: '#/lore?show=text', key: `b${e.title}` }); break;
+        case 'speech': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.speaker ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=speech', key: `sp${e.npcId ?? e.speaker}|${e.text.slice(0, 40)}` }); break;
+        case 'gossip': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.npc ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=gossip', key: `g${e.npcId ?? e.npc}` }); break;
         case 'mark': add(e.m, { ...base, layer: 'mark', label: `${e.kind ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`, href: '#/marks' }); break;
         case 'screenshot': add(e.m, { ...base, layer: 'mark', label: `Screenshot (${e.reason ?? 'manual'})`, href: '#/screenshots' }); break;
         case 'loot_window': {
@@ -157,4 +165,66 @@ export function mapImageCandidates(mapId) {
 
 export function wowheadMapUrl(mapId) {
   return mapImageCandidates(mapId)[0];
+}
+
+// Density: points grouped into cells of `cell` percent, returning
+// [{ x, y, n, w }] with w in 0..1 relative to the busiest cell.
+export function heatCells(points, cell = 4) {
+  const cells = new Map();
+  for (const p of points) {
+    if (p.x == null || p.y == null) continue;
+    const cx = Math.floor(p.x / cell);
+    const cy = Math.floor(p.y / cell);
+    const key = `${cx}|${cy}`;
+    const c = cells.get(key) || { x: (cx + 0.5) * cell, y: (cy + 0.5) * cell, n: 0 };
+    c.n += p.w ?? 1;
+    cells.set(key, c);
+  }
+  const max = Math.max(1, ...[...cells.values()].map((c) => c.n));
+  return [...cells.values()].map((c) => ({ ...c, w: c.n / max }));
+}
+
+// Where a quest happened: pickup, objective progress, kills while it was
+// active, turn-in, and the route walked in between. sessions must be the
+// same character's, in order.
+export function questTrail(quest, sessions, tracks, moment) {
+  const start = quest.accepted[0]?.t ?? quest.offered[0]?.t;
+  if (!start) return null;
+  const end = quest.turnedIn[0]?.t ?? quest.abandoned[0]?.t ?? Infinity;
+  const chars = new Set(quest.characters || []);
+  const words = String(quest.objectives || '').toLowerCase().match(/[a-z']{4,}/g) || [];
+  const objectives = [];
+  const kills = new Map();
+  const killSpots = [];
+  const route = [];
+  for (const s of sessions) {
+    const who = s.char?.name ? `${s.char.name}-${s.char.realm ?? ''}` : 'unknown';
+    if (chars.size && !chars.has(who)) continue;
+    for (const e of s.events) {
+      if (e.t < start || e.t > end) continue;
+      if (e.e === 'objective' && e.text) {
+        // Only progress lines that mention something from this quest's objectives.
+        const text = e.text.toLowerCase();
+        if (!words.length || words.some((w) => text.includes(w))) objectives.push({ text: e.text, ...moment(s, e) });
+      } else if (e.e === 'kill' && e.name) {
+        const k = kills.get(e.name) || { name: e.name, npcId: e.npcId ?? null, n: 0 };
+        k.n++;
+        kills.set(e.name, k);
+        if (e.x != null) killSpots.push({ x: e.x, y: e.y, m: e.m, name: e.name, npcId: e.npcId ?? null, ...moment(s, e) });
+      }
+    }
+    for (const str of (tracks?.get(s.id) || s.track || [])) {
+      const p = parsePoint(str);
+      if (p.t >= start && p.t <= end && (p.x > 0 || p.y > 0)) route.push(p);
+    }
+  }
+  const mapCounts = new Map();
+  for (const sp of [...quest.offered, ...quest.accepted, ...quest.turnedIn, ...killSpots, ...objectives]) if (sp.m) mapCounts.set(sp.m, (mapCounts.get(sp.m) || 0) + 1);
+  const mapId = [...mapCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  return {
+    start, end: end === Infinity ? null : end, mapId, objectives, killSpots,
+    kills: [...kills.values()].sort((a, b) => b.n - a.n),
+    routes: route.length > 1 ? [{ points: route.filter((p) => p.map === mapId).map((p) => [p.x, p.y, p.t, p.flags]) }] : [],
+    minutes: end === Infinity ? null : Math.round((end - start) / 60),
+  };
 }

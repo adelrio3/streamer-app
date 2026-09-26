@@ -31,7 +31,7 @@ test('maps collect pins per zone map, with a route from the track', () => {
   assert.ok(m.counts.quest >= 2, 'quest offered and turned in');
   assert.ok(m.counts.creature >= 5);
   assert.ok(m.counts.vendor >= 1);
-  assert.equal(m.counts.death, undefined, 'the death had no coordinates, so no pin');
+  assert.equal(m.counts.death, 1, 'the close call has coordinates; the death itself had none');
   const pins = cluster(m.markers);
   assert.ok(pins.length < m.markers.length, 'repeated sightings cluster');
   const kobold = pins.find((p) => p.key === 'n6');
@@ -46,4 +46,23 @@ test('pins at the same spot are fanned out so all can be clicked', () => {
   const keys = new Set(pins.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`));
   assert.equal(keys.size, 4);
   assert.deepEqual(pins[3], { x: 10, y: 10 }, 'a lone pin stays put');
+});
+
+test('quest trail: pickup, kills while active, objective progress, turn-in', async () => {
+  const { questTrail, heatCells } = await import('../web/lib/maps.js');
+  const sessions = log.sessions;
+  const moment = (s, e) => ({ session: s.id, t: e.t, footage: null, m: e.m ?? null, x: e.x ?? null, y: e.y ?? null, z: e.z ?? null, sz: e.sz ?? null });
+  const codex = buildCodex(sessions);
+  const q = codex.quests.find((x) => x.qid === 7);
+  const trail = questTrail(q, sessions, new Map(), moment);
+  assert.equal(trail.mapId, 1429);
+  assert.deepEqual(trail.kills, [{ name: 'Kobold Vermin', npcId: 6, n: 2 }], 'only kills between accept and turn-in');
+  assert.equal(trail.objectives.length, 1);
+  assert.match(trail.objectives[0].text, /Kobold Vermin slain/);
+  assert.equal(trail.killSpots.length, 2);
+  assert.ok(trail.minutes >= 0);
+  const heat = heatCells(trail.killSpots, 3);
+  assert.equal(heat.length, 1);
+  assert.equal(heat[0].w, 1);
+  assert.equal(heatCells([{ x: 1, y: 1 }, { x: 1, y: 1 }, { x: 50, y: 50 }], 4)[1].w, 0.5);
 });

@@ -14,7 +14,7 @@ export function buildCodex(sessions, resolve = () => null) {
   const marks = [];
   const characters = new Map();
 
-  const moment = (s, e) => ({ session: s.id, t: e.t, footage: resolve(s.id, e.t) });
+  const moment = (s, e) => ({ session: s.id, t: e.t, footage: resolve(s.id, e.t), m: e.m ?? null, x: e.x ?? null, y: e.y ?? null, z: e.z ?? null, sz: e.sz ?? null });
 
   for (const s of sessions) {
     const who = s.char?.name ? `${s.char.name}-${s.char.realm ?? ''}` : 'unknown';
