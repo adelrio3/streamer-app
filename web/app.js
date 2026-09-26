@@ -744,13 +744,13 @@ pages.quests = async (_, params) => {
   const c = await codex();
   const db = await questDB();
   const show = params.get('show') || (db ? 'zones' : 'logged');
-  const tabs = tabsHtml([...(db ? [['zones', 'Completion by zone'], ['db', 'Every quest', db.countable]] : []), ['logged', 'Logged', c.quests.length]], show, '#/quests?show=');
-  if (show === 'db' && db) return dbQuestsPage(db, params, tabs);
-  if (show === 'zones' && db) return questZonesPage(db, tabs);
-  return `${pageHead('Chronicle', 'Quests', 'Every quest you have been offered, accepted or turned in, with the text exactly as you read it.')}
+  const tabs = tabsHtml([...(db ? [['zones', 'By zone'], ['categories', 'Class, profession & events']] : []), ['logged', 'Logged', c.quests.length]], show, '#/quests?show=');
+  if (show === 'zones' && db) return questZonesPage(db, params, tabs);
+  if (show === 'categories' && db) return questCategoriesPage(db, tabs);
+  return `${pageHead('World', 'Quests', 'Every quest you have been offered, accepted or turned in, with the text exactly as you read it.')}
     ${tabs}
     ${table(c.quests, [
-      { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.key)}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
+      { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.key)}" class="${q.status === 'done' ? '' : 'dim'}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
       { label: 'Zone', value: (q) => q.zone },
       { label: 'Giver', value: (q) => q.giver?.name ?? '' },
       { label: 'By', value: (q) => (q.characters || []).map((k) => k.split('-')[0]).join(', ') },
@@ -761,32 +761,67 @@ pages.quests = async (_, params) => {
     ], { search: (q) => `${q.title} ${q.zone} ${q.giver?.name} ${q.text}`, sort: 5, empty: 'No quests logged yet.' })}`;
 };
 
-// The heart of it: how much of every zone's quests the character has done.
-function questZonesPage(db, tabs) {
+// The heart of it: how much of every zone's quests the character has done,
+// as the RPG menu, with the quests you logged in the chosen zone.
+async function questZonesPage(db, params, tabs) {
+  const c = await codex();
   const cov = coverageWho();
   const tree = completionTree(db, cov.ctx);
-  const complete = tree.groups.flatMap((g) => g.zones).filter((z) => z.total && z.done === z.total).length;
-  const zoneCols = completionColumns('Zone', (r) => `#/zone/${enc(r.name)}`, [
-    { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
-    { label: 'In progress', value: (r) => r.counts.active ?? 0, html: (r) => (r.counts.active ? `<span class="chip st-active">${r.counts.active}</span>` : ''), num: true },
-    { label: 'Later', value: (r) => r.counts.later ?? 0, num: true },
-    { label: 'Other faction/class', value: (r) => r.counts.other ?? 0, num: true },
-    { label: 'Map', value: () => '', html: (r) => (r.mapId ? `<a class="chip" href="#/map/${r.mapId}?show=unfound,rares">map</a>` : '') },
-  ]);
-  const sortCols = completionColumns('Category', (r) => `#/quests?show=db&sort=${r.id}`, [
-    { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
-    { label: 'Later', value: (r) => r.counts.later ?? 0, num: true },
-    { label: 'Kind', value: (r) => r.kind },
-  ]);
-  return `${pageHead('Chronicle', 'Quests', 'Every quest in Classic, continent by continent and zone by zone, with how much of each the character has done. The quests you have not found yet count too, so 100% means the whole zone.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+  const groups = ZONE_GROUPS.map((g) => tree.groups.find((x) => x.name === g)).filter(Boolean);
+  for (const g of groups) g.zones.sort((a, b) => (a.minLevel ?? 99) - (b.minLevel ?? 99) || a.name.localeCompare(b.name));
+  const continent = groups.find((g) => g.name === params.get('continent')) || groups[0];
+  const zone = continent?.zones.find((z) => String(z.zoneId) === params.get('zone')) || null;
+  const logged = (name) => c.quests.filter((q) => q.zone && q.zone.toLowerCase() === name.toLowerCase()).sort((a, b) => (a.status === 'done' ? 0 : 1) - (b.status === 'done' ? 0 : 1) || String(a.title).localeCompare(String(b.title)));
+  let right;
+  if (zone) {
+    const mine = logged(zone.name);
+    right = `<div class="rpg-title"><div><span class="kicker">${esc(continent.name)}${zone.minLevel ? ` · level ${zone.minLevel}${zone.maxLevel !== zone.minLevel ? `–${zone.maxLevel}` : ''}` : ''}</span><h2>${esc(zone.name)}</h2></div>${rpgRing(zone.done, zone.total)}</div>
+      <div class="rpg-stats">
+        ${rpgStat('Done', zone.done, zone.total)}
+        ${rpgStat('In the log', zone.counts.active ?? 0, null)}
+        ${rpgStat('Ready to pick up', zone.counts.ready ?? 0, null)}
+        ${rpgStat('For later', zone.counts.later ?? 0, null)}
+      </div>
+      ${mine.length ? `<div class="wiki-sec"><h3>Your quests here <span class="muted">${mine.length}</span></h3>${table(mine, [
+        { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.key)}" class="${q.status === 'done' ? '' : 'dim'}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
+        { label: 'Status', value: (q) => q.status, html: (q) => `<span class="chip ${q.status}">${q.status}</span>` },
+        { label: 'Lvl', value: (q) => q.level ?? 0, html: (q) => q.level ?? '', num: true },
+        { label: 'Turned in', value: (q) => q.turnedIn[0]?.t ?? 0, html: (q) => (q.turnedIn[0] ? play(q.turnedIn[0]) : '') },
+      ], { sort: 1, limit: 200 })}</div>` : '<p class="muted small">No quests logged here yet.</p>'}
+      <div class="row" style="margin-top:10px"><a class="btn ghost" href="#/locations?continent=${enc(continent.name)}&zone=${zone.zoneId}">The place</a>${zone.mapId ? `<a class="btn ghost" href="#/map/${zone.mapId}?show=unfound">Map</a>` : ''}</div>`;
+  } else if (continent) {
+    right = `<div class="rpg-title"><div><span class="kicker">Continent</span><h2>${esc(continent.name)}</h2></div>${rpgRing(continent.done, continent.total)}</div>
+      <div class="rpg-stats">
+        ${rpgStat('Quests done', continent.done, continent.total)}
+        ${rpgStat('Ready to pick up', continent.ready, null)}
+        ${rpgStat('Zones not started', continent.zones.filter((z) => !z.done).length, continent.zones.length)}
+      </div>
+      <p class="muted small">Pick a zone for the quests you have done there and what is left.</p>`;
+  } else right = '';
+  return `${pageHead('World', 'Quests', 'Every quest in Classic, continent by continent and zone by zone, with how much of each you have done. The quests you have not found yet count against you, so 100% means the whole zone.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
     ${tabs}
-    ${completionHero(tree.done, tree.total, `${cov.char ? esc(cov.char.name) : 'Everyone'} has turned in <b>${tree.done.toLocaleString()}</b> of <b>${tree.total.toLocaleString()}</b> zone quests ${cov.char ? 'available to them' : 'in Classic'}.`, `${complete} zone${complete === 1 ? '' : 's'} complete · repeatable and no-longer-offered quests do not count`)}
-    <h2>By continent</h2>
-    ${table(tree.groups, completionColumns('Continent', (r) => `#/locations?continent=${enc(r.name)}`, [{ label: 'Zones', value: (r) => r.zones.length, num: true }, { label: 'Ready now', value: (r) => r.ready, num: true }]), { sort: 1, desc: true })}
-    ${tree.groups.map((g) => `<h3>${esc(g.name)} <span class="muted">${pctOf(g.done, g.total)}%</span></h3>${table(g.zones, zoneCols, { search: (r) => r.name, sort: 1, desc: true, limit: 200 })}`).join('')}
-    <h2>Class, profession and event quests</h2>
-    <p class="muted">These cut across zones, so they are counted here on their own.</p>
-    ${table(tree.sorts, sortCols, { search: (r) => `${r.name} ${r.kind}`, sort: 1, desc: true, limit: 200, empty: 'Nothing here for this character.' })}`;
+    ${rpgMenu({
+      base: '#/quests', groups, continent, zone,
+      ring: (x) => ({ done: x.done, total: x.total, sub: x.zones ? `${x.done.toLocaleString()} / ${x.total.toLocaleString()} quests · ${x.zones.length} zones` : undefined }),
+      bars: (z) => [{ done: z.done, total: z.total, title: 'Quests done' }],
+      badge: (z) => (z.counts.ready ? `<em class="st-ready" title="Quests you can pick up now">${z.counts.ready} ready</em>` : ''),
+      dim: (z) => !z.done && !(z.counts.active),
+      right,
+      footer: `<div class="muted small">All of Classic</div><div class="cov"><div class="bar"><div style="width:${pctOf(tree.done, tree.total)}%"></div></div><b>${pctOf(tree.done, tree.total)}%</b></div><div class="muted small">${tree.done.toLocaleString()} of ${tree.total.toLocaleString()} quests.</div>`,
+    })}`;
+}
+
+// Class, profession and event quests cut across zones, so they are counted on their own.
+function questCategoriesPage(db, tabs) {
+  const cov = coverageWho();
+  const tree = completionTree(db, cov.ctx);
+  return `${pageHead('World', 'Quests', 'Class, profession and event quests, counted on their own since they cut across zones.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${tabs}
+    ${table(tree.sorts, completionColumns('Category', () => '#/quests?show=logged', [
+      { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
+      { label: 'Later', value: (r) => r.counts.later ?? 0, num: true },
+      { label: 'Kind', value: (r) => r.kind },
+    ]), { search: (r) => `${r.name} ${r.kind}`, sort: 1, desc: true, limit: 200, empty: 'Nothing here for this character.' })}`;
 }
 
 function sortCoverageFor(db, sortId, ctx) {
@@ -891,122 +926,83 @@ function completionHero(done, total, lead, sub = '') {
 const NPC_FLAGS = { 1: 'talks', 2: 'quest giver', 4: 'vendor', 8: 'flight master', 16: 'trainer', 32: 'spirit healer', 128: 'innkeeper', 256: 'banker', 4096: 'auctioneer', 8192: 'stable master', 16384: 'repair' };
 const flagChips = (fl) => Object.entries(NPC_FLAGS).filter(([bit]) => fl & bit).map(([, name]) => `<span class="chip">${name}</span>`).join(' ');
 
-// Continent → zone → what is in it. per(zoneId) -> { done, total } or null;
-// leaf(zoneId, zone) -> the table for one zone.
-function zoneBrowser(db, params, { base, kicker, title, lead, what, per, leaf }) {
-  const continent = params.get('continent') || '';
-  const zoneId = Number(params.get('zone')) || 0;
-  const groups = ZONE_GROUPS.map((g) => ({ name: g, zones: [], done: 0, total: 0 }));
-  for (const [id, z] of Object.entries(db.zones)) {
-    if (z.kind || z.p || !z.c) continue;
-    const p = per(Number(id));
-    if (!p || !p.total) continue;
-    const g = groups.find((x) => x.name === z.c);
-    g.zones.push({ zoneId: Number(id), name: z.n, mapId: z.m, ...p });
-    g.done += p.done;
-    g.total += p.total;
-  }
-  const all = groups.filter((g) => g.zones.length);
-  for (const g of all) g.zones.sort((a, b) => b.done / Math.max(1, b.total) - a.done / Math.max(1, a.total) || a.name.localeCompare(b.name));
-  const done = all.reduce((n, g) => n + g.done, 0);
-  const total = all.reduce((n, g) => n + g.total, 0);
-  const link = (c, z) => `${base}${c ? `&continent=${enc(c)}` : ''}${z ? `&zone=${z}` : ''}`;
-  if (zoneId) {
-    const zone = all.flatMap((g) => g.zones).find((z) => z.zoneId === zoneId);
-    if (!zone) return `${crumb(link(continent), continent || 'All')}<p>Nothing here.</p>`;
-    return `${crumb(link(), 'All')} <span class="muted">›</span> ${crumb(link(continent), continent)}
-      ${pageHead(kicker, esc(zone.name), `${what} in ${esc(zone.name)}: ${zone.done} of ${zone.total} (${pctOf(zone.done, zone.total)}%).`, `<div class="row">${zone.mapId ? `<a class="btn ghost" href="#/map/${zone.mapId}">Map</a>` : ''}<a class="btn ghost" href="#/zone/${enc(zone.name)}">Zone page</a></div>`)}
-      ${covBar(zone.done, zone.total)}
-      ${leaf(zoneId, zone)}`;
-  }
-  if (continent) {
-    const g = all.find((x) => x.name === continent);
-    if (!g) return `${crumb(link(), 'All')}<p>Nothing here.</p>`;
-    return `${crumb(link(), 'All')}
-      ${pageHead(kicker, esc(continent), `${what}: ${g.done.toLocaleString()} of ${g.total.toLocaleString()} across ${g.zones.length} zones.`)}
-      ${completionHero(g.done, g.total, `${g.done.toLocaleString()} of ${g.total.toLocaleString()} ${what.toLowerCase()} in ${esc(continent)}.`)}
-      ${table(g.zones, completionColumns('Zone', (r) => link(continent, r.zoneId), [{ label: 'Map', value: () => '', html: (r) => (r.mapId ? `<a class="chip" href="#/map/${r.mapId}">map</a>` : '') }]), { search: (r) => r.name, sort: 1, desc: true, limit: 200 })}`;
-  }
-  return `${pageHead(kicker, title, lead)}
-    ${completionHero(done, total, `${done.toLocaleString()} of ${total.toLocaleString()} ${what.toLowerCase()} in Classic.`)}
-    ${table(all, completionColumns('Continent', (r) => link(r.name), [{ label: 'Zones', value: (r) => r.zones.length, num: true }]), { sort: 1, desc: true })}`;
-}
+const CREATURE_TYPES = ['Beast', 'Humanoid', 'Undead', 'Demon', 'Elemental', 'Dragonkin', 'Giant', 'Mechanical', 'Aberration', 'Critter', 'Totem', 'Not specified'];
+const CREATURE_BLURB = {
+  Beast: 'Wolves, boars, spiders, raptors: the wild things of every zone, and what hunters tame.',
+  Humanoid: 'Kobolds, gnolls, defias, trolls, ogres: they talk, they carry coin, and they drop cloth.',
+  Undead: 'Zombies, skeletons and ghouls raised by the Scourge and the Cult of the Damned.',
+  Demon: "Imps, felguards and the Burning Legion's servants, called through portals and warlocks.",
+  Elemental: 'Earth, fire, water and air given form, bound or wild.',
+  Critter: 'Rabbits, squirrels, deer and frogs: the harmless life you can still, regrettably, kill.',
+};
 
 pages.bestiary = async (_, params) => {
   const { world } = derived();
-  const db = await questDB();
-  if (!db) return `${pageHead('World', 'Bestiary', 'Every creature in Classic. The quest database is not available, so there is nothing to show yet.')}`;
-  const view = params.get('view') || 'zones';
-  const views = tabsHtml([['zones', 'By zone'], ['rares', 'Rares & elites']], view, '#/bestiary?view=');
-  const byZone = npcsByZone(db);
-  const killed = (id) => (world.byNpc.get(`n${id}`)?.kills ?? 0) > 0;
-  const statusCol = { label: 'Status', value: (c) => (killed(c.id) ? 1 : 0), html: (c) => (killed(c.id) ? '<span class="chip done">killed</span>' : '<span class="chip">not yet</span>') };
-  const creatureCols = [
-    statusCol,
-    { label: 'Creature', value: (c) => c.n, html: (c) => `<a href="#/npc/n${c.id}">${esc(c.n)}</a>${c.sub ? ` <span class="muted small">&lt;${esc(c.sub)}&gt;</span>` : ''}` },
-    { label: 'Level', value: (c) => c.lvl?.[0] ?? 0, html: (c) => (c.lvl ? c.lvl.join('–') : ''), num: true },
-    { label: 'Rank', value: (c) => c.rank ?? 0, html: (c) => (RANK_NAMES[c.rank] ? `<span class="chip ${c.rank === 2 || c.rank === 4 ? 'active' : ''}">${RANK_NAMES[c.rank]}</span>` : ''), num: true },
-  ];
-  if (view === 'rares') {
-    const rows = [];
-    for (const [zoneId, v] of byZone) for (const c of v.creatures) if (c.rank) rows.push({ ...c, zone: db.zoneName(zoneId) });
-    const rares = rows.filter((c) => c.rank === 2 || c.rank === 4);
-    const done = rares.filter((c) => killed(c.id)).length;
-    return `${pageHead('World', 'Bestiary', 'Every rare, elite and boss in Classic, from the database.')}
-      ${views}
-      ${completionHero(done, rares.length, `${done} of ${rares.length} rare spawns in Classic killed.`)}
-      ${table(rows, [...creatureCols, { label: 'Zone', value: (c) => c.zone }], { search: (c) => `${c.n} ${c.zone} ${RANK_NAMES[c.rank] ?? ''}`, sort: 3, desc: true, limit: 400 })}`;
-  }
-  return zoneBrowser(db, params, {
-    base: '#/bestiary?view=zones', kicker: 'World', title: 'Bestiary', what: 'Creatures killed',
-    lead: `An encyclopedia of every creature in Classic, continent by continent. Each stays "not yet" until you kill it.${views}`,
-    per: (zoneId) => { const list = byZone.get(zoneId)?.creatures ?? []; return { done: list.filter((c) => killed(c.id)).length, total: list.length }; },
-    leaf: (zoneId) => table(byZone.get(zoneId)?.creatures ?? [], creatureCols, { search: (c) => `${c.n} ${c.sub ?? ''} ${RANK_NAMES[c.rank] ?? ''}`, sort: 0, desc: true, limit: 300, empty: 'No creatures here in the database.' }),
+  const type = params.get('type') || 'all';
+  const show = params.get('show') || 'all';
+  const zone = params.get('zone') || '';
+  const kindOf = (n) => n.ctype || 'Not specified';
+  const filters = {
+    all: () => true, killed: (n) => n.kills > 0, unkilled: (n) => n.kills === 0,
+    rare: (n) => n.rare || n.ranks.some((r) => r.includes('rare') || r === 'worldboss'), elite: (n) => n.ranks.includes('elite') || n.ranks.includes('rareelite'),
+    killers: (n) => n.killedYou > 0,
+  };
+  const order = (t) => (CREATURE_TYPES.indexOf(t) + 1 || 99);
+  const types = [...new Set(world.creatures.map(kindOf))].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+  const ofType = (t) => (t === 'all' ? world.creatures : world.creatures.filter((n) => kindOf(n) === t));
+  const killed = (arr) => arr.filter((n) => n.kills > 0).length;
+  let list = ofType(type).filter(filters[show] ?? filters.all);
+  if (zone) list = list.filter((n) => n.zones.includes(zone));
+  const zones = [...new Set(world.creatures.flatMap((n) => n.zones))].sort();
+  const link = (t = type, sh = show, z = zone) => `#/bestiary?type=${enc(t)}&show=${sh}${z ? `&zone=${enc(z)}` : ''}`;
+  setTimeout(() => {
+    document.getElementById('zoneSel')?.addEventListener('change', (ev) => { location.hash = link(type, show, ev.target.value); });
+    document.getElementById('showSel')?.addEventListener('change', (ev) => { location.hash = link(type, ev.target.value, zone); });
   });
+  return `${pageHead('World', 'Bestiary', 'Every creature you have met, by kind. A name stays grey until you kill one; the count is your kills. Drop rates come from your own loot windows.')}
+    ${tabsHtml([['all', 'All kinds', `${killed(world.creatures)}/${world.creatures.length}`], ...types.map((t) => [t, t, `${killed(ofType(t))}/${ofType(t).length}`])], type, '#/bestiary?type=')}
+    <div class="row spread" style="margin-bottom:10px">
+      <span class="muted">${type === 'all' ? 'Every kind' : esc(type)}: <b>${killed(ofType(type))}</b> killed of <b>${ofType(type).length}</b> met.${CREATURE_BLURB[type] ? ` ${esc(CREATURE_BLURB[type])}` : ''}</span>
+      <span class="row">
+        <select id="showSel">${[['all', 'Everything'], ['killed', 'Killed'], ['unkilled', 'Not yet killed'], ['rare', 'Rares'], ['elite', 'Elites'], ['killers', 'Killed you']].map(([k, l]) => `<option value="${k}" ${k === show ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="zoneSel"><option value="">All zones</option>${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select>
+      </span>
+    </div>
+    ${table(list, [
+      { label: 'Creature', value: (n) => n.kills * 1000000 + (n.name ? 1 : 0), html: (n) => `${wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0, n.kills)}${n.rare ? ' <span class="chip active">rare</span>' : ''}${n.killedYou ? ` <span class="chip bad" title="Killed you ${n.killedYou} time${n.killedYou === 1 ? '' : 's'}">killed you</span>` : ''}` },
+      { label: 'Level', value: (n) => n.minLevel ?? 0, html: (n) => `${levelText(n)} ${rankChips(n.ranks.filter((r) => r !== 'rare' || !n.rare))}` },
+      { label: 'Kind', value: (n) => [n.ctype, n.family].filter(Boolean).join(' · ') },
+      { label: 'Drops', value: (n) => n.drops.length, html: (n) => n.drops.slice(0, 3).map((d) => itemLink(d.id, d.name)).join(' ') + (n.drops.length > 3 ? ` <span class="muted">+${n.drops.length - 3}</span>` : ''), num: true },
+      { label: 'Zones', value: (n) => n.zones.join(', ') },
+      { label: 'First met', value: (n) => n.first?.t ?? 0, html: (n) => (n.first ? play(n.first) : '') },
+    ], { search: (n) => `${n.name} ${n.ctype} ${n.family} ${n.zones.join(' ')} ${n.ranks.join(' ')} ${n.drops.map((d) => d.name).join(' ')}`, sort: 0, desc: true, empty: 'No creatures of this kind yet. They appear as you fight, target and loot.' })}`;
 };
 
 // People: everyone you deal with rather than fight ----------------------------
 
 pages.vendors = (_, params) => pages.people(_, new URLSearchParams('show=vendor'));
 
-const PEOPLE_ROLES = [['quest', 'Quest givers', (n) => (n.fl || 0) & 2 || n.qs?.length || n.qe?.length], ['vendor', 'Vendors', (n) => (n.fl || 0) & 4], ['trainer', 'Trainers', (n) => (n.fl || 0) & 16], ['taxi', 'Flight masters', (n) => (n.fl || 0) & 8], ['innkeeper', 'Innkeepers', (n) => (n.fl || 0) & 128], ['banker', 'Bankers', (n) => (n.fl || 0) & 256], ['repair', 'Repair', (n) => (n.fl || 0) & 16384], ['talker', 'Speak', (n) => (n.fl || 0) & 1]];
-
 pages.people = async (_, params) => {
   const { world } = derived();
-  const db = await questDB();
-  if (!db) return `${pageHead('World', 'People', 'Everyone in Classic. The quest database is not available, so there is nothing to show yet.')}`;
-  const view = params.get('view') || 'zones';
-  const views = tabsHtml([['zones', 'By zone'], ['roles', 'By role']], view, '#/people?view=');
-  const byZone = npcsByZone(db);
-  const met = (id) => Boolean(world.byNpc.get(`n${id}`)?.met);
-  const peopleCols = [
-    { label: 'Status', value: (c) => (met(c.id) ? 1 : 0), html: (c) => (met(c.id) ? '<span class="chip done">met</span>' : '<span class="chip">not yet</span>') },
-    { label: 'Name', value: (c) => c.n, html: (c) => `<a href="#/npc/n${c.id}">${esc(c.n)}</a>${c.sub ? ` <span class="muted small">&lt;${esc(c.sub)}&gt;</span>` : ''}` },
-    { label: 'Does', value: (c) => c.fl ?? 0, html: (c) => `${flagChips(c.fl ?? 0)}${c.qs?.length ? ` <span class="chip">${c.qs.length} quest${c.qs.length === 1 ? '' : 's'}</span>` : ''}` },
-    { label: 'Level', value: (c) => c.lvl?.[0] ?? 0, html: (c) => (c.lvl ? c.lvl.join('–') : ''), num: true },
-    { label: 'Faction', value: (c) => c.f ?? '', html: (c) => ({ A: 'Alliance', H: 'Horde', AH: 'both' }[c.f] ?? '') },
-  ];
-  if (view === 'roles') {
-    const everyone = [];
-    for (const [zoneId, v] of byZone) for (const c of v.people) everyone.push({ ...c, zone: db.zoneName(zoneId) });
-    const role = params.get('role') || 'quest';
-    const def = PEOPLE_ROLES.find(([k]) => k === role) || PEOPLE_ROLES[0];
-    const rows = everyone.filter((n) => def[2](n));
-    const done = rows.filter((n) => met(n.id)).length;
-    const metAll = everyone.filter((n) => met(n.id)).length;
-    return `${pageHead('World', 'People', 'Everyone in Classic by what they do for you, from the database. Met means you took a quest, bought, trained, flew or talked with them.')}
-      ${views}
-      ${completionHero(metAll, everyone.length, `${metAll.toLocaleString()} of ${everyone.length.toLocaleString()} people in Classic met.`)}
-      ${tabsHtml(PEOPLE_ROLES.map(([k, l, f]) => { const all = everyone.filter(f); return [k, l, `${all.filter((n) => met(n.id)).length}/${all.length}`]; }), def[0], '#/people?view=roles&role=')}
-      ${covBar(done, rows.length)}
-      ${table(rows, [...peopleCols, { label: 'Zone', value: (c) => c.zone }], { search: (c) => `${c.n} ${c.sub ?? ''} ${c.zone}`, sort: 0, desc: true, limit: 400 })}`;
-  }
-  return zoneBrowser(db, params, {
-    base: '#/people?view=zones', kicker: 'World', title: 'People', what: 'People met',
-    lead: `Everyone in Classic who gives quests, sells, trains, flies you or talks, continent by continent. Each stays "not yet" until you take a quest, buy, train, fly or talk with them.${views}`,
-    per: (zoneId) => { const list = byZone.get(zoneId)?.people ?? []; return { done: list.filter((c) => met(c.id)).length, total: list.length }; },
-    leaf: (zoneId) => table(byZone.get(zoneId)?.people ?? [], peopleCols, { search: (c) => `${c.n} ${c.sub ?? ''}`, sort: 0, desc: true, limit: 300, empty: 'Nobody here in the database.' }),
-  });
+  const zone = params.get('zone') || 'all';
+  const show = params.get('show') || 'all';
+  const zones = [...new Set(world.people.flatMap((n) => n.zones))].sort();
+  const inZone = (z) => (z === 'all' ? world.people : world.people.filter((n) => n.zones.includes(z)));
+  const met = (arr) => arr.filter((n) => n.met).length;
+  let list = inZone(zone);
+  if (show !== 'all') list = list.filter((n) => n.roles.includes(show));
+  setTimeout(() => document.getElementById('roleSel')?.addEventListener('change', (ev) => { location.hash = `#/people?zone=${enc(zone)}&show=${ev.target.value}`; }));
+  return `${pageHead('World', 'People', 'Everyone you have come across, zone by zone: quest givers, vendors, trainers, flight masters and the townsfolk in between. A name stays grey until you take a quest, buy, train, fly or talk with them.')}
+    ${tabsHtml([['all', 'Everywhere', `${met(world.people)}/${world.people.length}`], ...zones.map((z) => [z, z, `${met(inZone(z))}/${inZone(z).length}`])], zone, '#/people?zone=')}
+    <div class="row spread" style="margin-bottom:10px"><span class="muted">${zone === 'all' ? 'Everywhere' : esc(zone)}: <b>${met(inZone(zone))}</b> met of <b>${inZone(zone).length}</b> come across.</span>
+      <select id="roleSel">${[['all', 'Everyone'], ['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['other', 'Passed by']].map(([k, l]) => `<option value="${k}" ${k === show ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    ${table(list, [
+      { label: 'Name', value: (n) => (n.met ? 1 : 0) * 1000 + (n.name ? 1 : 0), html: (n) => `${wikiName(`#/npc/${enc(n.key)}`, n.name, n.met)}${n.titles[0] ? ` <span class="muted small">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}` },
+      { label: 'Does', value: (n) => n.roles.join(' '), html: (n) => n.roles.map((r) => `<span class="chip">${esc(ROLE_NAMES[r] ?? r)}</span>`).join(' ') },
+      { label: 'Zones', value: (n) => n.zones.join(', ') },
+      { label: 'Quests', value: (n) => n.quests.size, num: true },
+      { label: 'First met', value: (n) => n.first?.t ?? 0, html: (n) => (n.first ? play(n.first) : '') },
+    ], { search: (n) => `${n.name} ${n.titles.join(' ')} ${n.zones.join(' ')} ${n.roles.join(' ')}`, sort: 0, desc: true, empty: 'Nobody yet. People appear as you talk, trade, train and travel.' })}`;
 };
 
 pages.npc = async (key) => {
@@ -1098,40 +1094,17 @@ pages.items = async (_, params) => {
   const { world } = derived();
   const show = params.get('show') || 'all';
   if (show === 'objects' || show === 'gathering') {
-    const db = await questDB();
-    if (!db) return `${pageHead('World', 'Gathering', 'Every object you can open or pick from in Classic. The quest database is not available, so there is nothing to show yet.')}`;
-    const byZone = new Map();
-    for (const [id, o] of Object.entries(db.objects || {})) {
-      if (!o.z) continue;
-      const zone = db.zones[o.z]?.p ?? o.z;
-      if (!byZone.has(zone)) byZone.set(zone, []);
-      byZone.get(zone).push({ id: Number(id), ...o });
-    }
-    const opened = (id) => (world.byNpc.get(`o${id}`)?.loots ?? 0) > 0 || (world.byNpc.get(`o${id}`)?.sightings ?? 0) > 0;
-    return zoneBrowser(db, params, {
-      base: '#/items?show=gathering', kicker: 'World', title: 'Gathering', what: 'Objects opened',
-      lead: `Every chest, herb, vein, crate and cactus in the database that you can open or pick from, continent by continent. Each stays "not yet" until you open one. <a class="btn ghost" href="#/items">Items</a>`,
-      per: (zoneId) => { const list = byZone.get(zoneId) ?? []; return { done: list.filter((o) => opened(o.id)).length, total: list.length }; },
-      leaf: (zoneId) => table(byZone.get(zoneId) ?? [], [
-        { label: 'Status', value: (o) => (opened(o.id) ? 1 : 0), html: (o) => (opened(o.id) ? '<span class="chip done">opened</span>' : '<span class="chip">not yet</span>') },
-        { label: 'Object', value: (o) => o.n, html: (o) => `<a href="#/npc/o${o.id}">${esc(o.n)}</a>` },
-        { label: 'Quests', value: (o) => (o.qs?.length ?? 0) + (o.qe?.length ?? 0), num: true },
-      ], { search: (o) => o.n, sort: 0, desc: true, limit: 300, empty: 'No objects here in the database.' }),
-    });
+    return `${pageHead('World', 'Gathering', 'Everything you gathered or opened, and what came out of it: herbs, ore, chests, and anything else you can pick from (a cactus, a crate).', '<div class="row"><a class="btn ghost" href="#/items">Items</a></div>')}
+      ${table(world.objects, [
+        { label: 'Object', value: (n) => n.name, html: (n) => `${wikiName(`#/npc/${enc(n.key)}`, n.name, n.loots > 0, n.loots)}${n.unnamed && n.drops.length ? ` <span class="muted small">gives ${esc(n.drops[0].name)}</span>` : ''}` },
+        { label: 'Gave', value: (n) => n.drops.length, html: (n) => n.drops.slice(0, 4).map((d) => itemLink(d.id, d.name)).join(' ') + (n.drops.length > 4 ? ` <span class="muted">+${n.drops.length - 4}</span>` : ''), num: true },
+        { label: 'Zones', value: (n) => n.zones.join(', ') },
+        { label: 'First', value: (n) => n.first?.t ?? n.spots[0]?.t ?? 0, html: (n) => (n.first ? play(n.first) : n.spots[0] ? play(n.spots[0]) : '') },
+      ], { sort: 1, desc: true, empty: 'Nothing gathered yet. Herbs, ore, chests and the like appear here after you open them.' })}`;
   }
   const itemdb = await itemTable();
-  const obtained = new Set(world.items.filter((i) => i.obtained).map((i) => i.id));
-  if (!itemdb) {
-    return `${pageHead('World', 'Items', 'Every item you have obtained. The item database is not available, so there is nothing to count against yet.')}
-      ${table(world.items, [
-        { label: 'Status', value: (i) => (i.obtained ? 1 : 0), html: (i) => (i.obtained ? '<span class="chip done">obtained</span>' : '<span class="chip">not yet</span>') },
-        { label: 'Item', value: (i) => i.name, html: (i) => itemLink(i.id, i.name, i.quality) },
-        { label: 'Type', value: (i) => [i.info?.type, i.info?.sub].filter(Boolean).join(' · ') },
-        { label: 'Looted', value: (i) => i.looted, num: true },
-      ], { search: (i) => `${i.name} ${i.info?.type}`, sort: 0, desc: true })}`;
-  }
-  // Every item in Classic by class and subclass, indexed once.
-  if (!state.itemIndex) {
+  // Every item in Classic by kind and type (the totals), indexed once.
+  if (itemdb && !state.itemIndex) {
     const classes = new Map();
     for (const [id, v] of itemdb) {
       const { type, sub } = itemClassName(v[1], v[2]);
@@ -1145,43 +1118,51 @@ pages.items = async (_, params) => {
     }
     state.itemIndex = classes;
   }
-  const classes = state.itemIndex;
+  // The items you have come across, sorted into the same kinds and types.
+  const kindOf = (it) => { const v = itemdb?.get(it.id); if (v) { const { type, sub } = itemClassName(v[1], v[2]); return { type, sub: sub || 'General' }; } return { type: it.info?.type || 'Other', sub: it.info?.sub || 'General' }; };
+  const mine = new Map();
+  for (const it of world.items) {
+    const { type, sub } = kindOf(it);
+    const k = mine.get(type) || { name: type, subs: new Map(), items: [] };
+    k.items.push(it);
+    const t = k.subs.get(sub) || { name: sub, items: [] };
+    t.items.push(it);
+    k.subs.set(sub, t);
+    mine.set(type, k);
+  }
+  const totalOf = (type, sub) => (sub ? state.itemIndex?.get(type)?.subs.get(sub)?.ids.length : state.itemIndex?.get(type)?.ids.length) ?? 0;
+  const obtained = (arr) => arr.filter((i) => i.obtained).length;
   const order = (t) => (ITEM_CLASS_ORDER.indexOf(t) + 1 || 90);
   const cls = params.get('cls') || '';
   const sub = params.get('sub') || '';
-  const status = params.get('status') || 'all';
-  const got = (ids) => ids.reduce((n, id) => n + (obtained.has(id) ? 1 : 0), 0);
   const link = (c, sb) => `#/items${c ? `?cls=${enc(c)}` : ''}${sb ? `&sub=${enc(sb)}` : ''}`;
   if (cls && sub) {
-    const ids = classes.get(cls)?.subs.get(sub)?.ids ?? [];
-    let rows = ids.map((id) => { const v = itemdb.get(id); const seen = world.byItem.get(id); return { id, name: seen?.name ?? v[0], ilvl: seen?.info?.ilvl ?? v[3], req: seen?.info?.req ?? v[4], quality: seen?.quality ?? null, obtained: obtained.has(id), seen: Boolean(seen), looted: seen?.looted ?? 0, sources: seen ? seen.droppedBy.length + seen.soldBy.length + seen.rewardFrom.length : 0, tip: seen?.info?.tip ?? [] }; });
-    if (status === 'obtained') rows = rows.filter((r) => r.obtained); else if (status === 'missing') rows = rows.filter((r) => !r.obtained);
-    setTimeout(() => document.getElementById('statusSel')?.addEventListener('change', (ev) => { location.hash = `${link(cls, sub)}&status=${ev.target.value}`; }));
+    const rows = mine.get(cls)?.subs.get(sub)?.items ?? [];
+    const total = totalOf(cls, sub);
     return `${crumb('#/items', 'All items')} <span class="muted">›</span> ${crumb(link(cls), cls)}
-      ${pageHead('World', `${esc(sub === 'General' ? cls : sub)}`, `${esc(cls)}${sub !== 'General' ? ` › ${esc(sub)}` : ''}: obtained ${got(ids)} of ${ids.length} (${pctOf(got(ids), ids.length)}%).`, `<div class="row"><select id="statusSel">${[['all', 'Everything'], ['obtained', 'Obtained'], ['missing', 'Not yet obtained']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}
-      ${covBar(got(ids), ids.length)}
+      ${pageHead('World', `${esc(sub === 'General' ? cls : sub)}`, `${esc(cls)}${sub !== 'General' ? ` › ${esc(sub)}` : ''}: ${obtained(rows)} obtained${total ? ` of ${total.toLocaleString()} in Classic` : ''}, ${rows.length} come across. A name stays grey until one is yours.`)}
+      ${total ? covBar(obtained(rows), total) : ''}
       ${table(rows, [
-        { label: 'Status', value: (r) => (r.obtained ? 1 : 0), html: (r) => (r.obtained ? '<span class="chip done">obtained</span>' : '<span class="chip">not yet</span>') },
-        { label: 'Item', value: (r) => r.name, html: (r) => (r.seen ? itemLink(r.id, r.name, r.quality) : `<a href="#/item/${r.id}">${esc(r.name)}</a>`) },
+        { label: 'Item', value: (r) => (r.obtained ? 1 : 0) * 1000000 + r.looted, html: (r) => `<span class="item ${r.obtained ? '' : 'dim-item'}">${itemLink(r.id, r.name, r.quality)}</span>${r.looted > 1 ? ` <span class="count">×${r.looted}</span>` : ''}` },
         { label: 'Quality', value: (r) => r.quality ?? -1, html: (r) => esc(qualityName(r.quality) ?? ''), num: true },
-        { label: 'iLvl', value: (r) => r.ilvl || 0, html: (r) => r.ilvl || '', num: true },
-        { label: 'Req', value: (r) => r.req || 0, html: (r) => r.req || '', num: true },
-      ], { search: (r) => `${r.name} ${(r.tip || []).join(' ')}`, sort: 0, desc: true, limit: 300, empty: 'Nothing of this kind.' })}`;
+        { label: 'iLvl', value: (r) => r.info?.ilvl || 0, html: (r) => r.info?.ilvl || '', num: true },
+        { label: 'Req', value: (r) => r.info?.req || 0, html: (r) => r.info?.req || '', num: true },
+        { label: 'Sources', value: (r) => r.droppedBy.length + r.soldBy.length + r.rewardFrom.length, html: (r) => [...r.droppedBy.slice(0, 2).map((d) => esc(d.name)), ...r.soldBy.slice(0, 1).map((v) => `${esc(v.name)} (sold)`)].join(', '), num: true },
+      ], { search: (r) => `${r.name} ${(r.info?.tip || []).join(' ')}`, sort: 0, desc: true, limit: 300, empty: 'Nothing of this kind yet.' })}`;
   }
   if (cls) {
-    const c = classes.get(cls);
-    if (!c) return `${crumb('#/items', 'All items')}<p>No such kind of item.</p>`;
-    const rows = [...c.subs.values()].map((sc) => ({ name: sc.name, done: got(sc.ids), total: sc.ids.length })).sort((a, b) => b.total - a.total);
+    const k = mine.get(cls);
+    if (!k) return `${crumb('#/items', 'All items')}<p>Nothing of this kind yet.</p>`;
+    const rows = [...k.subs.values()].map((t) => ({ name: t.name, done: obtained(t.items), total: totalOf(cls, t.name) || t.items.length, seen: t.items.length })).sort((a, b) => b.done - a.done || a.name.localeCompare(b.name));
     return `${crumb('#/items', 'All items')}
-      ${pageHead('World', esc(cls), `Obtained ${got(c.ids).toLocaleString()} of ${c.ids.length.toLocaleString()} ${esc(cls.toLowerCase())} items in Classic.`)}
-      ${completionHero(got(c.ids), c.ids.length, `${got(c.ids).toLocaleString()} of ${c.ids.length.toLocaleString()} ${esc(cls.toLowerCase())} items.`)}
-      ${table(rows, completionColumns('Type', (r) => link(cls, r.name)), { sort: 1, desc: true })}`;
+      ${pageHead('World', esc(cls), `${obtained(k.items).toLocaleString()} ${esc(cls.toLowerCase())} items obtained${totalOf(cls) ? ` of ${totalOf(cls).toLocaleString()} in Classic` : ''}; ${k.items.length.toLocaleString()} come across.`)}
+      ${totalOf(cls) ? covBar(obtained(k.items), totalOf(cls)) : ''}
+      ${table(rows, completionColumns('Type', (r) => link(cls, r.name), [{ label: 'Come across', value: (r) => r.seen, num: true }]), { sort: 1, desc: true })}`;
   }
-  const rows = [...classes.values()].map((c) => ({ name: c.name, done: got(c.ids), total: c.ids.length, types: c.subs.size })).sort((a, b) => order(a.name) - order(b.name));
-  return `${pageHead('World', 'Items', 'A completion journal of every item in Classic, by kind. Obtained means it was yours at some point: looted, handed over, made, worn or carried. One in a shop window or on a corpse does not count.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
+  const rows = [...mine.values()].map((k) => ({ name: k.name, done: obtained(k.items), total: totalOf(k.name) || k.items.length, seen: k.items.length, types: k.subs.size })).sort((a, b) => order(a.name) - order(b.name));
+  return `${pageHead('World', 'Items', 'Every item you have come across, by kind, against everything in Classic. Obtained means it was yours at some point: looted, handed over, made, worn or carried. A name stays grey until then.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
     ${state.schema2 ? '' : schemaNotice()}
-    ${completionHero(obtained.size, itemdb.size, `${obtained.size.toLocaleString()} of ${itemdb.size.toLocaleString()} items in Classic obtained.`)}
-    ${table(rows, completionColumns('Kind', (r) => link(r.name), [{ label: 'Types', value: (r) => r.types, num: true }]), { sort: 1, desc: true, limit: 50 })}`;
+    ${table(rows, completionColumns('Kind', (r) => link(r.name), [{ label: 'Come across', value: (r) => r.seen, num: true }, { label: 'Types', value: (r) => r.types, num: true }]), { sort: 1, desc: true, limit: 50, empty: 'No items yet. They appear as you loot, buy, receive and wear them.' })}`;
 };
 
 // An item you have not come across yet, from the item database.
@@ -1458,76 +1439,98 @@ pages.highlights = async (_, params) => {
 
 // Locations: maps with everything pinned -------------------------------------
 
-pages.locations = async (_, params) => {
-  const { maps, codex } = derived();
-  const db = await questDB();
-  const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
-  const discovery = (name) => { const z = codex.zones.find((x) => x.name === name); return z ? { discovered: z.discovered?.length || 0, known: known(z).size, areas: z.discovered || [] } : null; };
-  if (!db) return `${pageHead('World', 'Locations', 'Every place in Classic. The quest database is not available, so there is nothing to show yet.')}`;
-  const cov = coverageWho();
-  const tree = completionTree(db, cov.ctx, discovery);
-  const byZone = npcsByZone(db);
-  const groups = ZONE_GROUPS.map((g) => tree.groups.find((x) => x.name === g)).filter(Boolean);
-  for (const g of groups) g.zones.sort((a, b) => (a.minLevel ?? 99) - (b.minLevel ?? 99) || a.name.localeCompare(b.name));
-  const continent = groups.find((g) => g.name === params.get('continent')) || groups[0];
-  const zone = continent?.zones.find((z) => String(z.zoneId) === params.get('zone')) || null;
-  const link = (c, z) => `#/locations?continent=${enc(c)}${z ? `&zone=${z}` : ''}`;
-  const ring = (done, total, size = 44) => {
-    const p = pctOf(done, total);
-    return `<span class="ring" style="--p:${p};--s:${size}px"><span>${p}<i>%</i></span></span>`;
-  };
+// The RPG menu used by Locations and Quests: continents down the left, the
+// chosen continent's zones in the middle, the chosen thing on the right.
+// groups: [{ name, zones: [{ zoneId, name, minLevel, maxLevel, ... }] }].
+// ring(g|z) -> { done, total }; bars(z) -> [{ done, total, cls }];
+// dim(z) -> true for a zone you have not been to; right -> the card's HTML.
+function rpgMenu({ base, groups, continent, zone, ring: ringOf, bars, dim = () => false, badge = () => '', right, footer = '' }) {
+  const link = (c, z) => `${base}?continent=${enc(c)}${z ? `&zone=${z}` : ''}`;
+  const ring = (done, total, size = 44) => `<span class="ring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
   const levelText = (z) => (z.minLevel ? `${z.minLevel}${z.maxLevel && z.maxLevel !== z.minLevel ? `–${z.maxLevel}` : ''}` : '');
-  // Left: the continents. Middle: the zones of the chosen one. Right: the
-  // chosen zone, or the continent as a whole.
   const left = `<div class="rpg-menu" role="navigation" aria-label="Continents">
-    ${groups.map((g) => `<a class="rpg-item ${g === continent ? 'active' : ''}" href="${link(g.name)}">${ring(g.done, g.total, 40)}<span class="rpg-text"><b>${esc(g.name)}</b><small>${g.done.toLocaleString()} / ${g.total.toLocaleString()} quests · ${g.zones.length} zones</small></span></a>`).join('')}
-    <div class="rpg-foot"><div class="muted small">All of Classic</div><div class="cov"><div class="bar"><div style="width:${pctOf(tree.done, tree.total)}%"></div></div><b>${pctOf(tree.done, tree.total)}%</b></div><div class="muted small">${tree.done.toLocaleString()} of ${tree.total.toLocaleString()} quests. Class, profession and event quests are on the <a href="#/quests">Quests</a> page.</div></div>
+    ${groups.map((g) => { const r = ringOf(g); return `<a class="rpg-item ${g === continent ? 'active' : ''}" href="${link(g.name)}">${ring(r.done, r.total, 40)}<span class="rpg-text"><b>${esc(g.name)}</b><small>${r.sub ?? `${r.done.toLocaleString()} / ${r.total.toLocaleString()}`}</small></span></a>`; }).join('')}
+    ${footer ? `<div class="rpg-foot">${footer}</div>` : ''}
   </div>`;
   const middle = continent ? `<div class="rpg-list" aria-label="Zones">
     <div class="rpg-head"><span class="kicker">${esc(continent.name)}</span><span class="muted small">${continent.zones.length} zones · by level</span></div>
-    ${continent.zones.map((z) => `<a class="rpg-row ${z === zone ? 'active' : ''}" href="${link(continent.name, z.zoneId)}">
+    ${continent.zones.map((z) => { const r = ringOf(z); return `<a class="rpg-row ${z === zone ? 'active' : ''} ${dim(z) ? 'dim' : ''}" href="${link(continent.name, z.zoneId)}">
       <span class="rpg-lvl">${levelText(z) || '·'}</span>
-      <span class="rpg-name"><b>${esc(z.name)}</b><span class="rpg-bars"><span class="bar" title="Quests done"><span style="width:${pctOf(z.done, z.total)}%"></span></span><span class="bar disc" title="Areas discovered"><span style="width:${z.known ? pctOf(z.discovered, z.known) : 0}%"></span></span></span></span>
-      <span class="rpg-pct"><span>${pctOf(z.done, z.total)}<i>%</i></span>${z.counts.ready ? `<em class="st-ready" title="Quests you can pick up now">${z.counts.ready} ready</em>` : ''}</span>
-    </a>`).join('')}
+      <span class="rpg-name"><b>${esc(z.name)}</b><span class="rpg-bars">${bars(z).map((b) => `<span class="bar ${b.cls ?? ''}" title="${esc(b.title ?? '')}"><span style="width:${pctOf(b.done, b.total)}%"></span></span>`).join('')}</span></span>
+      <span class="rpg-pct"><span>${pctOf(r.done, r.total)}<i>%</i></span>${badge(z)}</span>
+    </a>`; }).join('')}
   </div>` : '';
+  return `<div class="rpg">${left}${middle}<section class="rpg-detail">${right}</section></div>`;
+}
+const rpgRing = (done, total, size = 72) => `<span class="ring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
+const rpgStat = (label, done, total, href = '') => `<${href ? `a href="${href}"` : 'div'} class="rpg-stat"><span class="muted small">${label}</span><b>${done.toLocaleString()}${total != null ? ` <span class="muted">/ ${total.toLocaleString()}</span>` : ''}</b>${total != null ? `<span class="bar"><span style="width:${pctOf(done, total)}%"></span></span>` : ''}</${href ? 'a' : 'div'}>`;
+// A name in the wiki: normal once done (killed, met, obtained), gray until then.
+const wikiName = (href, name, done, count = 0) => `<a href="${href}" class="${done ? '' : 'dim'}">${esc(name)}</a>${count > 1 ? ` <span class="count">×${count}</span>` : ''}`;
+
+pages.locations = async (_, params) => {
+  const db = await questDB();
+  if (!db) return `${pageHead('World', 'Locations', 'Every place you have been. The quest database is not available, so there is nothing to show yet.')}`;
+  const { maps, codex: c, world } = derived();
+  const cov = coverageWho();
+  const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
+  const codexZone = (name) => c.zones.find((x) => x.name.toLowerCase() === String(name).toLowerCase());
+  const discovery = (name) => { const z = codexZone(name); return z ? { discovered: z.discovered?.length || 0, known: known(z).size, areas: z.discovered || [] } : null; };
+  const tree = completionTree(db, cov.ctx, discovery);
+  const groups = ZONE_GROUPS.map((g) => tree.groups.find((x) => x.name === g)).filter(Boolean);
+  for (const g of groups) { g.zones.sort((a, b) => (a.minLevel ?? 99) - (b.minLevel ?? 99) || a.name.localeCompare(b.name)); g.visited = g.zones.filter((z) => codexZone(z.name)).length; }
+  const continent = groups.find((g) => g.name === params.get('continent')) || groups[0];
+  const zone = continent?.zones.find((z) => String(z.zoneId) === params.get('zone')) || null;
+  const byZone = npcsByZone(db);
+  const visitedAll = groups.reduce((n, g) => n + g.visited, 0);
+  const zonesAll = groups.reduce((n, g) => n + g.zones.length, 0);
   let right;
   if (zone) {
-    const people = byZone.get(zone.zoneId)?.people ?? [];
-    const creatures = byZone.get(zone.zoneId)?.creatures ?? [];
-    const { world } = derived();
-    const met = people.filter((c) => world.byNpc.get(`n${c.id}`)?.met).length;
-    const killed = creatures.filter((c) => world.byNpc.get(`n${c.id}`)?.kills > 0).length;
+    const cz = codexZone(zone.name);
     const d = discovery(zone.name);
-    const stat = (label, done, total, href) => `<a class="rpg-stat" href="${href}"><span class="muted small">${label}</span><b>${done.toLocaleString()} <span class="muted">/ ${total.toLocaleString()}</span></b><span class="bar"><span style="width:${pctOf(done, total)}%"></span></span></a>`;
-    right = `<section class="rpg-detail">
-      <div class="rpg-title"><div><span class="kicker">${esc(continent.name)}${levelText(zone) ? ` · level ${levelText(zone)}` : ''}</span><h2>${esc(zone.name)}</h2></div>${ring(zone.done, zone.total, 72)}</div>
-      <div class="rpg-stats">
-        ${stat('Quests done', zone.done, zone.total, `#/zone/${enc(zone.name)}`)}
-        ${stat('Areas discovered', d?.discovered ?? 0, d?.known ?? 0, zone.mapId ? `#/map/${zone.mapId}` : `#/zone/${enc(zone.name)}`)}
-        ${stat('People met', met, people.length, `#/people?view=zones&continent=${enc(continent.name)}&zone=${zone.zoneId}`)}
-        ${stat('Creatures killed', killed, creatures.length, `#/bestiary?view=zones&continent=${enc(continent.name)}&zone=${zone.zoneId}`)}
+    const zoneMaps = maps.filter((m) => m.zone?.toLowerCase() === zone.name.toLowerCase());
+    const mapId = zoneMaps[0]?.id ?? zone.mapId ?? null;
+    const markers = zoneMaps.flatMap((m) => m.markers);
+    const people = world.people.filter((n) => n.zones.includes(zone.name));
+    const creatures = world.creatures.filter((n) => n.zones.includes(zone.name));
+    const dbPeople = byZone.get(zone.zoneId)?.people.length ?? 0;
+    const dbCreatures = byZone.get(zone.zoneId)?.creatures.length ?? 0;
+    const quests = (cz ? [...cz.quests] : []).map((k) => c.quests.find((q) => q.key === k)).filter(Boolean).sort((a, b) => (a.status === 'done' ? 0 : 1) - (b.status === 'done' ? 0 : 1) || String(a.title).localeCompare(String(b.title)));
+    const marks = c.marks.filter((m) => m.z === zone.name);
+    const lore = c.books.filter((b) => b.zone === zone.name).length + world.npcs.filter((n) => n.zones.includes(zone.name)).reduce((n, x) => n + x.lines.length, 0);
+    if (mapId) setTimeout(() => wireMap('locMap', mapId, markers, { routes: Boolean(cz), hidden: new Set(['creature', 'density', 'time', 'unfound', 'rares']) }));
+    const list = (title, items, more = '') => (items.length ? `<div class="wiki-sec"><h3>${title} <span class="muted">${items.length}</span>${more}</h3><p class="wiki-names">${items.join(' · ')}</p></div>` : '');
+    right = `<div class="rpg-title"><div><span class="kicker">${esc(continent.name)}${zone.minLevel ? ` · level ${zone.minLevel}${zone.maxLevel !== zone.minLevel ? `–${zone.maxLevel}` : ''}` : ''}</span><h2>${esc(zone.name)}</h2></div>${rpgRing(d?.discovered ?? 0, d?.known ?? 0)}</div>
+      ${mapId ? `<div class="map wiki-map" id="locMap"></div>` : ''}
+      ${cz ? `<div class="rpg-stats">
+        ${rpgStat('Areas discovered', d.discovered, d.known, mapId ? `#/map/${mapId}` : '')}
+        ${rpgStat('Quests done', zone.done, zone.total, `#/quests?continent=${enc(continent.name)}&zone=${zone.zoneId}`)}
+        ${rpgStat('People met', people.filter((n) => n.met).length, dbPeople, '#/people')}
+        ${rpgStat('Creatures killed', creatures.filter((n) => n.kills > 0).length, dbCreatures, '#/bestiary')}
       </div>
-      <div class="chips" style="margin:12px 0">${['ready', 'active', 'later', 'done'].filter((k) => zone.counts[k]).map((k) => `<span class="chip st-${k}">${zone.counts[k]} ${({ ready: 'ready to pick up', active: 'in the log', later: 'for later', done: 'done' })[k]}</span>`).join(' ')}</div>
-      ${d?.areas?.length ? `<div class="muted small">Discovered: ${d.areas.map(esc).join(', ')}</div>` : '<div class="muted small">No area of this zone discovered yet.</div>'}
-      <div class="row" style="margin-top:14px"><a class="btn" href="#/zone/${enc(zone.name)}">Open the zone</a>${zone.mapId ? `<a class="btn ghost" href="#/map/${zone.mapId}?show=unfound,rares">Map</a>` : ''}</div>
-    </section>`;
+      ${list('Areas', (d.areas || []).map((a) => `<span class="chip done">${esc(a)}</span>`).concat([...new Set(cz.subzones || [])].filter((x) => !(d.areas || []).includes(x)).map((a) => `<span class="chip">${esc(a)}</span>`)))}
+      ${list('Quests', quests.map((q) => `<a href="#/quest/${enc(q.key)}" class="${q.status === 'done' ? '' : 'dim'}">${esc(q.title ?? `Quest ${q.qid}`)}</a>`), zone.total ? ` <span class="muted small">of ${zone.total} here</span>` : '')}
+      ${list('People', people.sort((a, b) => a.name.localeCompare(b.name)).map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.met)))}
+      ${list('Creatures', creatures.sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name)).map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0, n.kills)))}
+      <div class="row" style="margin-top:14px">${mapId ? `<a class="btn" href="#/map/${mapId}">Full map</a>` : ''}<a class="btn ghost" href="#/zone/${enc(zone.name)}">Journal</a>${lore ? `<a class="btn ghost" href="#/lore?zone=${enc(zone.name)}">Lore from here <span class="muted">${lore}</span></a>` : ''}${marks.length ? `<a class="btn ghost" href="#/marks">Marks <span class="muted">${marks.length}</span></a>` : ''}</div>`
+      : `<p class="muted">Not visited yet. ${zone.total ? `The database holds ${zone.total.toLocaleString()} quests, ${dbPeople.toLocaleString()} people and ${dbCreatures.toLocaleString()} creatures here.` : ''}</p>`}`;
   } else if (continent) {
-    const best = [...continent.zones].sort((a, b) => pctOf(b.done, b.total) - pctOf(a.done, a.total))[0];
-    const untouched = continent.zones.filter((z) => !z.done).length;
-    right = `<section class="rpg-detail">
-      <div class="rpg-title"><div><span class="kicker">Continent</span><h2>${esc(continent.name)}</h2></div>${ring(continent.done, continent.total, 72)}</div>
+    right = `<div class="rpg-title"><div><span class="kicker">Continent</span><h2>${esc(continent.name)}</h2></div>${rpgRing(continent.visited, continent.zones.length)}</div>
       <div class="rpg-stats">
-        <div class="rpg-stat"><span class="muted small">Quests done</span><b>${continent.done.toLocaleString()} <span class="muted">/ ${continent.total.toLocaleString()}</span></b><span class="bar"><span style="width:${pctOf(continent.done, continent.total)}%"></span></span></div>
-        <div class="rpg-stat"><span class="muted small">Areas discovered</span><b>${continent.discovered.toLocaleString()} <span class="muted">/ ${continent.known.toLocaleString()}</span></b><span class="bar"><span style="width:${pctOf(continent.discovered, continent.known)}%"></span></span></div>
-        <div class="rpg-stat"><span class="muted small">Ready to pick up</span><b>${continent.ready.toLocaleString()}</b></div>
-        <div class="rpg-stat"><span class="muted small">Zones not started</span><b>${untouched} <span class="muted">/ ${continent.zones.length}</span></b></div>
+        ${rpgStat('Zones visited', continent.visited, continent.zones.length)}
+        ${rpgStat('Areas discovered', continent.discovered, continent.known)}
+        ${rpgStat('Quests done', continent.done, continent.total, `#/quests?continent=${enc(continent.name)}`)}
       </div>
-      <p class="muted small">${best && best.done ? `Furthest along: <a href="${link(continent.name, best.zoneId)}">${esc(best.name)}</a> at ${pctOf(best.done, best.total)}%. ` : ''}Pick a zone for its quests, areas, people and creatures.</p>
-    </section>`;
+      <p class="muted small">Pick a zone for its map, areas, quests, people and creatures as you found them.</p>`;
   } else right = '';
-  return `${pageHead('World', 'Locations', 'Every place in Classic, continent by continent, as a journal: how much of each zone\'s quests you have done and how much of it you have discovered.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
-    <div class="rpg">${left}${middle}${right}</div>`;
+  return `${pageHead('World', 'Locations', 'Every place in Classic as you have found it: the map, the areas you discovered, the quests, people and creatures you met there. Grey means not yet.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${rpgMenu({
+      base: '#/locations', groups, continent, zone,
+      ring: (x) => (x.zones ? { done: x.visited, total: x.zones.length, sub: `${x.visited} of ${x.zones.length} zones visited` } : { done: x.discovered, total: x.known }),
+      bars: (z) => [{ done: z.discovered, total: z.known, cls: 'disc', title: 'Areas discovered' }, { done: z.done, total: z.total, title: 'Quests done' }],
+      dim: (z) => !codexZone(z.name),
+      right,
+      footer: `<div class="muted small">All of Classic</div><div class="cov"><div class="bar"><div style="width:${pctOf(visitedAll, zonesAll)}%"></div></div><b>${pctOf(visitedAll, zonesAll)}%</b></div><div class="muted small">${visitedAll} of ${zonesAll} zones visited.</div>`,
+    })}`;
 };
 
 // The maps you have set foot on (your journal, not the world).
@@ -1563,15 +1566,18 @@ pages.storylines = async (_, params) => {
   const db = await questDB();
   if (!db) return `${pageHead('World', 'Storylines', 'Quest chains as chapters. The quest database is not available, so there is nothing to show yet.')}`;
   const cov = coverageWho();
-  const list = storylines(db, cov.ctx);
+  const c = await codex();
+  const experienced = new Set(c.quests.map((q) => q.qid).filter(Boolean));
+  const every = storylines(db, cov.ctx);
+  const list = every.filter((s) => s.quests.some((r) => experienced.has(r.q.id)));
   const groups = storylinesByContinent(list).sort((a, b) => ZONE_GROUPS.indexOf(a.name) - ZONE_GROUPS.indexOf(b.name));
   const continent = params.get('continent') || '';
   const g = groups.find((x) => x.name === continent);
-  const done = list.reduce((n, s) => n + s.done, 0);
-  const total = list.reduce((n, s) => n + s.total, 0);
+  const done = every.reduce((n, s) => n + s.done, 0);
+  const total = every.reduce((n, s) => n + s.total, 0);
   const rows = (g ? g.storylines : list).map((s) => ({ ...s, name: s.name, sub: `${s.zones.join(' → ')}${s.minLevel ? ` · level ${s.minLevel}${s.maxLevel !== s.minLevel ? `–${s.maxLevel}` : ''}` : ''}` }));
-  return `${pageHead('World', 'Storylines', 'Every quest chain in Classic as chapters in order: what leads to what, across zones. A storyline is the spine of a zone episode; pick one for its outline.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
-    ${completionHero(done, total, `${done.toLocaleString()} of ${total.toLocaleString()} storyline quests done.`, `${list.length} storylines · ${list.filter((s) => s.total && s.done === s.total).length} finished`)}
+  return `${pageHead('World', 'Storylines', 'The quest chains you have set foot in, as chapters in order: what led to what, across zones. A storyline is the spine of a zone episode; pick one for its outline.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    <p class="muted small">${list.length} of ${every.length} storylines in Classic started · ${list.filter((s) => s.total && s.done === s.total).length} finished · ${done.toLocaleString()} of ${total.toLocaleString()} chapters done in all.</p>
     ${tabsHtml([['', 'Everywhere', list.length], ...groups.map((x) => [x.name, x.name, x.storylines.length])], continent, '#/storylines?continent=')}
     ${table(rows, [
       ...completionColumns('Storyline', (r) => `#/storyline/${r.id}`),
@@ -1592,14 +1598,14 @@ pages.storyline = async (id) => {
   setTimeout(() => document.getElementById('outlineDl')?.addEventListener('click', () => download(`${s.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-outline.md`, 'text/markdown', storylineOutline(s, codexQuests))));
   return `${crumb('#/storylines', 'Storylines')}
     ${pageHead('Storyline', esc(s.name), `${esc(s.zones.join(' → '))}${s.minLevel ? ` · level ${s.minLevel}${s.maxLevel !== s.minLevel ? `–${s.maxLevel}` : ''}` : ''} · ${s.quests.length} chapters.`, `<div class="row"><button id="outlineDl">Outline (Markdown)</button><p class="muted" style="margin:0">For ${whoSelect(cov)}</p></div>`)}
-    ${completionHero(s.done, s.total, `${s.done} of ${s.total} chapters done.`, s.next ? `Next: <a href="#/quest/q${s.next.id}">${esc(s.next.n)}</a>` : '')}
+    ${completionHero(s.done, s.total, `${s.done} of ${s.total} chapters done.`, `${s.quests.filter((r) => codexQuests.has(`q${r.q.id}`)).length} chapters found so far; the rest stay grey until you find them.`)}
     <ol class="chapters">
-      ${s.quests.map((r, i) => { const cq = codexQuests.get(`q${r.q.id}`); return `<li class="chapter st-${r.state}">
+      ${s.quests.map((r, i) => { const cq = codexQuests.get(`q${r.q.id}`); const seen = Boolean(cq); return seen ? `<li class="chapter st-${r.state}">
         <div class="row spread"><span><span class="muted">${i + 1}.</span> <a href="#/quest/q${r.q.id}"><b>${esc(r.q.n)}</b></a> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}</span>${stateChip(r.state)}</div>
         <div class="muted small">${esc(db.zoneName(r.q.zone ?? r.q.z) ?? '')}${giverName(r.q) ? ` · from ${giverName(r.q)}` : ''}</div>
         ${r.q.o ? `<div class="small">${esc(r.q.o)}</div>` : ''}
         ${cq?.text ? `<blockquote class="small">${esc(cq.text)}</blockquote>` : ''}
-      </li>`; }).join('')}
+      </li>` : `<li class="chapter dim"><span class="muted">${i + 1}.</span> <span class="dim">${esc(r.q.n)}</span> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}</li>`; }).join('')}
     </ol>`;
 };
 
@@ -3188,6 +3194,41 @@ function changed(topic = 'all') {
   }, 400);
 }
 
+// The World's percentages in the sidebar: what this account has done
+// against everything in Classic. Cached with the rest until data changes.
+async function navPercents() {
+  const spans = [...document.querySelectorAll('#nav .pct')];
+  if (!spans.length || !state.machine) return;
+  const d = derived();
+  if (!d.navPct) {
+    const db = await questDB();
+    if (!db) return;
+    const itemdb = await itemTable().catch(() => null);
+    const cov = coverageWho();
+    const tree = completionTree(db, cov.ctx);
+    const zonesAll = Object.values(db.zones).filter((z) => !z.kind && !z.p && z.c);
+    const visited = new Set(d.codex.zones.map((z) => z.name.toLowerCase()));
+    const story = storylines(db, cov.ctx);
+    const totals = npcTotals(db);
+    d.navPct = {
+      locations: pctOf(zonesAll.filter((z) => visited.has(String(z.n).toLowerCase())).length, zonesAll.length),
+      quests: pctOf(tree.done, tree.total),
+      storylines: pctOf(story.reduce((n, s) => n + s.done, 0), story.reduce((n, s) => n + s.total, 0)),
+      bestiary: pctOf(d.world.creatures.filter((n) => n.kills > 0).length, totals.creatures),
+      people: pctOf(d.world.people.filter((n) => n.met).length, totals.people),
+      items: itemdb ? pctOf(d.world.items.filter((i) => i.obtained).length, itemdb.size) : null,
+    };
+  }
+  for (const el of spans) {
+    const v = d.navPct[el.dataset.pct];
+    const text = v == null ? '' : `${v}%`;
+    if (el.textContent === text) continue;
+    const had = el.textContent !== '';
+    el.textContent = text;
+    if (had) { el.classList.remove('shine'); void el.offsetWidth; el.classList.add('shine'); }
+  }
+}
+
 async function route({ keepScroll = false } = {}) {
   if (!state.machine) return;
   const hash = location.hash.replace(/^#\/?/, '');
@@ -3215,6 +3256,7 @@ async function route({ keepScroll = false } = {}) {
     main.innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
     console.error(err);
   }
+  navPercents().catch((err) => console.warn('percentages', err));
   if (!keepScroll) {
     // Navigation: children rise in one after another; numbers count up.
     main.classList.remove('enter');

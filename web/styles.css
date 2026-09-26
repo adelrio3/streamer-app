@@ -590,3 +590,21 @@ main.enter .rpg-item, main.enter .rpg-row { animation: rise .45s cubic-bezier(.2
 .replay { margin-top: 14px; }
 .replay .row.small label, .replay label.small { color: var(--muted); font-size: .85rem; gap: 6px; }
 main.enter .chapter { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 25ms); }
+
+/* The personal wiki: grey until done, counts in the name, sidebar percentages */
+a.dim, .dim a, span.dim { color: var(--faint); }
+a.dim:hover { color: var(--muted); }
+.dim-item a.q0, .dim-item a.q1, .dim-item a.q2, .dim-item a.q3, .dim-item a.q4, .dim-item a.q5, .dim-item a.q6 { color: var(--faint); text-decoration: underline dotted var(--line-2); text-underline-offset: 3px; }
+.count { color: var(--gold-2); font-family: var(--serif); font-size: .95em; opacity: .9; }
+.rpg-row.dim b { color: var(--faint); font-weight: 500; }
+.rpg-row.dim .rpg-pct { color: var(--faint); }
+.chapter.dim { padding: 8px 14px; color: var(--faint); border-left-color: var(--line); }
+.wiki-map { margin: 4px 0 12px; }
+.wiki-sec { margin-top: 12px; }
+.wiki-sec h3 { margin: 0 0 4px; font-size: 1rem; }
+.wiki-names { margin: 0; line-height: 1.7; }
+#nav a { display: flex; align-items: center; }
+#nav a .pct { margin-left: auto; padding-left: 10px; font-family: var(--serif); font-size: .92rem; font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 10px rgba(var(--gold-rgb), .35); }
+#nav a .pct:empty { display: none; }
+#nav a .pct.shine { animation: pctshine 1.4s ease-out; }
+@keyframes pctshine { 0% { filter: brightness(1); transform: scale(1); } 25% { filter: brightness(1.8); transform: scale(1.18); text-shadow: 0 0 18px rgba(var(--gold2-rgb), .9); } 100% { filter: brightness(1); transform: scale(1); } }
