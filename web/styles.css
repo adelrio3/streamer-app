@@ -292,3 +292,14 @@ ol.steps li { margin-bottom: 6px; }
 .map-info { margin: 0; min-height: 120px; }
 .map-info h3 { margin-bottom: 2px; }
 @media (max-width: 1000px) { .map-wrap { grid-template-columns: 1fr; } }
+
+/* Map cropper ------------------------------------------------------------------ */
+
+.crop-dialog { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.crop-panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; max-width: calc(100vw - 40px); }
+.crop-stage { position: relative; line-height: 0; cursor: crosshair; touch-action: none; user-select: none; }
+.crop-stage canvas { display: block; border-radius: 6px; }
+.crop-box { position: absolute; border: 2px solid var(--gold-2); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); cursor: move; }
+.crop-box i { position: absolute; width: 14px; height: 14px; background: var(--gold-2); border: 2px solid #1a1408; border-radius: 3px; }
+.crop-box i[data-h=nw] { left: -8px; top: -8px; cursor: nwse-resize; } .crop-box i[data-h=se] { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.crop-box i[data-h=ne] { right: -8px; top: -8px; cursor: nesw-resize; } .crop-box i[data-h=sw] { left: -8px; bottom: -8px; cursor: nesw-resize; }

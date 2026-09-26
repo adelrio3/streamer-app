@@ -802,17 +802,85 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
     if (!file) return;
     try {
       const bitmap = await createImageBitmap(file);
-      const scale = Math.min(1, 1600 / bitmap.width);
-      const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
-      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.88));
+      const rect = await cropDialog(bitmap);
+      if (!rect) return;
+      const scale = Math.min(1, 1600 / rect.w);
+      const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(rect.w * scale), height: Math.round(rect.h * scale) });
+      canvas.getContext('2d').drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
       const path = await state.store.saveMapImage(mapId, blob);
       state.settings = { ...state.settings, maps: { ...(state.settings.maps || {}), [mapId]: path } };
       await state.store.saveSettings(state.settings);
       state.shotUrls.delete(path);
-      toast('Map image saved.');
+      toast('Map image saved. If pins look shifted, upload again with a tighter crop.');
       route();
     } catch (err) { toast(err.message); }
+  });
+}
+
+// Lets you drag a box around the map artwork in a screenshot. Resolves to
+// { x, y, w, h } in image pixels, or null if cancelled.
+function cropDialog(bitmap) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('div');
+    dlg.className = 'crop-dialog';
+    dlg.innerHTML = `<div class="crop-panel">
+      <div class="row spread"><h3 style="margin:0">Crop to the map artwork</h3><span class="muted small">Drag a box from one corner of the map picture to the opposite corner. Leave out the border, title and buttons. Drag the box edges to adjust.</span></div>
+      <div class="crop-stage"><canvas></canvas><div class="crop-box" hidden><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div>
+      <div class="row spread"><span class="muted small" id="cropSize"></span><div class="row"><button type="button" id="cropCancel">Cancel</button><button type="button" class="primary" id="cropSave" disabled>Save map</button></div></div>
+    </div>`;
+    document.body.append(dlg);
+    const stage = dlg.querySelector('.crop-stage');
+    const canvas = dlg.querySelector('canvas');
+    const box = dlg.querySelector('.crop-box');
+    const size = dlg.querySelector('#cropSize');
+    const save = dlg.querySelector('#cropSave');
+    const maxW = Math.min(window.innerWidth - 80, 1100);
+    const maxH = window.innerHeight - 200;
+    const k = Math.min(maxW / bitmap.width, maxH / bitmap.height, 1);
+    canvas.width = Math.round(bitmap.width * k);
+    canvas.height = Math.round(bitmap.height * k);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    let rect = null; // in canvas pixels
+    const show = () => {
+      if (!rect) return;
+      box.hidden = false;
+      Object.assign(box.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` });
+      size.textContent = `${Math.round(rect.w / k)} × ${Math.round(rect.h / k)} px · ratio ${(rect.w / rect.h).toFixed(2)} (WoW maps are 1.50)`;
+      save.disabled = rect.w < 20 || rect.h < 20;
+    };
+    const pos = (ev) => { const r = canvas.getBoundingClientRect(); return { x: Math.min(Math.max(ev.clientX - r.left, 0), canvas.width), y: Math.min(Math.max(ev.clientY - r.top, 0), canvas.height) }; };
+    let drag = null;
+    stage.addEventListener('pointerdown', (ev) => {
+      const h = ev.target.dataset?.h;
+      const p = pos(ev);
+      if (h && rect) {
+        const anchor = { x: h.includes('w') ? rect.x + rect.w : rect.x, y: h.includes('n') ? rect.y + rect.h : rect.y };
+        drag = { anchor };
+      } else if (ev.target === box && rect) {
+        drag = { move: { dx: p.x - rect.x, dy: p.y - rect.y } };
+      } else {
+        drag = { anchor: p };
+        rect = { x: p.x, y: p.y, w: 0, h: 0 };
+      }
+      stage.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+    stage.addEventListener('pointermove', (ev) => {
+      if (!drag) return;
+      const p = pos(ev);
+      if (drag.move) {
+        rect.x = Math.min(Math.max(p.x - drag.move.dx, 0), canvas.width - rect.w);
+        rect.y = Math.min(Math.max(p.y - drag.move.dy, 0), canvas.height - rect.h);
+      } else {
+        rect = { x: Math.min(drag.anchor.x, p.x), y: Math.min(drag.anchor.y, p.y), w: Math.abs(p.x - drag.anchor.x), h: Math.abs(p.y - drag.anchor.y) };
+      }
+      show();
+    });
+    stage.addEventListener('pointerup', () => { drag = null; });
+    const done = (value) => { dlg.remove(); resolve(value); };
+    dlg.querySelector('#cropCancel').addEventListener('click', () => done(null));
+    save.addEventListener('click', () => done({ x: rect.x / k, y: rect.y / k, w: rect.w / k, h: rect.h / k }));
   });
 }
 
