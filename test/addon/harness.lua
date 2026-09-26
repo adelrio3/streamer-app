@@ -75,6 +75,8 @@ function SendChatMessage(msg, kind, _, target)
 	fire("CHAT_MSG_WHISPER", msg, "Aldric")
 end
 function ChatFrame_AddMessageEventFilter(event, fn) chat.filters[#chat.filters + 1] = { event = event, fn = fn } end
+local systemLines = {}
+function SendSystemMessage(text) systemLines[#systemLines + 1] = text; fire("CHAT_MSG_SYSTEM", text) end
 function GetCVar(k) return cvars[k] end
 function SetCVar(k, v) cvars[k] = v end
 
@@ -619,6 +621,20 @@ assert(chat.flushes == flushesBefore + 1 and not chat.logging, "the chat log is 
 assert(#chat.sent == before + 1, "nothing is sent while the log is closed")
 runTimers()
 assert(chat.logging, "the chat log is reopened")
+-- Filler lines fill the game's write buffer so the file gets written.
+state.level = 2 -- so the heartbeat below matches the fixture's last level
+SlashCmdList.CHRONICLER("live pad 4")
+assert(#systemLines == 4 and #systemLines[1] >= 230 and systemLines[1]:find("CHRONPAD~", 1, true) == 1, "pad sends filler system lines now")
+SlashCmdList.CHRONICLER("live test")
+trackTick()
+assert(#systemLines == 8, "and after each message from then on")
+local padHidden = false
+for _, f in ipairs(chat.filters) do if f.event == "CHAT_MSG_SYSTEM" and f.fn(nil, f.event, systemLines[1]) then padHidden = true end end
+assert(padHidden, "filler lines are hidden from chat windows")
+for _, e in ipairs(ChroniclerDB.sessions[1].events) do
+	assert(not (e.text and e.text:find("CHRONPAD", 1, true)), "filler lines are not recorded")
+end
+SlashCmdList.CHRONICLER("live pad 0")
 
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}

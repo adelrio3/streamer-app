@@ -62,6 +62,9 @@ end
 
 -- Is this chat line one of ours? Used to hide it and to keep it out of the
 -- social log.
+local PAD_PREFIX = "CHRONPAD"
+local padLine = PAD_PREFIX .. SEP .. string.rep("=", 230)
+
 local function isLiveLine(text)
 	return type(text) == "string" and text:find(PREFIX .. SEP, 1, true) == 1
 end
@@ -70,6 +73,7 @@ ns.isLiveLine = isLiveLine
 -- Hides the addon's whispers from every chat window (both the "To you:"
 -- copy and the "you whisper:" copy). The chat log on disk still gets them.
 local function filter(_, event, text)
+	if type(text) == "string" and text:find(PAD_PREFIX .. SEP, 1, true) == 1 then return true end
 	if settings().liveShow then return false end -- /chron live show, for checking
 	return isLiveLine(text)
 end
@@ -109,10 +113,22 @@ local function reopenLog()
 	reopening = false
 	if LoggingChat and enabled() then LoggingChat(true) end
 end
+-- Turning logging off does not close the file either (tried), so the
+-- other way is to fill the game's write buffer: local system messages
+-- (SendSystemMessage never reaches the server) that the log records like
+-- any other line. How many it takes is /chron live pad N; the app on the
+-- gaming PC shows when the file grows.
+local function pad(n)
+	if not SendSystemMessage then return 0 end
+	for _ = 1, n do SendSystemMessage(padLine) end
+	return n
+end
 local function flushLog()
-	if not unflushed or reopening or not LoggingChat then return end
+	if not unflushed or reopening then return end
 	if GetTime() - lastSend < FLUSH_AFTER then return end
 	unflushed = false
+	pad(tonumber(settings().livePad) or 0)
+	if not LoggingChat then return end
 	LoggingChat(false)
 	if C_Timer and C_Timer.After then
 		reopening = true
@@ -171,6 +187,7 @@ ns.on("PLAYER_LOGIN", function()
 	if ChatFrame_AddMessageEventFilter then
 		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", filter)
 		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", filter)
+		ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filter)
 	end
 	local name, realm = UnitName("player"), GetRealmName and GetRealmName() or ""
 	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"))
@@ -196,6 +213,17 @@ ns.commands.live = function(arg)
 	elseif arg == "show" or arg == "hide" then
 		settings().liveShow = arg == "show" or nil
 		print("|cffd4a017Chronicler|r live link whispers are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
+	elseif arg:match("^pad") then
+		-- /chron live pad 16: send 16 filler lines (about 4 KB of log) now,
+		-- and after every message from here on. /chron live pad 0 stops it.
+		local n = tonumber(arg:match("%d+"))
+		if not n then
+			print(string.format("|cffd4a017Chronicler|r pad: %d filler lines after each message (%d KB). /chron live pad <number> sets it; 16 is about 4 KB.", tonumber(settings().livePad) or 0, math.floor(((tonumber(settings().livePad) or 0) * 260) / 1024)))
+			return
+		end
+		settings().livePad = n > 0 and n or nil
+		local sentNow = pad(n)
+		print(string.format("|cffd4a017Chronicler|r %d filler lines sent now (about %d KB); the same after each message from now on. Watch the file size of Logs\\WoWChatLog.txt.", sentNow, math.floor(sentNow * 260 / 1024)))
 	elseif arg == "test" then
 		-- A line the app and the overlay both show, to prove the whole chain.
 		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
@@ -206,8 +234,8 @@ ns.commands.live = function(arg)
 	else
 		local logging = LoggingChat and LoggingChat() or false
 		local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?"
-		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · whispers to %s (%s) · %d messages sent, %d lines waiting. /chron live on|off|test|show|hide",
+		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · whispers to %s (%s) · %d messages sent, %d lines waiting. /chron live on|off|test|show|hide|pad N",
 			version, enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", whisperTarget() or "?", settings().liveShow and "shown" or "hidden", sent, #queue))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms; show/hide the whispers in chat"
+ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide|pad N - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms; show/hide the whispers in chat"
