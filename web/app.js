@@ -1287,8 +1287,8 @@ pages.character = async (key, params = new URLSearchParams()) => {
         ${facts([i.guild ? `&lt;${esc(i.guild)}&gt;` : '', i.bind ? `Hearth: ${esc(i.bind)}` : '', moneyNow != null ? money(moneyNow) : '', i.xpMax ? `${Math.round(xpPct * 100)}% into level ${c.level}` : ''])}
       </div>
     </header>
-    ${tabsHtml([['dashboard', 'Dashboard'], ['progress', 'Progress'], ['places', 'Places'], ['journal', 'Journal']], tab, `#/character/${enc(c.key)}?tab=`)}
-    ${tab === 'dashboard' ? await characterDashboard(c) : tab === 'journal' ? await characterJournal(c) : tab === 'places' ? characterPlaces(c) : `<div class="cards">
+    ${tabsHtml([['dashboard', 'Dashboard'], ['progress', 'Progress'], ['completion', 'Completion'], ['journal', 'Journal']], tab === 'places' ? 'completion' : tab, `#/character/${enc(c.key)}?tab=`)}
+    ${tab === 'dashboard' ? await characterDashboard(c) : tab === 'journal' ? await characterJournal(c) : tab === 'completion' || tab === 'places' ? await characterCompletion(c) : `<div class="cards">
       ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'kills', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
       ${card(c.zones.length, 'zones visited', '#/zones')}${card(c.recordings.length, 'recordings', '#/recordings')}${card(Math.round(c.playSeconds / 3600), 'hours logged', '#/sessions')}
     </div>
@@ -1386,7 +1386,7 @@ async function characterDashboard(c) {
         ${zoneRow ? `<div class="muted small" style="margin-top:6px">${esc(zoneRow.name)}: ${zoneRow.done} of ${zoneRow.total} quests done</div>${covBar(zoneRow.done, zoneRow.total)}` : ''}
       </div>
       <div class="panel"><h3>Standing</h3>
-        <div class="cards tight">${card(c.questsDone, 'quests done', `#/quests`)}${card(finished, 'storylines finished', '#/storylines')}${card(c.kills, 'hunts', '#/bestiary')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}${card(c.zones.length, 'zones', `#/character/${enc(c.key)}?tab=places`)}${card(Math.round(c.playSeconds / 3600), 'hours', '#/sessions')}</div>
+        <div class="cards tight">${card(c.questsDone, 'quests done', `#/quests`)}${card(finished, 'storylines finished', '#/storylines')}${card(c.kills, 'hunts', '#/bestiary')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}${card(c.zones.length, 'zones', `#/character/${enc(c.key)}?tab=completion`)}${card(Math.round(c.playSeconds / 3600), 'hours', '#/sessions')}</div>
         ${tree ? `<div class="muted small">All of Classic: ${tree.done.toLocaleString()} of ${tree.total.toLocaleString()} quests</div>${covBar(tree.done, tree.total)}` : ''}
       </div>
       <div class="panel"><h3>In the log <span class="muted">${activeQuests.length}</span></h3>
@@ -1406,15 +1406,71 @@ async function characterDashboard(c) {
 }
 
 // Places: where this character has been, with the maps explored and loose ends.
-function characterPlaces(c) {
+// Completion: how far this character has come, zone by zone, against what
+// the character can do in Classic (its faction, race, class and level), with
+// the loose ends it left behind and the next chapters waiting.
+async function characterCompletion(c) {
   const d = derived();
-  const codexZones = new Map(d.codex.zones.map((z) => [z.name, z]));
-  return `${table(c.zones, [
-      { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` },
+  const db = await questDB();
+  const i = c.info;
+  const who = { raceToken: i.raceToken, classToken: i.classToken, faction: i.faction };
+  const { done, active } = progressSets(d.codex.quests, c.key);
+  const ctx = { who, level: c.level || 0, done, active };
+  const tree = db ? completionTree(db, ctx) : null;
+  const zoneRows = tree ? tree.groups.flatMap((g) => g.zones.map((z) => ({ ...z, continent: g.name }))) : [];
+  const zoneFor = (name) => zoneRows.find((z) => z.name.toLowerCase() === String(name).toLowerCase()) ?? null;
+  const zoneLink = (name) => { const z = zoneFor(name); return z ? `#/locations?continent=${enc(z.continent)}&zone=${z.zoneId}` : `#/zone/${enc(name)}`; };
+  const lines = db ? storylines(db, ctx) : [];
+  const started = lines.filter((st) => st.done > 0);
+  const finished = started.filter((st) => st.total && st.done === st.total);
+  const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
+  const codexZone = (name) => d.codex.zones.find((x) => x.name.toLowerCase() === String(name).toLowerCase()) ?? null;
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const perZone = c.zones.map((z) => {
+    const row = zoneFor(z.name);
+    const cz = codexZone(z.name);
+    const here = lines.filter((st) => st.zones.includes(z.name));
+    const le = looseEnds(z.name, d.codex, d.world);
+    return { name: z.name, t: z.t, quests: row ? { done: row.done, total: row.total } : null, stories: { done: here.filter((st) => st.total && st.done === st.total).length, started: here.filter((st) => st.done > 0).length, total: here.length }, areas: { done: cz?.discovered?.length ?? 0, total: known(cz).size }, loose: le, minLevel: row?.minLevel ?? null };
+  });
+  const areasDone = perZone.reduce((n, z) => n + z.areas.done, 0);
+  const areasAll = perZone.reduce((n, z) => n + z.areas.total, 0);
+  const looseAll = perZone.reduce((n, z) => n + z.loose.total, 0);
+  const next = started.filter((st) => st.next).sort((a, b) => pctOf(b.done, b.total) - pctOf(a.done, a.total)).slice(0, 8);
+  const zonesAll = zoneRows.filter((z) => !['Dungeons', 'Raids', 'Battlegrounds'].includes(z.continent)).length;
+  setTimeout(() => {
+    main.querySelectorAll('[data-loose]').forEach((a) => a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const det = document.getElementById(a.dataset.loose);
+      if (!det) return;
+      det.open = true;
+      det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+  });
+  return `<div class="cards tight">
+      ${card(tree ? tree.done : c.questsDone, tree ? `of ${tree.total.toLocaleString()} quests ${esc(c.name)} can do` : 'quests done', '#/quests')}
+      ${card(finished.length, `of ${started.length} storylines started finished`, '#/storylines')}
+      ${card(c.zones.length, zonesAll ? `of ${zonesAll} zones visited` : 'zones visited', '#/locations')}
+      ${card(areasDone, areasAll ? `of ${areasAll} areas discovered` : 'areas discovered', '#/locations')}
+      ${card(c.kills, 'hunts', '#/bestiary')}
+      ${card(looseAll, 'loose ends', looseAll ? `#/character/${enc(c.key)}?tab=completion#loose` : '#/characters')}
+    </div>
+    ${tree ? covBar(tree.done, tree.total) : ''}
+    <h2>Zone by zone</h2>
+    <p class="muted small">Every zone ${esc(c.name)} has set foot in, against what the zone holds for a ${esc([i.race, i.class].filter(Boolean).join(' '))}. Loose ends are things found there and not finished.</p>
+    ${table(perZone, [
+      { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="${zoneLink(z.name)}">${esc(z.name)}</a>${z.minLevel ? ` <span class="muted small">level ${z.minLevel}</span>` : ''}` },
+      { label: 'Quests', value: (z) => (z.quests ? pctOf(z.quests.done, z.quests.total) : 0), html: (z) => (z.quests ? covBar(z.quests.done, z.quests.total) : '<span class="muted small">no quests here</span>') },
+      { label: 'Storylines', value: (z) => z.stories.done, html: (z) => (z.stories.total ? `${z.stories.done} <span class="muted">/ ${z.stories.started} started of ${z.stories.total}</span>` : ''), num: true },
+      { label: 'Areas', value: (z) => pctOf(z.areas.done, z.areas.total), html: (z) => (z.areas.total ? covBar(z.areas.done, z.areas.total) : ''), num: true },
+      { label: 'Loose ends', value: (z) => z.loose.total, html: (z) => (z.loose.total ? `<a class="chip active" href="#" data-loose="loose-${slug(z.name)}">${z.loose.total}</a>` : '<span class="chip done">clear</span>'), num: true },
       { label: 'First visit', value: (z) => z.t, html: (z) => play(z) },
-      { label: 'Areas', value: (z) => codexZones.get(z.name)?.discovered?.length ?? 0, num: true },
-      { label: 'Loose ends', value: (z) => looseEnds(z.name, d.codex, d.world).total, html: (z) => { const n = looseEnds(z.name, d.codex, d.world).total; return n ? `<a class="chip active" href="#/zone/${enc(z.name)}#loose">${n}</a>` : '<span class="chip done">clear</span>'; }, num: true },
-    ], { sort: 1, empty: 'No zones yet.' })}
+    ], { sort: 1, desc: true, empty: 'No zones yet.' })}
+    ${next.length ? `<h2>Next chapters</h2><p class="muted small">Storylines ${esc(c.name)} has started, and the chapter each one is waiting on.</p>
+      <ul class="next-chapters">${next.map((st) => `<li><a href="#/storyline/${st.id}">${esc(st.name)}</a> <span class="muted small">${st.done} of ${st.total}</span> → <a href="#/quest/q${st.next.id}">${esc(st.next.n)}</a>${st.next.l ? ` <span class="muted small">level ${st.next.l}</span>` : ''}</li>`).join('')}</ul>` : ''}
+    <h2 id="loose">Loose ends ${looseAll ? `<span class="chip active">${looseAll}</span>` : '<span class="chip done">all clear</span>'}</h2>
+    <p class="muted small">Built only from what ${esc(c.name)} came across, so it never nags about quests not found yet.</p>
+    ${perZone.filter((z) => z.loose.total).map((z) => `<details class="panel loose-zone" id="loose-${slug(z.name)}"><summary><b>${esc(z.name)}</b> <span class="chip active">${z.loose.total}</span></summary>${looseEndsBody(z.loose)}</details>`).join('')}
     ${exploredMaps()}`;
 }
 
@@ -2442,7 +2498,12 @@ function looseEndsSection(zoneName, c, world) {
   const list = (title, items) => (items.length ? `<div class="panel loose"><h3>${title} <span class="muted">${items.length}</span></h3><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : '');
   return `<h2 id="loose">Loose ends ${le.total ? `<span class="chip active">${le.total}</span>` : '<span class="chip done">all clear</span>'}</h2>
     <p class="muted">Things you came across here but did not finish. Built only from what you saw, so it never nags you about quests you have not found yet.</p>
-    ${le.total ? `<div class="grid3">
+    ${looseEndsBody(le)}`;
+}
+
+function looseEndsBody(le) {
+  const list = (title, items) => (items.length ? `<div class="panel loose"><h3>${title} <span class="muted">${items.length}</span></h3><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : '');
+  return `${le.total ? `<div class="grid3">
       ${list('Quests not turned in', le.quests.map((q) => `<a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span>${q.giver ? ` <span class="muted small">from ${esc(q.giver.name)}</span>` : ''}`))}
       ${list('Rares met, not killed', le.rares.map((n) => `${npcLink(n.key, n.name)} <span class="muted small">${n.sightings} encounter${n.sightings === 1 ? '' : 's'}</span>`))}
       ${list('Creatures met, never killed', le.creatures.filter((n) => !le.rares.includes(n)).slice(0, 40).map((n) => `${npcLink(n.key, n.name)} <span class="muted small">${levelText(n) ? `lvl ${levelText(n)} · ` : ''}${n.sightings} encounter${n.sightings === 1 ? '' : 's'}</span>`))}
@@ -3596,7 +3657,7 @@ async function navPercents() {
 
 async function route({ keepScroll = false } = {}) {
   if (!state.machine) return;
-  const hash = location.hash.replace(/^#\/?/, '');
+  const [hash, anchor = ''] = location.hash.replace(/^#\/?/, '').split('#');
   const [pathPart, query = ''] = hash.split('?');
   const [page, ...rest] = pathPart.split('/');
   const params = new URLSearchParams(query);
@@ -3649,6 +3710,7 @@ async function route({ keepScroll = false } = {}) {
   }
   moveNavGlow();
   window.scrollTo(0, keepScroll || same ? y : 0);
+  if (anchor && !keepScroll) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   const box = document.getElementById('searchBox');
   if (box && page === 'search' && document.activeElement !== box) box.value = params.get('q') || '';
   // Wowhead's script turns item links into icons with tooltips.

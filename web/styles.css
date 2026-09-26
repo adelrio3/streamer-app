@@ -714,3 +714,11 @@ main.enter .tale { animation: rise .5s cubic-bezier(.2, .8, .2, 1) backwards; an
 .book-orn { text-align: center; color: var(--gold); letter-spacing: .5em; margin: 8px 0; opacity: .8; }
 .book-orn.small { margin: 14px 0 4px; }
 @media (max-width: 720px) { .storybook { padding: 22px 18px; } .storybook .book-part { column-width: auto; } .storybook p { text-align: left; } }
+
+/* Completion tab: loose ends folded per zone, next chapters as a list. */
+.loose-zone { margin: 8px 0; padding: 10px 14px; }
+.loose-zone summary { cursor: pointer; font-family: var(--serif); font-size: 1.05rem; }
+.loose-zone[open] summary { margin-bottom: 8px; }
+.loose-zone .grid3 { margin-top: 6px; }
+.next-chapters { padding-left: 1.1em; }
+.next-chapters li { margin-bottom: 6px; }
