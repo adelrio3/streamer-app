@@ -306,11 +306,30 @@ const byNorm = new Map([...english].map((name) => [norm(name), name]));
 const uiMap = {};
 for (const [ui, area] of Object.entries(CLASSIC_ZONE_IDS)) if (!uiMap[area]) uiMap[area] = Number(ui);
 const zones = {};
+// Which continent or kind of place each zone is, from the sections of Questie's list.
+const RAIDS = new Set(['MOLTEN_CORE', 'BLACKWING_LAIR', 'ZUL_GURUB', 'ONYXIAS_LAIR', 'RUINS_OF_AHN_QIRAJ', 'AHN_QIRAJ', 'NAXXRAMAS']);
+const groupOf = {};
+{
+  let section = '';
+  for (const line of read(enumDir, 'zones.lua').split('\n')) {
+    const c = /^\s*-- (.*)$/.exec(line);
+    if (c) { section = c[1]; continue; }
+    const m = /^\s*([A-Z_0-9]+)\s*=\s*(\d+),/.exec(line);
+    if (!m) continue;
+    let group = null;
+    if (/^Eastern Kingdoms/.test(section)) group = 'Eastern Kingdoms';
+    else if (/^Kalimdor/.test(section)) group = 'Kalimdor';
+    else if (/^Classic battlegrounds/.test(section)) group = 'Battlegrounds';
+    else if (/^Classic dungeons and raids/.test(section)) group = RAIDS.has(m[1]) ? 'Raids' : 'Dungeons';
+    if (group) groupOf[Number(m[2])] = group;
+  }
+}
 for (const [constant, id] of Object.entries(zoneIDs)) {
   const name = EXTRA_NAMES[id] ?? byNorm.get(norm(constant)) ?? titleCase(constant);
-  zones[id] = { n: name, m: uiMap[id] ?? null, p: PARENT[id] ?? null };
+  const parent = PARENT[id] ?? null;
+  zones[id] = { n: name, m: uiMap[id] ?? null, p: parent, c: groupOf[parent ?? id] ?? groupOf[id] ?? null };
 }
-for (const [id, name] of Object.entries(EXTRA_NAMES)) zones[id] ??= { n: name, m: uiMap[id] ?? null, p: PARENT[id] ?? null };
+for (const [id, name] of Object.entries(EXTRA_NAMES)) zones[id] ??= { n: name, m: uiMap[id] ?? null, p: PARENT[id] ?? null, c: groupOf[PARENT[id] ?? id] ?? null };
 for (const [constant, id] of Object.entries(sortKeys)) {
   const kind = SORT_KIND.class.has(constant) ? 'class' : SORT_KIND.profession.has(constant) ? 'profession' : 'category';
   zones[id] = { n: SORT_NAMES[constant] ?? titleCase(constant), kind };
@@ -407,11 +426,13 @@ const capSpawns = (spawns, cap) => {
   }
   return Object.keys(out).length ? out : null;
 };
+// A correction sometimes gives a name per faction as a table; keep the first.
+const text = (v) => (typeof v === 'string' ? v : v && typeof v === 'object' ? Object.values(v).find((x) => typeof x === 'string') ?? null : null);
 for (const [id, row] of npcs) {
-  const name = at(row, NK.name);
+  const name = text(at(row, NK.name));
   if (!name || /Only GM can see/.test(name)) continue;
   const o = { n: name };
-  const sub = at(row, NK.subName); if (sub) o.sub = sub;
+  const sub = text(at(row, NK.subName)); if (sub) o.sub = sub;
   const min = Number(at(row, NK.minLevel) ?? 0); const max = Number(at(row, NK.maxLevel) ?? 0);
   if (min || max) o.lvl = min === max ? [min] : [min, max];
   const rank = Number(at(row, NK.rank) ?? 0); if (rank) o.rank = rank;

@@ -7,6 +7,7 @@
 
 import { fetchLiveByToken } from './lib/cloud.js';
 import { LiveState, STREAK_WINDOW } from './lib/live.js';
+import { iconName, iconUrl } from './lib/overlaypack.js';
 
 const params = new URLSearchParams(location.search);
 const token = params.get('token');
@@ -22,7 +23,9 @@ const widget = params.get('widget');
 if (widget) { show.clear(); show.add(widget); document.body.classList.add('single'); }
 // A chroma key background (?bg=00ff00) for feeds that cannot carry transparency.
 const bg = params.get('bg');
-if (/^[0-9a-f]{6}$/i.test(bg || '')) document.body.style.background = `#${bg}`;
+const keyed = /^[0-9a-f]{6}$/i.test(bg || '');
+// Keyed: everything solid, since anything translucent would tint towards the key colour.
+if (keyed) { document.body.style.background = `#${bg}`; document.body.classList.add('keyed'); }
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -35,7 +38,7 @@ for (const [k, el] of Object.entries({ toasts: $('toasts'), tracker: $('tracker'
   el.hidden = !show.has(k);
 }
 $('callouts').hidden = !show.has('callouts');
-const icons = () => setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 40);
+const icons = () => setTimeout(() => fillIcons(), 0);
 
 // Particles ------------------------------------------------------------------
 
@@ -81,9 +84,9 @@ function step(now) {
     p.y += p.vy * dt;
     p.vx *= 0.985;
     const t = 1 - p.age / p.life;
-    ctx.globalAlpha = Math.min(1, t * 1.4);
+    ctx.globalAlpha = keyed ? 1 : Math.min(1, t * 1.4);
     ctx.fillStyle = p.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = keyed ? 0 : 8;
     ctx.shadowColor = p.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, Math.PI * 2);
@@ -97,6 +100,7 @@ function step(now) {
 }
 
 function flash(color) {
+  if (keyed) return;
   const f = $('flash');
   f.style.setProperty('--fc', color);
   f.classList.remove('on');
@@ -113,8 +117,21 @@ function shake(big) {
 
 // Toasts ---------------------------------------------------------------------
 
+// The item's art fills the box exactly: the icon image itself, fetched by
+// name from Wowhead, over a lettered placeholder. (The tooltip script's own
+// icon markup sits on a text baseline and lands a few pixels low.)
 function itemIcon(id, name) {
-  return `<div class="ticon"><span class="fallback">${esc((name || '?')[0])}</span><a href="https://www.wowhead.com/classic/item=${Number(id) || 0}" data-wh-icon-size="large" data-wh-rename-link="false"></a></div>`;
+  return `<div class="ticon" data-item="${Number(id) || 0}"><span class="fallback">${esc((name || '?')[0])}</span><img class="art" alt="" hidden></div>`;
+}
+async function fillIcons(root = document) {
+  for (const box of root.querySelectorAll('.ticon[data-item]:not([data-done])')) {
+    box.dataset.done = '1';
+    const icon = await iconName(Number(box.dataset.item));
+    const img = box.querySelector('img.art');
+    if (!icon || !img) continue;
+    img.onload = () => { img.hidden = false; };
+    img.src = iconUrl(icon);
+  }
 }
 
 function toast(e) {

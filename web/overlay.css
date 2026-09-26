@@ -57,10 +57,7 @@ body.single .callout .ctitle { font-size: 64px; }
 .toast.q0 { --q: var(--q0); } .toast.q1 { --q: var(--q1); } .toast.q2 { --q: var(--q2); } .toast.q3 { --q: var(--q3); } .toast.q4 { --q: var(--q4); } .toast.q5 { --q: var(--q5); } .toast.q6 { --q: var(--q6); }
 .ticon { position: relative; width: 56px; height: 56px; flex: none; border-radius: 8px; overflow: hidden; background: rgba(0, 0, 0, .5); border: 2px solid color-mix(in srgb, var(--q) 80%, #000); box-shadow: 0 0 14px color-mix(in srgb, var(--q) 50%, transparent); }
 .ticon .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 30px; color: var(--q); }
-.ticon a { position: absolute; inset: 0; display: block; }
-.ticon .iconlarge, .ticon .iconlarge ins { width: 52px !important; height: 52px !important; }
-.ticon .iconlarge ins { background-size: 52px 52px !important; }
-.ticon .iconlarge del { display: none !important; }
+.ticon img.art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .ttext { min-width: 0; }
 .tname { font-family: var(--serif); font-weight: 700; font-size: 24px; line-height: 1.05; color: var(--q); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tn { font-family: var(--sans); font-size: 15px; color: var(--ink); font-weight: 600; margin-left: 4px; }
@@ -105,8 +102,6 @@ body.single .callout .ctitle { font-size: 64px; }
 /* Counters */
 .counter { display: flex; align-items: center; gap: 10px; min-width: 220px; }
 .counter .ticon { width: 40px; height: 40px; border-width: 1px; }
-.counter .ticon .iconlarge, .counter .ticon .iconlarge ins { width: 38px !important; height: 38px !important; }
-.counter .ticon .iconlarge ins { background-size: 38px 38px !important; }
 .counter .ticon .fallback { font-size: 20px; }
 .counter .cname { flex: 1; font-size: 14px; font-weight: 600; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .counter .cmode { font-size: 10px; letter-spacing: .15em; text-transform: uppercase; color: var(--gold); opacity: .8; }
@@ -149,3 +144,16 @@ body.single .callout .ctitle { font-size: 64px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Chroma key mode: nothing translucent, nothing soft. */
+body.keyed { text-shadow: none; }
+body.keyed .panel, body.keyed .toast, body.keyed .counter { background: #0c0905; backdrop-filter: none; box-shadow: none; }
+body.keyed .toast { border-left-width: 4px; animation: none; }
+body.keyed .toast::after, body.keyed .rays, body.keyed #flash { display: none; }
+body.keyed .ticon { box-shadow: none; }
+body.keyed .obj .bar, body.keyed #timer .xp, body.keyed #kills .sbar { background: #2a2418; }
+body.keyed .obj .bar > div, body.keyed .cnum.bump, body.keyed .callout .ctitle, body.keyed .callout.death .ctitle, body.keyed .callout.rare .ctitle, body.keyed .callout.streak .ctitle { box-shadow: none; text-shadow: none; }
+body.keyed .callout .ctitle { -webkit-text-stroke: 1.5px #0c0905; paint-order: stroke fill; }
+body.keyed .callout .csub { text-shadow: none; -webkit-text-stroke: 1px #0c0905; paint-order: stroke fill; }
+body.keyed .toast.q4, body.keyed .toast.q5 { animation: none; }
+body.keyed .quest.done::after { display: none; }

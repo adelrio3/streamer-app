@@ -17,7 +17,7 @@ import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
 import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS } from './lib/maps.js';
 import { looseEnds } from './lib/coverage.js';
-import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS, itemClassName, ITEM_CLASS_ORDER } from './lib/questdb.js';
+import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS, itemClassName, ITEM_CLASS_ORDER, ZONE_GROUPS, completionTree, npcsByZone } from './lib/questdb.js';
 import { pastLoot, dropsBetween } from './lib/live.js';
 import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
 import { makeZip } from './lib/zip.js';
@@ -743,36 +743,29 @@ pages.quests = async (_, params) => {
 // The heart of it: how much of every zone's quests the character has done.
 function questZonesPage(db, tabs) {
   const cov = coverageWho();
-  const zones = allZones(db, cov.ctx).filter((z) => z.total || z.counts.done);
-  const total = zones.reduce((n, z) => n + z.total, 0);
-  const done = zones.reduce((n, z) => n + z.done, 0);
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-  const complete = zones.filter((z) => z.total && z.done === z.total).length;
-  const sorts = [...db.questsBySort.keys()].map((id) => { const s = sortCoverageFor(db, id, cov.ctx); return { id, name: db.zoneName(id), kind: db.zones[id]?.kind ?? 'category', ...s }; }).filter((s) => s.total || s.counts.done).sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
-  const bar = (z) => `<div class="cov small"><div class="bar"><div style="width:${pct(z.done, z.total)}%"></div></div><b>${pct(z.done, z.total)}%</b></div>`;
-  const cols = (kind) => [
-    { label: kind, value: (z) => z.name, html: (z) => (z.zoneId ? `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` : `<a href="#/quests?show=db&sort=${z.id}">${esc(z.name)}</a>`) },
-    { label: 'Done', value: (z) => pct(z.done, z.total), html: bar, num: true },
-    { label: 'Quests', value: (z) => z.done, html: (z) => `${z.done} / ${z.total}`, num: true },
-    { label: 'Ready now', value: (z) => z.counts.ready ?? 0, html: (z) => (z.counts.ready ? `<span class="chip st-ready">${z.counts.ready}</span>` : ''), num: true },
-    { label: 'In progress', value: (z) => z.counts.active ?? 0, html: (z) => (z.counts.active ? `<span class="chip st-active">${z.counts.active}</span>` : ''), num: true },
-    { label: 'Later', value: (z) => z.counts.later ?? 0, num: true },
-    { label: 'Other faction/class', value: (z) => z.counts.other ?? 0, num: true },
-    ...(kind === 'Zone' ? [{ label: 'Map', value: () => '', html: (z) => (z.mapId ? `<a class="chip" href="#/map/${z.mapId}?show=unfound,rares">map</a>` : '') }] : [{ label: 'Kind', value: (z) => z.kind }]),
-  ];
-  return `${pageHead('Chronicle', 'Quests', 'Every quest in Classic, zone by zone, and how much of each the character has done. The quests you have not found yet count too, so 100% means the whole zone.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+  const tree = completionTree(db, cov.ctx);
+  const complete = tree.groups.flatMap((g) => g.zones).filter((z) => z.total && z.done === z.total).length;
+  const zoneCols = completionColumns('Zone', (r) => `#/zone/${enc(r.name)}`, [
+    { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
+    { label: 'In progress', value: (r) => r.counts.active ?? 0, html: (r) => (r.counts.active ? `<span class="chip st-active">${r.counts.active}</span>` : ''), num: true },
+    { label: 'Later', value: (r) => r.counts.later ?? 0, num: true },
+    { label: 'Other faction/class', value: (r) => r.counts.other ?? 0, num: true },
+    { label: 'Map', value: () => '', html: (r) => (r.mapId ? `<a class="chip" href="#/map/${r.mapId}?show=unfound,rares">map</a>` : '') },
+  ]);
+  const sortCols = completionColumns('Category', (r) => `#/quests?show=db&sort=${r.id}`, [
+    { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
+    { label: 'Later', value: (r) => r.counts.later ?? 0, num: true },
+    { label: 'Kind', value: (r) => r.kind },
+  ]);
+  return `${pageHead('Chronicle', 'Quests', 'Every quest in Classic, continent by continent and zone by zone, with how much of each the character has done. The quests you have not found yet count too, so 100% means the whole zone.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
     ${tabs}
-    <div class="hero-pct">
-      <div class="big">${pct(done, total)}<span>%</span></div>
-      <div><div class="lead">${cov.char ? esc(cov.char.name) : 'Everyone'} has turned in <b>${done.toLocaleString()}</b> of <b>${total.toLocaleString()}</b> quests ${cov.char ? 'available to them' : 'in Classic'}.</div>
-      <div class="cov"><div class="bar"><div style="width:${pct(done, total)}%"></div></div></div>
-      <div class="muted small">${complete} zone${complete === 1 ? '' : 's'} complete · ${zones.filter((z) => z.counts.ready).length} zones with quests ready to pick up · repeatable and no-longer-offered quests do not count</div></div>
-    </div>
-    <h2>By zone</h2>
-    ${table(zones, cols('Zone'), { search: (z) => z.name, sort: 1, desc: true, limit: 200, empty: 'No zones with quests for this character.' })}
+    ${completionHero(tree.done, tree.total, `${cov.char ? esc(cov.char.name) : 'Everyone'} has turned in <b>${tree.done.toLocaleString()}</b> of <b>${tree.total.toLocaleString()}</b> zone quests ${cov.char ? 'available to them' : 'in Classic'}.`, `${complete} zone${complete === 1 ? '' : 's'} complete · repeatable and no-longer-offered quests do not count`)}
+    <h2>By continent</h2>
+    ${table(tree.groups, completionColumns('Continent', (r) => `#/locations?continent=${enc(r.name)}`, [{ label: 'Zones', value: (r) => r.zones.length, num: true }, { label: 'Ready now', value: (r) => r.ready, num: true }]), { sort: 1, desc: true })}
+    ${tree.groups.map((g) => `<h3>${esc(g.name)} <span class="muted">${pctOf(g.done, g.total)}%</span></h3>${table(g.zones, zoneCols, { search: (r) => r.name, sort: 1, desc: true, limit: 200 })}`).join('')}
     <h2>Class, profession and event quests</h2>
     <p class="muted">These cut across zones, so they are counted here on their own.</p>
-    ${table(sorts, cols('Category'), { search: (z) => `${z.name} ${z.kind}`, sort: 1, desc: true, limit: 200, empty: 'Nothing here for this character.' })}`;
+    ${table(tree.sorts, sortCols, { search: (r) => `${r.name} ${r.kind}`, sort: 1, desc: true, limit: 200, empty: 'Nothing here for this character.' })}`;
 }
 
 function sortCoverageFor(db, sortId, ctx) {
@@ -872,6 +865,66 @@ function creatureColumns() {
   ];
 }
 
+// Completion browsing: every list is "what you have done" against "what
+// exists in Classic", drilled down category by category.
+const pctOf = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const covBar = (a, b) => `<div class="cov small"><div class="bar"><div style="width:${pctOf(a, b)}%"></div></div><b>${pctOf(a, b)}%</b></div>`;
+function completionColumns(label, href, extra = []) {
+  return [
+    { label, value: (r) => r.name, html: (r) => `<a href="${href(r)}">${esc(r.name)}</a>${r.sub ? ` <span class="muted small">${esc(r.sub)}</span>` : ''}` },
+    { label: 'Done', value: (r) => pctOf(r.done, r.total), html: (r) => covBar(r.done, r.total), num: true },
+    { label: 'Count', value: (r) => r.done, html: (r) => `${r.done.toLocaleString()} / ${r.total.toLocaleString()}`, num: true },
+    ...extra,
+  ];
+}
+function completionHero(done, total, lead, sub = '') {
+  return `<div class="hero-pct"><div class="big">${pctOf(done, total)}<span>%</span></div><div><div class="lead">${lead}</div><div class="cov"><div class="bar"><div style="width:${pctOf(done, total)}%"></div></div></div>${sub ? `<div class="muted small">${sub}</div>` : ''}</div></div>`;
+}
+
+const NPC_FLAGS = { 1: 'talks', 2: 'quest giver', 4: 'vendor', 8: 'flight master', 16: 'trainer', 32: 'spirit healer', 128: 'innkeeper', 256: 'banker', 4096: 'auctioneer', 8192: 'stable master', 16384: 'repair' };
+const flagChips = (fl) => Object.entries(NPC_FLAGS).filter(([bit]) => fl & bit).map(([, name]) => `<span class="chip">${name}</span>`).join(' ');
+
+// Continent → zone → what is in it. per(zoneId) -> { done, total } or null;
+// leaf(zoneId, zone) -> the table for one zone.
+function zoneBrowser(db, params, { base, kicker, title, lead, what, per, leaf }) {
+  const continent = params.get('continent') || '';
+  const zoneId = Number(params.get('zone')) || 0;
+  const groups = ZONE_GROUPS.map((g) => ({ name: g, zones: [], done: 0, total: 0 }));
+  for (const [id, z] of Object.entries(db.zones)) {
+    if (z.kind || z.p || !z.c) continue;
+    const p = per(Number(id));
+    if (!p || !p.total) continue;
+    const g = groups.find((x) => x.name === z.c);
+    g.zones.push({ zoneId: Number(id), name: z.n, mapId: z.m, ...p });
+    g.done += p.done;
+    g.total += p.total;
+  }
+  const all = groups.filter((g) => g.zones.length);
+  for (const g of all) g.zones.sort((a, b) => b.done / Math.max(1, b.total) - a.done / Math.max(1, a.total) || a.name.localeCompare(b.name));
+  const done = all.reduce((n, g) => n + g.done, 0);
+  const total = all.reduce((n, g) => n + g.total, 0);
+  const link = (c, z) => `${base}${c ? `&continent=${enc(c)}` : ''}${z ? `&zone=${z}` : ''}`;
+  if (zoneId) {
+    const zone = all.flatMap((g) => g.zones).find((z) => z.zoneId === zoneId);
+    if (!zone) return `${crumb(link(continent), continent || 'All')}<p>Nothing here.</p>`;
+    return `${crumb(link(), 'All')} <span class="muted">›</span> ${crumb(link(continent), continent)}
+      ${pageHead(kicker, esc(zone.name), `${what} in ${esc(zone.name)}: ${zone.done} of ${zone.total} (${pctOf(zone.done, zone.total)}%).`, `<div class="row">${zone.mapId ? `<a class="btn ghost" href="#/map/${zone.mapId}">Map</a>` : ''}<a class="btn ghost" href="#/zone/${enc(zone.name)}">Zone page</a></div>`)}
+      ${covBar(zone.done, zone.total)}
+      ${leaf(zoneId, zone)}`;
+  }
+  if (continent) {
+    const g = all.find((x) => x.name === continent);
+    if (!g) return `${crumb(link(), 'All')}<p>Nothing here.</p>`;
+    return `${crumb(link(), 'All')}
+      ${pageHead(kicker, esc(continent), `${what}: ${g.done.toLocaleString()} of ${g.total.toLocaleString()} across ${g.zones.length} zones.`)}
+      ${completionHero(g.done, g.total, `${g.done.toLocaleString()} of ${g.total.toLocaleString()} ${what.toLowerCase()} in ${esc(continent)}.`)}
+      ${table(g.zones, completionColumns('Zone', (r) => link(continent, r.zoneId), [{ label: 'Map', value: () => '', html: (r) => (r.mapId ? `<a class="chip" href="#/map/${r.mapId}">map</a>` : '') }]), { search: (r) => r.name, sort: 1, desc: true, limit: 200 })}`;
+  }
+  return `${pageHead(kicker, title, lead)}
+    ${completionHero(done, total, `${done.toLocaleString()} of ${total.toLocaleString()} ${what.toLowerCase()} in Classic.`)}
+    ${table(all, completionColumns('Continent', (r) => link(r.name), [{ label: 'Zones', value: (r) => r.zones.length, num: true }]), { sort: 1, desc: true })}`;
+}
+
 const CREATURE_TYPES = ['Beast', 'Humanoid', 'Undead', 'Demon', 'Elemental', 'Dragonkin', 'Giant', 'Mechanical', 'Aberration', 'Critter', 'Totem', 'Not specified'];
 const CREATURE_BLURB = {
   Beast: 'Wolves, boars, spiders, raptors: the wild things of every zone, and what hunters tame.',
@@ -890,6 +943,26 @@ const CREATURE_BLURB = {
 
 pages.bestiary = async (_, params) => {
   const { world } = derived();
+  const db = await questDB();
+  const view = params.get('view') || (db ? 'zones' : 'kinds');
+  const views = tabsHtml([['zones', 'By zone'], ['kinds', 'By kind']], view, '#/bestiary?view=');
+  if (view === 'zones' && db) {
+    const byZone = npcsByZone(db);
+    const status = (id) => { const n = world.byNpc.get(`n${id}`); return n ? (n.kills > 0 ? 'killed' : 'seen') : 'none'; };
+    return zoneBrowser(db, params, {
+      base: '#/bestiary?view=zones', kicker: 'World', title: 'Bestiary', what: 'Creatures killed',
+      lead: `An encyclopedia of every creature in Classic, continent by continent. Each stays "not yet" until you meet it and "seen" until you kill it.${views}`,
+      per: (zoneId) => { const list = byZone.get(zoneId)?.creatures ?? []; return { done: list.filter((c) => status(c.id) === 'killed').length, total: list.length }; },
+      leaf: (zoneId) => table(byZone.get(zoneId)?.creatures ?? [], [
+        { label: 'Status', value: (c) => ({ killed: 2, seen: 1, none: 0 })[status(c.id)], html: (c) => ({ killed: '<span class="chip done">killed</span>', seen: '<span class="chip seen">seen</span>', none: '<span class="chip">not yet</span>' })[status(c.id)] },
+        { label: 'Creature', value: (c) => c.n, html: (c) => `<a href="#/npc/n${c.id}">${esc(c.n)}</a>${c.sub ? ` <span class="muted small">&lt;${esc(c.sub)}&gt;</span>` : ''}` },
+        { label: 'Level', value: (c) => c.lvl?.[0] ?? 0, html: (c) => (c.lvl ? c.lvl.join('–') : ''), num: true },
+        { label: 'Rank', value: (c) => c.rank ?? 0, html: (c) => (RANK_NAMES[c.rank] ? `<span class="chip ${c.rank === 2 || c.rank === 4 ? 'active' : ''}">${RANK_NAMES[c.rank]}</span>` : ''), num: true },
+        { label: 'Your kills', value: (c) => world.byNpc.get(`n${c.id}`)?.kills ?? 0, num: true },
+        { label: 'Seen', value: (c) => world.byNpc.get(`n${c.id}`)?.sightings ?? 0, num: true },
+      ], { search: (c) => `${c.n} ${c.sub ?? ''} ${RANK_NAMES[c.rank] ?? ''}`, sort: 0, desc: true, limit: 300, empty: 'No creatures here in the database.' }),
+    });
+  }
   const type = params.get('type') || 'all';
   const show = params.get('show') || 'all';
   const zone = params.get('zone') || '';
@@ -907,14 +980,15 @@ pages.bestiary = async (_, params) => {
   let list = ofType(type).filter(filters[show] ?? filters.all);
   if (zone) list = list.filter((n) => n.zones.includes(zone));
   const zones = [...new Set(world.creatures.flatMap((n) => n.zones))].sort();
-  const link = (t = type, sh = show, z = zone) => `#/bestiary?type=${enc(t)}&show=${sh}${z ? `&zone=${enc(z)}` : ''}`;
+  const link = (t = type, sh = show, z = zone) => `#/bestiary?view=kinds&type=${enc(t)}&show=${sh}${z ? `&zone=${enc(z)}` : ''}`;
   setTimeout(() => {
     document.getElementById('zoneSel')?.addEventListener('change', (ev) => { location.hash = link(type, show, ev.target.value); });
     document.getElementById('showSel')?.addEventListener('change', (ev) => { location.hash = link(type, ev.target.value, zone); });
   });
   const inType = ofType(type);
   const rares = world.creatures.filter(filters.rare);
-  return `${pageHead('World', 'Bestiary', 'An encyclopedia of every creature you have met, by kind. Each one stays "seen" until you kill it. Drop rates come from your own loot windows.')}
+  return `${pageHead('World', 'Bestiary', 'Every creature you have met, by kind. Each one stays "seen" until you kill it. Drop rates come from your own loot windows.')}
+    ${views}
     <div class="cards">
       ${card(world.creatures.length, 'creatures met', link('all', 'all', ''))}
       ${card(killed(world.creatures), 'killed', link('all', 'killed', ''))}
@@ -922,7 +996,7 @@ pages.bestiary = async (_, params) => {
       ${card(rares.length, `rares met, ${killed(rares)} killed`, link('all', 'rare', ''))}
       ${card(world.creatures.filter(filters.killers).length, 'have killed you', link('all', 'killers', ''))}
     </div>
-    ${tabsHtml([['all', 'All kinds', world.creatures.length], ...types.map((t) => [t, t, `${killed(ofType(t))}/${ofType(t).length}`])], type, '#/bestiary?type=')}
+    ${tabsHtml([['all', 'All kinds', world.creatures.length], ...types.map((t) => [t, t, `${killed(ofType(t))}/${ofType(t).length}`])], type, '#/bestiary?view=kinds&type=')}
     <div class="row spread" style="margin-bottom:10px">
       <span class="muted">${type === 'all' ? 'Every kind' : esc(type)}: killed <b>${killed(inType)}</b> of <b>${inType.length}</b> met (${pct(killed(inType), inType.length)}%).${CREATURE_BLURB[type] ? ` ${esc(CREATURE_BLURB[type])}` : ''}</span>
       <span class="row">
@@ -942,6 +1016,25 @@ pages.vendors = (_, params) => pages.people(_, new URLSearchParams('show=vendor'
 
 pages.people = async (_, params) => {
   const { world } = derived();
+  const db = await questDB();
+  const view = params.get('view') || (db ? 'zones' : 'met');
+  const views = tabsHtml([['zones', 'By zone'], ['met', 'Who you have met']], view, '#/people?view=');
+  if (view === 'zones' && db) {
+    const byZone = npcsByZone(db);
+    const status = (id) => { const n = world.byNpc.get(`n${id}`); return n ? (n.met ? 'met' : 'seen') : 'none'; };
+    return zoneBrowser(db, params, {
+      base: '#/people?view=zones', kicker: 'World', title: 'People', what: 'People met',
+      lead: `Everyone in Classic who gives quests, sells, trains, flies you or talks, continent by continent. Each stays "not yet" until you see them and "seen" until you deal with them.${views}`,
+      per: (zoneId) => { const list = byZone.get(zoneId)?.people ?? []; return { done: list.filter((c) => status(c.id) === 'met').length, total: list.length }; },
+      leaf: (zoneId) => table(byZone.get(zoneId)?.people ?? [], [
+        { label: 'Status', value: (c) => ({ met: 2, seen: 1, none: 0 })[status(c.id)], html: (c) => ({ met: '<span class="chip done">met</span>', seen: '<span class="chip seen">seen</span>', none: '<span class="chip">not yet</span>' })[status(c.id)] },
+        { label: 'Name', value: (c) => c.n, html: (c) => `<a href="#/npc/n${c.id}">${esc(c.n)}</a>${c.sub ? ` <span class="muted small">&lt;${esc(c.sub)}&gt;</span>` : ''}` },
+        { label: 'Does', value: (c) => c.fl ?? 0, html: (c) => `${flagChips(c.fl ?? 0)}${c.qs?.length ? ` <span class="chip">${c.qs.length} quest${c.qs.length === 1 ? '' : 's'}</span>` : ''}` },
+        { label: 'Level', value: (c) => c.lvl?.[0] ?? 0, html: (c) => (c.lvl ? c.lvl.join('–') : ''), num: true },
+        { label: 'Faction', value: (c) => c.f ?? '', html: (c) => ({ A: 'Alliance', H: 'Horde', AH: 'both' }[c.f] ?? '') },
+      ], { search: (c) => `${c.n} ${c.sub ?? ''}`, sort: 0, desc: true, limit: 300, empty: 'Nobody here in the database.' }),
+    });
+  }
   const show = params.get('show') || 'all';
   const met = params.get('met') || 'all';
   let list = show === 'all' ? world.people : world.people.filter((n) => n.roles.includes(show));
@@ -950,8 +1043,9 @@ pages.people = async (_, params) => {
   const metCount = (arr) => arr.filter((n) => n.met).length;
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const inRole = show === 'all' ? world.people : count(show);
-  setTimeout(() => document.getElementById('metSel')?.addEventListener('change', (ev) => { location.hash = `#/people?show=${show}&met=${ev.target.value}`; }));
+  setTimeout(() => document.getElementById('metSel')?.addEventListener('change', (ev) => { location.hash = `#/people?view=met&show=${show}&met=${ev.target.value}`; }));
   return `${pageHead('World', 'People', 'Everyone you have dealt with or passed by: quest givers, vendors, trainers, flight masters and the townsfolk in between. Each one stays "seen" until you take a quest, buy, train, fly or talk with them.')}
+    ${views}
     <div class="cards">
       ${card(world.people.length, 'people seen', '#/people')}
       ${card(metCount(world.people), 'met', '#/people?met=met')}
@@ -959,7 +1053,7 @@ pages.people = async (_, params) => {
       ${card(count('quest').length, 'quest givers', '#/people?show=quest')}
       ${card(count('vendor').length, 'vendors', '#/people?show=vendor')}
     </div>
-    ${tabsHtml([['all', 'Everyone', `${metCount(world.people)}/${world.people.length}`], ...[['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['other', 'Passed by']].filter(([k]) => count(k).length).map(([k, l]) => [k, l, `${metCount(count(k))}/${count(k).length}`])], show, '#/people?show=')}
+    ${tabsHtml([['all', 'Everyone', `${metCount(world.people)}/${world.people.length}`], ...[['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['other', 'Passed by']].filter(([k]) => count(k).length).map(([k, l]) => [k, l, `${metCount(count(k))}/${count(k).length}`])], show, '#/people?view=met&show=')}
     <div class="row spread" style="margin-bottom:10px"><span class="muted">${show === 'all' ? 'Everyone' : esc(ROLE_NAMES[show] ?? show)}: met <b>${metCount(inRole)}</b> of <b>${inRole.length}</b> (${pct(metCount(inRole), inRole.length)}%).</span>
       <select id="metSel">${[['all', 'Everyone'], ['met', 'Met'], ['seen', 'Only seen']].map(([k, l]) => `<option value="${k}" ${k === met ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     ${table(list, [
@@ -1075,70 +1169,88 @@ pages.items = async (_, params) => {
         { label: 'First', value: (n) => n.first?.t ?? n.spots[0]?.t ?? 0, html: (n) => (n.first ? play(n.first) : n.spots[0] ? play(n.spots[0]) : '') },
       ], { sort: 1, desc: true, empty: 'Nothing gathered yet. Herbs, ore, chests and the like appear here after you open them.' })}`;
   }
-  const everything = params.get('all') === '1';
   const itemdb = await itemTable();
-  const dbClass = (id) => { const v = itemdb?.get(id); return v ? itemClassName(v[1], v[2]) : null; };
-  const classOf = (i) => i.info?.type || dbClass(i.id)?.type || 'Unknown';
-  const subOf = (i) => i.info?.sub || dbClass(i.id)?.sub || '';
-  // Rows: what you have come across, or every item in the game when asked.
-  let rows;
-  if (everything && itemdb) {
-    rows = [...itemdb.entries()].map(([id, v]) => {
-      const seen = world.byItem.get(id);
-      const { type, sub } = itemClassName(v[1], v[2]);
-      return { id, name: seen?.name ?? v[0], type, sub, ilvl: seen?.info?.ilvl ?? v[3], req: seen?.info?.req ?? v[4], quality: seen?.quality ?? null, obtained: Boolean(seen?.obtained), seen: Boolean(seen), looted: seen?.looted ?? 0, sources: seen ? seen.droppedBy.length + seen.soldBy.length + seen.rewardFrom.length : 0, sell: seen?.info?.sell ?? 0, tip: seen?.info?.tip ?? [] };
-    });
-  } else {
-    rows = world.items.map((i) => ({ id: i.id, name: i.name, type: classOf(i), sub: subOf(i), ilvl: i.info?.ilvl ?? 0, req: i.info?.req ?? 0, quality: i.quality, obtained: i.obtained, seen: true, looted: i.looted, sources: i.droppedBy.length + i.soldBy.length + i.rewardFrom.length, sell: i.info?.sell ?? 0, tip: i.info?.tip ?? [] }));
+  const obtained = new Set(world.items.filter((i) => i.obtained).map((i) => i.id));
+  if (!itemdb) {
+    return `${pageHead('World', 'Items', 'Every item you have come across. The item database is not available, so this is what you have seen rather than all of Classic.')}
+      ${table(world.items, [
+        { label: 'Status', value: (i) => (i.obtained ? 1 : 0), html: (i) => (i.obtained ? '<span class="chip done">obtained</span>' : '<span class="chip seen">seen</span>') },
+        { label: 'Item', value: (i) => i.name, html: (i) => itemLink(i.id, i.name, i.quality) },
+        { label: 'Type', value: (i) => [i.info?.type, i.info?.sub].filter(Boolean).join(' · ') },
+        { label: 'Looted', value: (i) => i.looted, num: true },
+      ], { search: (i) => `${i.name} ${i.info?.type}`, sort: 0, desc: true })}`;
   }
-  const order = (t) => (ITEM_CLASS_ORDER.indexOf(t) + 1 || 99);
-  const classes = [...new Set(rows.map((r) => r.type))].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
-  const ofClass = (t) => (t === 'all' ? rows : rows.filter((r) => r.type === t));
-  const got = (arr) => arr.filter((r) => r.obtained).length;
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  // Every item in Classic by class and subclass, indexed once.
+  if (!state.itemIndex) {
+    const classes = new Map();
+    for (const [id, v] of itemdb) {
+      const { type, sub } = itemClassName(v[1], v[2]);
+      const c = classes.get(type) || { name: type, subs: new Map(), ids: [] };
+      c.ids.push(id);
+      const sName = sub || 'General';
+      const sc = c.subs.get(sName) || { name: sName, ids: [] };
+      sc.ids.push(id);
+      c.subs.set(sName, sc);
+      classes.set(type, c);
+    }
+    state.itemIndex = classes;
+  }
+  const classes = state.itemIndex;
+  const order = (t) => (ITEM_CLASS_ORDER.indexOf(t) + 1 || 90);
+  const cls = params.get('cls') || '';
+  const sub = params.get('sub') || '';
   const status = params.get('status') || 'all';
-  let list = ofClass(show);
-  if (status === 'obtained') list = list.filter((r) => r.obtained); else if (status === 'seen') list = list.filter((r) => r.seen && !r.obtained); else if (status === 'missing') list = list.filter((r) => !r.obtained);
-  const total = itemdb ? itemdb.size : world.items.length;
-  const obtainedAll = world.items.filter((i) => i.obtained).length;
-  const link = (t = show, all = everything, st = status) => `#/items?show=${enc(t)}${all ? '&all=1' : ''}${st !== 'all' ? `&status=${st}` : ''}`;
-  setTimeout(() => {
-    document.getElementById('statusSel')?.addEventListener('change', (ev) => { location.hash = link(show, everything, ev.target.value); });
-    document.getElementById('allItems')?.addEventListener('change', (ev) => { location.hash = link(show, ev.target.checked, status); });
-  });
-  return `${pageHead('World', 'Items', 'A completion journal of every item: the ones you have obtained (looted, handed over, made, worn or carried), the ones you have only seen, and, from the item database, every item in Classic you have yet to find.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
+  const got = (ids) => ids.reduce((n, id) => n + (obtained.has(id) ? 1 : 0), 0);
+  const link = (c, sb) => `#/items${c ? `?cls=${enc(c)}` : ''}${sb ? `&sub=${enc(sb)}` : ''}`;
+  if (cls && sub) {
+    const ids = classes.get(cls)?.subs.get(sub)?.ids ?? [];
+    let rows = ids.map((id) => { const v = itemdb.get(id); const seen = world.byItem.get(id); return { id, name: seen?.name ?? v[0], ilvl: seen?.info?.ilvl ?? v[3], req: seen?.info?.req ?? v[4], quality: seen?.quality ?? null, obtained: obtained.has(id), seen: Boolean(seen), looted: seen?.looted ?? 0, sources: seen ? seen.droppedBy.length + seen.soldBy.length + seen.rewardFrom.length : 0, tip: seen?.info?.tip ?? [] }; });
+    if (status === 'obtained') rows = rows.filter((r) => r.obtained); else if (status === 'seen') rows = rows.filter((r) => r.seen && !r.obtained); else if (status === 'missing') rows = rows.filter((r) => !r.obtained);
+    setTimeout(() => document.getElementById('statusSel')?.addEventListener('change', (ev) => { location.hash = `${link(cls, sub)}&status=${ev.target.value}`; }));
+    return `${crumb('#/items', 'All items')} <span class="muted">›</span> ${crumb(link(cls), cls)}
+      ${pageHead('World', `${esc(sub === 'General' ? cls : sub)}`, `${esc(cls)}${sub !== 'General' ? ` › ${esc(sub)}` : ''}: obtained ${got(ids)} of ${ids.length} (${pctOf(got(ids), ids.length)}%).`, `<div class="row"><select id="statusSel">${[['all', 'Everything'], ['obtained', 'Obtained'], ['seen', 'Seen, not yet yours'], ['missing', 'Not yet obtained']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}
+      ${covBar(got(ids), ids.length)}
+      ${table(rows, [
+        { label: 'Status', value: (r) => (r.obtained ? 2 : r.seen ? 1 : 0), html: (r) => (r.obtained ? '<span class="chip done">obtained</span>' : r.seen ? '<span class="chip seen">seen</span>' : '<span class="chip">not yet</span>') },
+        { label: 'Item', value: (r) => r.name, html: (r) => (r.seen ? itemLink(r.id, r.name, r.quality) : `<a href="#/item/${r.id}">${esc(r.name)}</a>`) },
+        { label: 'Quality', value: (r) => r.quality ?? -1, html: (r) => esc(qualityName(r.quality) ?? ''), num: true },
+        { label: 'iLvl', value: (r) => r.ilvl || 0, html: (r) => r.ilvl || '', num: true },
+        { label: 'Req', value: (r) => r.req || 0, html: (r) => r.req || '', num: true },
+        { label: 'Looted', value: (r) => r.looted, num: true },
+        { label: 'Sources', value: (r) => r.sources, num: true },
+      ], { search: (r) => `${r.name} ${(r.tip || []).join(' ')}`, sort: 0, desc: true, limit: 300, empty: 'Nothing of this kind.' })}`;
+  }
+  if (cls) {
+    const c = classes.get(cls);
+    if (!c) return `${crumb('#/items', 'All items')}<p>No such kind of item.</p>`;
+    const rows = [...c.subs.values()].map((sc) => ({ name: sc.name, done: got(sc.ids), total: sc.ids.length })).sort((a, b) => b.total - a.total);
+    return `${crumb('#/items', 'All items')}
+      ${pageHead('World', esc(cls), `Obtained ${got(c.ids).toLocaleString()} of ${c.ids.length.toLocaleString()} ${esc(cls.toLowerCase())} items in Classic.`)}
+      ${completionHero(got(c.ids), c.ids.length, `${got(c.ids).toLocaleString()} of ${c.ids.length.toLocaleString()} ${esc(cls.toLowerCase())} items.`)}
+      ${table(rows, completionColumns('Type', (r) => link(cls, r.name)), { sort: 1, desc: true })}`;
+  }
+  const rows = [...classes.values()].map((c) => ({ name: c.name, done: got(c.ids), total: c.ids.length, types: c.subs.size })).sort((a, b) => order(a.name) - order(b.name));
+  return `${pageHead('World', 'Items', 'A completion journal of every item in Classic, by kind. Obtained means it was yours at some point: looted, handed over, made, worn or carried. Seeing one in a shop or on a corpse does not count.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
     ${state.schema2 ? '' : schemaNotice()}
-    <div class="cards">
-      ${card(obtainedAll, 'items obtained', link('all', false, 'obtained'))}
-      ${card(pct(obtainedAll, total), itemdb ? `% of ${total.toLocaleString()} items in Classic` : '% of items seen', link('all', true, 'missing'))}
-      ${card(world.items.length - obtainedAll, 'seen, not yet yours', link('all', false, 'seen'))}
-      ${card(world.items.length, 'items catalogued', link('all', false, 'all'))}
-    </div>
-    ${tabsHtml([['all', 'All', `${got(rows)}/${rows.length}`], ...classes.map((t) => [t, t, `${got(ofClass(t))}/${ofClass(t).length}`])], show, `#/items?${everything ? 'all=1&' : ''}${status !== 'all' ? `status=${status}&` : ''}show=`)}
-    <div class="row spread" style="margin-bottom:10px">
-      <span class="muted">${show === 'all' ? 'Everything' : esc(show)}: obtained <b>${got(ofClass(show))}</b> of <b>${ofClass(show).length}</b> (${pct(got(ofClass(show)), ofClass(show).length)}%)${everything ? ' in the game' : ' you have come across'}.</span>
-      <span class="row">
-        <select id="statusSel">${[['all', 'Everything'], ['obtained', 'Obtained'], ['seen', 'Seen, not yet yours'], ['missing', 'Not yet obtained']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        ${itemdb ? `<label class="check" style="margin:0"><input type="checkbox" id="allItems" ${everything ? 'checked' : ''}><span>Every item in Classic</span></label>` : ''}
-      </span>
-    </div>
-    ${table(list, [
-      { label: 'Status', value: (r) => (r.obtained ? 2 : r.seen ? 1 : 0), html: (r) => (r.obtained ? '<span class="chip done">obtained</span>' : r.seen ? '<span class="chip seen">seen</span>' : '<span class="chip">not yet</span>') },
-      { label: 'Item', value: (r) => r.name, html: (r) => (r.seen ? itemLink(r.id, r.name, r.quality) : `<a href="#/item/${r.id}">${esc(r.name)}</a>`) },
-      { label: 'Type', value: (r) => [r.type, r.sub].filter(Boolean).join(' · ') },
-      { label: 'Quality', value: (r) => r.quality ?? -1, html: (r) => esc(qualityName(r.quality) ?? ''), num: true },
-      { label: 'iLvl', value: (r) => r.ilvl || 0, html: (r) => r.ilvl || '', num: true },
-      { label: 'Req', value: (r) => r.req || 0, html: (r) => r.req || '', num: true },
-      { label: 'Sells for', value: (r) => r.sell || 0, html: (r) => (r.sell ? money(r.sell) : ''), num: true },
-      { label: 'Looted', value: (r) => r.looted, num: true },
-      { label: 'Sources', value: (r) => r.sources, num: true },
-    ], { search: (r) => `${r.name} ${r.type} ${r.sub} ${(r.tip || []).join(' ')}`, sort: 0, desc: true, limit: 300, empty: everything ? 'No items of this kind in the database.' : 'No items yet.' })}`;
+    ${completionHero(obtained.size, itemdb.size, `${obtained.size.toLocaleString()} of ${itemdb.size.toLocaleString()} items in Classic obtained.`, `${world.items.length.toLocaleString()} items seen so far`)}
+    ${table(rows, completionColumns('Kind', (r) => link(r.name), [{ label: 'Types', value: (r) => r.types, num: true }]), { sort: 1, desc: true, limit: 50 })}`;
 };
+
+// An item you have not come across yet, from the item database.
+async function dbItemPage(id) {
+  const itemdb = await itemTable();
+  const v = itemdb?.get(Number(id));
+  if (!v) return '<p>Item not found.</p>';
+  const { type, sub } = itemClassName(v[1], v[2]);
+  return `${crumb(`#/items?cls=${enc(type)}&sub=${enc(sub || 'General')}`, `${type}${sub ? ` › ${sub}` : ''}`)}
+    ${pageHead('Item', esc(v[0]), 'You have not come across this one yet. From the item database:', `<div class="row"><span class="chip">not yet</span>${wowhead('item', Number(id))}</div>`)}
+    ${facts([esc(type), sub ? esc(sub) : '', v[3] ? `item level ${v[3]}` : '', v[4] ? `requires level ${v[4]}` : '', `ID ${Number(id)}`])}`;
+}
 
 pages.item = async (id) => {
   const { world, codex } = derived();
   const it = world.byItem.get(Number(id));
-  if (!it) return '<p>Item not found.</p>';
+  if (!it) return dbItemPage(id);
   const info = it.info || {};
   const stats = info.stats && !Array.isArray(info.stats) ? Object.entries(info.stats) : [];
   const facts = [
@@ -1398,27 +1510,46 @@ pages.highlights = async (_, params) => {
 
 // Locations: maps with everything pinned -------------------------------------
 
-pages.locations = async () => {
+pages.locations = async (_, params) => {
   const { maps, codex } = derived();
-  const zoneOf = (m) => codex.zones.find((z) => z.name === m.zone);
+  const db = await questDB();
   const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-  const discoveredAll = codex.zones.reduce((n, z) => n + (z.discovered?.length || 0), 0);
-  const knownAll = codex.zones.reduce((n, z) => n + known(z).size, 0);
-  return `${pageHead('World', 'Locations', 'Every map you have set foot on, with everything pinned where it happened. Discovery counts the areas the game announced ("Discovered: …") against every area Chronicler knows of in that zone, so it grows as you explore.')}
-    ${state.schema2 ? '' : schemaNotice()}
-    <div class="cards">${card(maps.length, 'maps explored', '#/locations')}${card(discoveredAll, 'areas discovered', '#/locations')}${card(pct(discoveredAll, knownAll), '% of known areas', '#/locations')}</div>
+  const discovery = (name) => { const z = codex.zones.find((x) => x.name === name); return z ? { discovered: z.discovered?.length || 0, known: known(z).size } : null; };
+  const yourMaps = () => `<h2>Maps you have explored</h2>
     ${table(maps, [
       { label: 'Map', value: (m) => m.zone ?? `Map ${m.id}`, html: (m) => `<a href="#/map/${m.id}">${esc(m.zone ?? `Map ${m.id}`)}</a> <span class="muted small">${m.id}</span>` },
-      { label: 'Discovered', value: (m) => { const z = zoneOf(m); return z ? pct(z.discovered?.length || 0, known(z).size) : 0; }, html: (m) => { const z = zoneOf(m); if (!z) return ''; const k = known(z).size; const d = z.discovered?.length || 0; return `<div class="cov small"><div class="bar"><div style="width:${pct(d, k)}%"></div></div><b>${d}/${k}</b></div>`; }, num: true },
+      { label: 'Discovered', value: (m) => { const d = discovery(m.zone); return d ? pctOf(d.discovered, d.known) : 0; }, html: (m) => { const d = discovery(m.zone); return d ? covBar(d.discovered, d.known) : ''; }, num: true },
       { label: 'Areas', value: (m) => m.subzones.join(', ') },
       { label: 'Pins', value: (m) => m.markers.length, num: true },
       { label: 'Quests', value: (m) => m.counts.quest ?? 0, num: true },
       { label: 'Creatures', value: (m) => m.counts.creature ?? 0, num: true },
-      { label: 'People', value: (m) => (m.counts.person ?? 0) + (m.counts.vendor ?? 0), num: true },
       { label: 'First visit', value: (m) => m.first?.t ?? 0, html: (m) => (m.first ? play(m.first) : '') },
-    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 3, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}
-    ${await otherMaps(maps)}`;
+    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 3, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}`;
+  if (!db) return `${pageHead('World', 'Locations', 'Every map you have set foot on.')}${yourMaps()}`;
+  const cov = coverageWho();
+  const tree = completionTree(db, cov.ctx, discovery);
+  const continent = params.get('continent') || '';
+  const zoneCols = completionColumns('Zone', (r) => `#/zone/${enc(r.name)}`, [
+    { label: 'Ready now', value: (r) => r.counts.ready ?? 0, html: (r) => (r.counts.ready ? `<span class="chip st-ready">${r.counts.ready}</span>` : ''), num: true },
+    { label: 'Discovered', value: (r) => pctOf(r.discovered, r.known), html: (r) => (r.known ? covBar(r.discovered, r.known) : '<span class="muted small">not visited</span>'), num: true },
+    { label: 'Map', value: () => '', html: (r) => (r.mapId ? `<a class="chip" href="#/map/${r.mapId}?show=unfound,rares">map</a>` : '') },
+  ]);
+  if (continent) {
+    const g = tree.groups.find((x) => x.name === continent);
+    if (!g) return `${crumb('#/locations', 'All')}<p>Nothing here.</p>`;
+    return `${crumb('#/locations', 'All')}
+      ${pageHead('World', esc(continent), `${g.zones.length} zones. Quests done by ${cov.char ? esc(cov.char.name) : 'everyone'}: ${g.done.toLocaleString()} of ${g.total.toLocaleString()}.`, `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+      ${completionHero(g.done, g.total, `${g.done.toLocaleString()} of ${g.total.toLocaleString()} quests done in ${esc(continent)}.`, g.known ? `${g.discovered} of ${g.known} known areas discovered` : '')}
+      ${table(g.zones, zoneCols, { search: (r) => r.name, sort: 1, desc: true, limit: 200 })}`;
+  }
+  return `${pageHead('World', 'Locations', 'Every place in Classic, continent by continent, with how much of its quests you have done and how much of it you have discovered. Click a continent for its zones, a zone for everything in it.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${completionHero(tree.done, tree.total, `${tree.done.toLocaleString()} of ${tree.total.toLocaleString()} quests done across Classic.`, `${tree.groups.reduce((n, g) => n + g.zones.length, 0)} zones · class, profession and event quests are counted on the <a href="#/quests">Quests</a> page`)}
+    ${table(tree.groups, completionColumns('Continent', (r) => `#/locations?continent=${enc(r.name)}`, [
+      { label: 'Zones', value: (r) => r.zones.length, num: true },
+      { label: 'Ready now', value: (r) => r.ready, num: true },
+      { label: 'Discovered', value: (r) => pctOf(r.discovered, r.known), html: (r) => (r.known ? covBar(r.discovered, r.known) : ''), num: true },
+    ]), { sort: 1, desc: true })}
+    ${yourMaps()}`;
 };
 
 // Zone maps you have not been on, with the database's pins.
@@ -2765,15 +2896,25 @@ function renderLogin(message = '') {
     ${message ? `<div class="notice">${message}</div>` : ''}
     <form id="login">
       <label><span>Email</span><input type="email" name="email" required autocomplete="username" style="width:100%"></label>
-      <label><span>Password</span><input type="password" name="password" required minlength="6" autocomplete="current-password" style="width:100%"></label>
+      <label><span>Password</span><input type="password" name="password" minlength="6" autocomplete="current-password" style="width:100%"></label>
       <div class="row"><button class="primary" type="submit" name="mode" value="in">Log in</button><button type="submit" name="mode" value="up">Create account</button></div>
+      <p class="muted small" style="margin:14px 0 6px">Or skip the password:</p>
+      <div class="row"><button type="submit" name="mode" value="magic" formnovalidate>Email me a sign-in link</button></div>
     </form></div></div>`;
   document.getElementById('login').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
-    const creds = { email: f.get('email'), password: f.get('password') };
+    const creds = { email: String(f.get('email') || '').trim(), password: f.get('password') };
     const auth = state.client.auth;
-    const { data, error } = ev.submitter?.value === 'up'
+    const mode = ev.submitter?.value;
+    if (mode === 'magic') {
+      if (!creds.email) return renderLogin('Enter your email first.');
+      const { error: err } = await auth.signInWithOtp({ email: creds.email, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (err) return renderLogin(esc(err.message));
+      return renderLogin(`A sign-in link is on its way to <b>${esc(creds.email)}</b> (from Supabase Auth; check spam too). Open it on this computer and you are in. It works once and expires after an hour.`);
+    }
+    if (!creds.password) return renderLogin('Enter your password, or ask for a sign-in link.');
+    const { data, error } = mode === 'up'
       ? await auth.signUp({ ...creds, options: { emailRedirectTo: location.origin + location.pathname } })
       : await auth.signInWithPassword(creds);
     if (error) return renderLogin(esc(error.message));
@@ -2906,6 +3047,8 @@ async function boot() {
   try {
     state.client = await makeClient(cfg);
     const { data } = await state.client.auth.getSession();
+    // Back from a sign-in link: its tokens sit in the address; tidy them away.
+    if (/^#(access_token|error)=/.test(location.hash)) history.replaceState(null, '', `${location.pathname}#/`);
     if (!data.session) return renderLogin();
     await startApp(data.session.user);
   } catch (err) {

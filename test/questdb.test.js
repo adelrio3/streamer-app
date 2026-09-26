@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { readAddonLog } from '../web/lib/sessions.js';
 import { buildCodex } from '../web/lib/codex.js';
 import { indexDB, fits, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, objectives, searchEntries } from '../web/lib/questdb.js';
+import * as dbExtras from '../web/lib/questdb.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const json = (name) => JSON.parse(fs.readFileSync(path.join(here, '..', 'web', 'data', 'classic', name), 'utf8'));
@@ -84,4 +85,30 @@ test('zone coverage, unfound quest givers and rares', () => {
   const durotar = zones.find((z) => z.zoneId === 14);
   assert.ok(durotar.total <= 2, 'next to nothing a human can do in Durotar');
   assert.ok(durotar.counts.other > 30);
+});
+
+test('completion browsing: continents, zones and everyone in them', () => {
+  const { completionTree, npcsByZone, ZONE_GROUPS } = dbExtras;
+  assert.equal(db.zones[12].c, 'Eastern Kingdoms');
+  assert.equal(db.zones[14].c, 'Kalimdor');
+  assert.equal(db.zones[1581].c, 'Dungeons');
+  assert.equal(db.zones[2717].c, 'Raids');
+  assert.equal(db.zones[2597].c, 'Battlegrounds');
+  const { done, active } = progressSets(codex.quests);
+  const tree = completionTree(db, { who: human, level: 1, done, active }, (name) => (name === 'Elwynn Forest' ? { discovered: 2, known: 5 } : null));
+  assert.deepEqual(tree.groups.map((g) => g.name), ZONE_GROUPS.filter((g) => tree.groups.some((x) => x.name === g)));
+  const ek = tree.groups.find((g) => g.name === 'Eastern Kingdoms');
+  const elwynn = ek.zones.find((z) => z.name === 'Elwynn Forest');
+  assert.equal(elwynn.done, 1);
+  assert.deepEqual([elwynn.discovered, elwynn.known], [2, 5]);
+  assert.ok(ek.total > 500 && ek.zones.length > 15);
+  assert.equal(tree.done, 1);
+  assert.ok(tree.sorts.some((s) => s.name === 'Paladin' && s.kind === 'class'));
+  assert.ok(!tree.sorts.some((s) => s.name === 'Warlock'), 'a human paladin cannot do warlock quests, so they are not counted');
+  const byZone = npcsByZone(db);
+  const elw = byZone.get(12);
+  assert.ok(elw.creatures.some((c) => c.n === 'Hogger') && elw.creatures.some((c) => c.n === 'Kobold Vermin'));
+  assert.ok(elw.people.some((c) => c.n === 'Marshal McBride'), 'quest givers are people');
+  assert.ok(!elw.creatures.some((c) => c.n === 'Marshal McBride'));
+  assert.ok(byZone.get(14).creatures.length > 30, 'Durotar has creatures');
 });

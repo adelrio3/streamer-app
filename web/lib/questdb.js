@@ -275,9 +275,58 @@ export const ITEM_CLASSES = {
   13: ['Key', { 0: 'Key', 1: 'Lockpick' }],
   15: ['Miscellaneous', { 0: 'Junk', 1: 'Reagent', 2: 'Pet', 3: 'Holiday', 4: 'Other', 5: 'Mount' }],
 };
-export const ITEM_CLASS_ORDER = ['Weapon', 'Armor', 'Consumable', 'Trade Goods', 'Recipe', 'Quest', 'Container', 'Reagent', 'Projectile', 'Quiver', 'Key', 'Gem', 'Miscellaneous', 'Money', 'Unknown'];
+export const ITEM_CLASS_ORDER = ['Weapon', 'Armor', 'Consumable', 'Trade Goods', 'Recipe', 'Container', 'Reagent', 'Projectile', 'Quiver', 'Key', 'Gem', 'Miscellaneous', 'Money', 'Unknown', 'Quest'];
 export function itemClassName(cls, sub) {
   const c = ITEM_CLASSES[cls];
   if (!c) return { type: 'Unknown', sub: null };
   return { type: c[0], sub: c[1][sub] ?? null };
+}
+
+// Completion browsing: continents and kinds of place, in the order they are shown.
+export const ZONE_GROUPS = ['Eastern Kingdoms', 'Kalimdor', 'Dungeons', 'Raids', 'Battlegrounds'];
+
+// Every zone with quests, grouped by continent, each with its quest coverage
+// for the character. discovery(name) -> { discovered, known } or null.
+export function completionTree(db, ctx = {}, discovery = () => null) {
+  const zones = allZones(db, ctx).filter((z) => z.total || z.counts.done || z.counts.other);
+  const groups = new Map(ZONE_GROUPS.map((g) => [g, { name: g, zones: [], done: 0, total: 0, ready: 0, active: 0, discovered: 0, known: 0 }]));
+  for (const z of zones) {
+    const g = db.zones[z.zoneId]?.c;
+    if (!g || !groups.has(g)) continue;
+    const disc = discovery(z.name);
+    const row = { ...z, discovered: disc?.discovered ?? 0, known: disc?.known ?? 0 };
+    const grp = groups.get(g);
+    grp.zones.push(row);
+    grp.done += z.done; grp.total += z.total; grp.ready += z.counts.ready ?? 0; grp.active += z.counts.active ?? 0;
+    grp.discovered += row.discovered; grp.known += row.known;
+  }
+  const sorts = [...db.questsBySort.keys()].map((id) => {
+    const rows = (db.questsBySort.get(id) || []).filter((q) => !q.hidden).map((q) => ({ q, state: questState(q, ctx) }));
+    const counts = {};
+    for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
+    const countable = rows.filter((r) => !r.q.rep && r.state !== 'other' && r.state !== 'excluded');
+    return { id, name: db.zoneName(id), kind: db.zones[id]?.kind ?? 'category', counts, total: countable.length, done: countable.filter((r) => r.state === 'done').length };
+  }).filter((s) => s.total || s.counts.done).sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+  const all = [...groups.values()].filter((g) => g.zones.length);
+  return { groups: all, sorts, done: all.reduce((n, g) => n + g.done, 0), total: all.reduce((n, g) => n + g.total, 0) };
+}
+
+// Everyone in the database by zone: creatures you fight and people you deal
+// with (anyone with a flag, a quest or a faction to be friendly to). Cached.
+export function npcsByZone(db) {
+  if (db._byZone) return db._byZone;
+  const out = new Map();
+  for (const [id, n] of Object.entries(db.npcs)) {
+    if (!n.z) continue;
+    const zone = db.zones[n.z]?.p ?? n.z;
+    if (!out.has(zone)) out.set(zone, { creatures: [], people: [] });
+    const entry = { id: Number(id), ...n };
+    (n.fl || n.qs || n.qe || n.f ? out.get(zone).people : out.get(zone).creatures).push(entry);
+  }
+  for (const v of out.values()) {
+    v.creatures.sort((a, b) => (a.lvl?.[0] ?? 0) - (b.lvl?.[0] ?? 0) || String(a.n).localeCompare(String(b.n)));
+    v.people.sort((a, b) => String(a.n).localeCompare(String(b.n)));
+  }
+  db._byZone = out;
+  return out;
 }
