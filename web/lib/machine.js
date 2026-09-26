@@ -10,7 +10,7 @@
 import { measureClock } from './cloud.js';
 import { readAddonLog, mergeSession } from './sessions.js';
 import { clockModel, startFromName, baseName, eventMs } from './timeline.js';
-import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken } from './live.js';
+import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken, PAD_PREFIX } from './live.js';
 import { VoiceNotes } from './voice.js';
 import { ObsLink } from './obs.js';
 import * as folders from './folders.js';
@@ -238,7 +238,7 @@ export class Machine {
   }
 
   // Live link ---------------------------------------------------------------
-  // The addon whispers what happens to the character itself; the game writes
+  // The addon writes what happens into the chat log as hidden system lines; the game writes
   // the chat log as it goes; this reads the new lines every second and keeps
   // the overlay's totals in the cloud.
 
@@ -305,7 +305,7 @@ export class Machine {
       const { events, linkSeenAt, lastPayload } = eventsFromChatLog(cut >= 0 ? chunk.slice(0, cut + 1) : '', { linkSeenAt: live.linkSeenAt, lastPayload: live.lastPayload });
       live.linkSeenAt = linkSeenAt;
       live.lastPayload = lastPayload;
-      const lines = (cut >= 0 ? chunk.slice(0, cut) : '').split('\n').filter(Boolean);
+      const lines = (cut >= 0 ? chunk.slice(0, cut) : '').split('\n').filter((l) => l && !l.includes(PAD_PREFIX + '~'));
       live.lines += lines.length;
       live.decoded += events.filter((e) => !e.fromGame).length;
       if (lines.length) live.lastLine = lines.at(-1).slice(0, 160);

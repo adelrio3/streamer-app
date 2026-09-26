@@ -1,28 +1,40 @@
 -- Live link. WoW only writes the addon's log to disk at logout or /reload,
 -- so nothing here reaches the web app while you play. The one file the game
 -- does write as it happens is the chat log (Logs\WoWChatLog.txt). This
--- module whispers what happens (loot, quest progress, kills, deaths, levels)
--- to your own character, in a compact form, so the chat log carries it out
--- of the game for the stream overlay. Whispers are the one kind of chat an
--- addon may send on its own: say, yell and channels need a key press or a
--- click behind them, or the game answers "Interface action failed because
--- of an AddOn" and drops the message. The whispers are filtered out of
--- every chat window, so nothing shows on stream.
+-- module writes what happens (loot, quest progress, kills, deaths, levels)
+-- into it, in a compact form, as local system messages: SendSystemMessage
+-- shows a line in chat without the server being involved, and the chat log
+-- records it like any other line. The lines are filtered out of every chat
+-- window, so nothing shows on stream.
+--
+-- The game keeps the chat log in a buffer of about 64 KB and writes it to
+-- disk only when the buffer fills (or at logout; turning logging off does
+-- not close the file). Whispers and channels don't help either: channels
+-- are blocked for addons without a key press, and whispers sit in the same
+-- buffer. So after each message the addon pushes a little over 64 KB of
+-- hidden filler lines through, spread over a few ticks, and the file grows
+-- within a couple of seconds.
 
 local ADDON_NAME, ns = ...
 
 local PREFIX = "CHRON1"
 local SEP, EVSEP = "~", "~~"
-local MAX = 240 -- a chat message holds 255 bytes
-local MIN_GAP = 0.6 -- seconds between messages (the server throttles chat)
+local MAX = 240 -- one message
+local MIN_GAP = 0.6 -- seconds between messages
 local HEARTBEAT = 60
 
+local PAD_PREFIX = "CHRONPAD"
+local PAD_LINE = PAD_PREFIX .. SEP .. string.rep("=", 990) -- about 1 KB each in the file
+local PAD_DEFAULT_KB = 80 -- a little over the game's buffer
+local PAD_PER_TICK = 20 -- lines per half second; 80 KB takes about 2 seconds
+local FLUSH_AFTER = 1.0 -- seconds of quiet after the last message before the filler goes
+
 local queue = {}
-local target = nil -- your own character, as a whisper target
 local sent = 0
 local lastSend = 0
 local lastBeat = 0
-local unflushed = false -- something was sent since the log was last flushed
+local padLeft = 0 -- filler lines still to send
+local padded = 0 -- filler lines sent, for the status line
 
 local function settings()
 	ChroniclerDB = ChroniclerDB or {}
@@ -32,6 +44,12 @@ end
 
 local function enabled()
 	return settings().live ~= false
+end
+
+local function padKB()
+	local kb = tonumber(settings().livePadKB)
+	if kb == nil then return PAD_DEFAULT_KB end
+	return math.max(0, kb)
 end
 
 local function clean(v)
@@ -50,38 +68,28 @@ local function push(kind, ...)
 	if #queue > 300 then table.remove(queue, 1) end
 end
 
--- Whispers go to yourself. Name-Realm works on every server.
-local function whisperTarget()
-	if target then return target end
-	local name = UnitName("player")
-	if not name or name == "" then return nil end
-	local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName():gsub("%s", "")) or ""
-	target = realm ~= "" and (name .. "-" .. realm) or name
-	return target
-end
-
 -- Is this chat line one of ours? Used to hide it and to keep it out of the
 -- social log.
-local PAD_PREFIX = "CHRONPAD"
-local padLine = PAD_PREFIX .. SEP .. string.rep("=", 230)
-
 local function isLiveLine(text)
-	return type(text) == "string" and text:find(PREFIX .. SEP, 1, true) == 1
+	return type(text) == "string" and (text:find(PREFIX .. SEP, 1, true) == 1 or text:find(PAD_PREFIX .. SEP, 1, true) == 1)
 end
 ns.isLiveLine = isLiveLine
 
--- Hides the addon's whispers from every chat window (both the "To you:"
--- copy and the "you whisper:" copy). The chat log on disk still gets them.
+-- Hides the addon's lines from every chat window. The chat log on disk
+-- still gets them.
 local function filter(_, event, text)
-	if type(text) == "string" and text:find(PAD_PREFIX .. SEP, 1, true) == 1 then return true end
+	if type(text) ~= "string" then return false end
+	if text:find(PAD_PREFIX .. SEP, 1, true) == 1 then return true end
 	if settings().liveShow then return false end -- /chron live show, for checking
-	return isLiveLine(text)
+	return text:find(PREFIX .. SEP, 1, true) == 1
+end
+
+local function emit(text)
+	if SendSystemMessage then SendSystemMessage(text) end
 end
 
 local function flush()
-	if #queue == 0 or not enabled() or reopening then return end
-	local to = whisperTarget()
-	if not to then return end
+	if #queue == 0 or not enabled() then return end
 	local now = GetTime()
 	if now - lastSend < MIN_GAP then return end
 	local msg, n = "", 0
@@ -94,48 +102,19 @@ local function flush()
 		table.remove(queue, 1)
 	end
 	if n == 0 then return end
-	if SendChatMessage then SendChatMessage(PREFIX .. SEP .. msg, "WHISPER", nil, to) end
+	emit(PREFIX .. SEP .. msg)
 	sent = sent + 1
 	lastSend = now
-	unflushed = true
+	padLeft = math.max(padLeft, padKB()) -- the filler follows once things go quiet
 end
 
--- The game keeps the chat log in a buffer and writes it to disk only when
--- the buffer fills (or at logout), so a few short lines would sit there for
--- a long time. Turning logging off and on again closes and reopens the
--- file, which writes the buffer out. The API itself prints nothing (the
--- "Chat logging enabled" lines come from the /chatlog command's Lua code).
--- Off and on in the same frame may be folded into nothing, so the reopen
--- comes a moment later; nothing of ours is sent in between.
-local FLUSH_AFTER = 1.5 -- seconds after the last send
-local reopening = false
-local function reopenLog()
-	reopening = false
-	if LoggingChat and enabled() then LoggingChat(true) end
-end
--- Turning logging off does not close the file either (tried), so the
--- other way is to fill the game's write buffer: local system messages
--- (SendSystemMessage never reaches the server) that the log records like
--- any other line. How many it takes is /chron live pad N; the app on the
--- gaming PC shows when the file grows.
-local function pad(n)
-	if not SendSystemMessage then return 0 end
-	for _ = 1, n do SendSystemMessage(padLine) end
-	return n
-end
-local function flushLog()
-	if not unflushed or reopening then return end
+local function padTick()
+	if padLeft <= 0 then return end
 	if GetTime() - lastSend < FLUSH_AFTER then return end
-	unflushed = false
-	pad(tonumber(settings().livePad) or 0)
-	if not LoggingChat then return end
-	LoggingChat(false)
-	if C_Timer and C_Timer.After then
-		reopening = true
-		C_Timer.After(0.5, reopenLog)
-	else
-		LoggingChat(true)
-	end
+	local n = math.min(padLeft, PAD_PER_TICK)
+	for _ = 1, n do emit(PAD_LINE) end
+	padLeft = padLeft - n
+	padded = padded + n
 end
 
 local function heartbeat()
@@ -177,24 +156,21 @@ end
 local function tick()
 	if not enabled() then return end
 	flush()
-	flushLog()
+	padTick()
 	if GetTime() - lastBeat > HEARTBEAT then heartbeat() end
 end
 
 ns.on("PLAYER_LOGIN", function()
 	if not enabled() then return end
 	if LoggingChat then LoggingChat(true) end
-	if ChatFrame_AddMessageEventFilter then
-		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", filter)
-		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", filter)
-		ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filter)
-	end
+	if ChatFrame_AddMessageEventFilter then ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filter) end
 	local name, realm = UnitName("player"), GetRealmName and GetRealmName() or ""
 	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"))
 	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.5, tick) end
 end)
 
--- Whatever is still waiting goes out before the game closes.
+-- Whatever is still waiting goes out before the game closes (the game
+-- writes the whole buffer at logout, so no filler is needed).
 ns.on("PLAYER_LOGOUT", function()
 	lastSend = -MIN_GAP
 	flush()
@@ -209,33 +185,35 @@ ns.commands.live = function(arg)
 	elseif arg == "off" then
 		settings().live = false
 		queue = {}
+		padLeft = 0
 		print("|cffd4a017Chronicler|r live link off.")
 	elseif arg == "show" or arg == "hide" then
 		settings().liveShow = arg == "show" or nil
-		print("|cffd4a017Chronicler|r live link whispers are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
+		print("|cffd4a017Chronicler|r live link lines are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
 	elseif arg:match("^pad") then
-		-- /chron live pad 16: send 16 filler lines (about 4 KB of log) now,
-		-- and after every message from here on. /chron live pad 0 stops it.
-		local n = tonumber(arg:match("%d+"))
-		if not n then
-			print(string.format("|cffd4a017Chronicler|r pad: %d filler lines after each message (%d KB). /chron live pad <number> sets it; 16 is about 4 KB.", tonumber(settings().livePad) or 0, math.floor(((tonumber(settings().livePad) or 0) * 260) / 1024)))
+		-- /chron live pad 80: push 80 KB of filler after each message (the
+		-- game writes its chat log buffer of about 64 KB only when it fills).
+		local kb = tonumber(arg:match("%d+"))
+		if not kb then
+			print(string.format("|cffd4a017Chronicler|r filler after each message: %d KB (the game's buffer is about 64 KB; 0 turns it off, %d is the default). /chron live pad <KB>", padKB(), PAD_DEFAULT_KB))
 			return
 		end
-		settings().livePad = n > 0 and n or nil
-		local sentNow = pad(n)
-		print(string.format("|cffd4a017Chronicler|r %d filler lines sent now (about %d KB); the same after each message from now on. Watch the file size of Logs\\WoWChatLog.txt.", sentNow, math.floor(sentNow * 260 / 1024)))
+		settings().livePadKB = kb ~= PAD_DEFAULT_KB and kb or nil
+		padLeft = math.max(padLeft, kb)
+		lastSend = -FLUSH_AFTER
+		print(string.format("|cffd4a017Chronicler|r filler set to %d KB after each message; %d KB going out now. Watch the size of Logs\\WoWChatLog.txt.", kb, kb))
 	elseif arg == "test" then
 		-- A line the app and the overlay both show, to prove the whole chain.
 		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
 		push("T", time())
 		lastSend = -MIN_GAP
 		flush()
-		print(string.format("|cffd4a017Chronicler|r test line whispered to %s. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", whisperTarget() or "you"))
+		print("|cffd4a017Chronicler|r test line written. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.")
 	else
 		local logging = LoggingChat and LoggingChat() or false
 		local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?"
-		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · whispers to %s (%s) · %d messages sent, %d lines waiting. /chron live on|off|test|show|hide|pad N",
-			version, enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", whisperTarget() or "?", settings().liveShow and "shown" or "hidden", sent, #queue))
+		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · lines %s · %d messages sent, %d waiting · filler %d KB after each (%d KB sent so far). /chron live on|off|test|show|hide|pad KB",
+			version, enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", settings().liveShow and "shown" or "hidden", sent, #queue, padKB(), padded))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide|pad N - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms; show/hide the whispers in chat"
+ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide|pad KB - live link for the stream overlay (writes to the chat log, hidden from chat; on by default); test writes a line the app confirms"

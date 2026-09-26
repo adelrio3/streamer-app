@@ -57,26 +57,26 @@ local function runTimers()
 	for _, fn in ipairs(list) do fn() end
 end
 local cvars = { nameplateMaxAlpha = "1" }
--- Chat channels and the chat log (the live link).
-local chat = { logging = false, sent = {}, filters = {}, flushes = 0 }
+-- The chat log (the live link). Like the game: say, yell and channels from
+-- an addon fail without a hardware event, and the log is written to disk
+-- only once its 64 KB buffer fills.
+local chat = { logging = false, sent = {}, pad = {}, filters = {}, buffered = 0, written = 0 }
 local fire -- defined with the frames below
-function LoggingChat(on)
-	if on == false and chat.logging then chat.flushes = chat.flushes + 1 end -- closing the file writes the buffer out
-	if on ~= nil then chat.logging = on end
-	return chat.logging
-end
+function LoggingChat(on) if on ~= nil then chat.logging = on end return chat.logging end
 function GetNormalizedRealmName() return "Whitemane" end
--- Like the game: say, yell and channels from an addon fail without a hardware event.
-function SendChatMessage(msg, kind, _, target)
-	assert(kind == "WHISPER", "Interface action failed because of an AddOn (" .. tostring(kind) .. ")")
-	chat.sent[#chat.sent + 1] = { msg = msg, kind = kind, target = target, at = clock.epoch }
-	-- The game echoes a whisper to yourself back as an incoming whisper.
-	fire("CHAT_MSG_WHISPER_INFORM", msg, "Aldric")
-	fire("CHAT_MSG_WHISPER", msg, "Aldric")
+function SendChatMessage(msg, kind) error("Interface action failed because of an AddOn (" .. tostring(kind) .. ")") end
+local function logLine(text)
+	if not chat.logging then return end
+	chat.buffered = chat.buffered + #text + 20
+	if chat.buffered >= 64 * 1024 then chat.written = chat.written + chat.buffered; chat.buffered = 0 end
 end
 function ChatFrame_AddMessageEventFilter(event, fn) chat.filters[#chat.filters + 1] = { event = event, fn = fn } end
-local systemLines = {}
-function SendSystemMessage(text) systemLines[#systemLines + 1] = text; fire("CHAT_MSG_SYSTEM", text) end
+function SendSystemMessage(text)
+	if text:find("CHRONPAD~", 1, true) == 1 then chat.pad[#chat.pad + 1] = text
+	else chat.sent[#chat.sent + 1] = { msg = text, at = clock.epoch } end
+	logLine(text)
+	fire("CHAT_MSG_SYSTEM", text)
+end
 function GetCVar(k) return cvars[k] end
 function SetCVar(k, v) cvars[k] = v end
 
@@ -583,12 +583,11 @@ assert(#ChroniclerDB.sessions[1].events == skillsBefore + 2, "the skill lines we
 fire("PLAYER_LOGOUT")
 assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
 
--- The live link whispered everything to the character itself.
+-- The live link wrote everything to the chat log as local system messages.
 assert(chat.logging, "the live link turns the chat log on")
 assert(#chat.sent > 0, "sent live lines")
 for _, m in ipairs(chat.sent) do
-	assert(m.kind == "WHISPER" and m.target == "Aldric-Whitemane", "whispered to yourself, with the realm")
-	assert(#m.msg <= 255, "chat messages fit in 255 bytes")
+	assert(#m.msg <= 255, "messages stay short")
 	assert(m.msg:sub(1, 7) == "CHRON1~", "prefixed")
 end
 local all = {}
@@ -603,47 +602,42 @@ assert(all:find("~D~Hogger~448", 1, true) or all:find("~D~Hogger", 1, true), "de
 assert(all:find("~V~2", 1, true), "level line")
 local hidden = 0
 for _, f in ipairs(chat.filters) do
-	if (f.event == "CHAT_MSG_WHISPER" or f.event == "CHAT_MSG_WHISPER_INFORM") and f.fn(nil, f.event, "CHRON1~K~1~x", "Aldric") then hidden = hidden + 1 end
-	assert(not f.fn(nil, f.event, "hello there", "Bob"), "real whispers are not hidden")
+	if f.event == "CHAT_MSG_SYSTEM" then
+		if f.fn(nil, f.event, "CHRON1~K~1~x") then hidden = hidden + 1 end
+		assert(f.fn(nil, f.event, chat.pad[1]), "filler lines are hidden from chat windows")
+		assert(not f.fn(nil, f.event, "You are no longer AFK."), "real system messages are not hidden")
+	end
 end
-assert(hidden == 2, "the live whispers are hidden from chat windows, both ways")
+assert(hidden == 1, "the live lines are hidden from chat windows")
 for _, e in ipairs(ChroniclerDB.sessions[1].events) do
-	assert(not (e.e == "chat" and e.text and e.text:find("CHRON1~", 1, true)), "the live whispers are not logged as chat")
+	assert(not (e.text and (e.text:find("CHRON1~", 1, true) or e.text:find("CHRONPAD", 1, true))), "live and filler lines are never recorded")
 end
--- The test line goes out at once, even between ticks.
+-- After each message, filler fills the game's buffer so the file is written.
+assert(#chat.pad > 0 and #chat.pad[1] >= 990, "filler lines went out (about 1 KB each)")
+assert(chat.written > 0, "the game's 64 KB buffer was filled, so the file got written")
+-- The test line goes out at once, even between ticks; its filler follows.
 state.level = 2 -- the ticks below may send a heartbeat; keep it at the fixture's last level
-local before = #chat.sent
+local before, padBefore, writtenBefore = #chat.sent, #chat.pad, chat.written
 SlashCmdList.CHRONICLER("live test")
-assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test sends a test line")
--- A moment later the log is closed (which writes the buffer out) and reopened.
-local flushesBefore = chat.flushes
+assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test writes a test line")
+assert(#chat.pad == padBefore, "the filler waits for a quiet moment")
 trackTick()
-assert(chat.flushes == flushesBefore + 1 and not chat.logging, "the chat log is closed after a send, to flush it")
-assert(#chat.sent == before + 1, "nothing is sent while the log is closed")
-runTimers()
-assert(chat.logging, "the chat log is reopened")
--- Filler lines fill the game's write buffer so the file gets written.
-SlashCmdList.CHRONICLER("live pad 4")
-assert(#systemLines == 4 and #systemLines[1] >= 230 and systemLines[1]:find("CHRONPAD~", 1, true) == 1, "pad sends filler system lines now")
-SlashCmdList.CHRONICLER("live test")
-trackTick()
-assert(#systemLines == 8, "and after each message from then on")
-local padHidden = false
-for _, f in ipairs(chat.filters) do if f.event == "CHAT_MSG_SYSTEM" and f.fn(nil, f.event, systemLines[1]) then padHidden = true end end
-assert(padHidden, "filler lines are hidden from chat windows")
-for _, e in ipairs(ChroniclerDB.sessions[1].events) do
-	assert(not (e.text and e.text:find("CHRONPAD", 1, true)), "filler lines are not recorded")
-end
+assert(#chat.pad == padBefore + 20, "filler goes out in slices of 20 lines per tick")
+for _ = 1, 8 do trackTick() end
+-- (a heartbeat during those ticks tops the filler up again, so at least 80)
+assert(#chat.pad >= padBefore + 80 and chat.written > writtenBefore, "80 KB of filler after the message, and the file was written")
 SlashCmdList.CHRONICLER("live pad 0")
+assert(ChroniclerDB.settings.livePadKB == 0, "/chron live pad 0 turns the filler off")
+SlashCmdList.CHRONICLER("live pad 80")
+assert(ChroniclerDB.settings.livePadKB == nil, "the default is not stored")
 
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}
 for _, m in ipairs(chat.sent) do
 	local t = m.at
 	local stamp = string.format("9/25 %02d:%02d:%02d.%03d", math.floor(t / 3600) % 24, math.floor(t / 60) % 60, math.floor(t) % 60, math.floor((t % 1) * 1000))
-	-- A whisper to yourself lands in the log twice: sent, then received.
-	log[#log + 1] = stamp .. "  To Aldric: " .. m.msg
-	log[#log + 1] = stamp .. "  Aldric whispers: " .. m.msg
+	log[#log + 1] = stamp .. "  " .. m.msg
+	log[#log + 1] = stamp .. "  " .. chat.pad[1] -- a filler line, which the reader must ignore
 end
 log[#log + 1] = "9/25 23:59:59.000  You receive loot: |cff1eff00|Hitem:1121::::::::1:::::::|h[Feet of the Lynx]|h|r."
 local lf = assert(io.open(outFile .. ".chatlog.txt", "w"))

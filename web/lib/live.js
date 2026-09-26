@@ -1,11 +1,13 @@
-// The live link: the addon whispers compact lines to the character itself,
-// the game writes them to Logs\WoWChatLog.txt as it goes, and the app on the
-// gaming PC reads that file and turns the lines into events for the stream
-// overlay. This file is the reading side, and the running totals. A whisper
-// to yourself lands in the log twice ("To Aldric: ..." then "Aldric
-// whispers: ..."), so the second copy of a message is dropped.
+// The live link: the addon writes compact lines into the chat log as local
+// system messages (plus hidden filler that makes the game write its 64 KB
+// buffer out), the game writes Logs\WoWChatLog.txt as it goes, and the app
+// on the gaming PC reads that file and turns the lines into events for the
+// stream overlay. This file is the reading side, and the running totals.
+// A line that is logged twice within a moment (as whispers to yourself
+// were, in an earlier addon) counts once.
 
 export const PREFIX = 'CHRON1';
+export const PAD_PREFIX = 'CHRONPAD'; // filler lines the addon uses to make the game write the file; carry nothing
 const SEP = '~';
 const EVSEP = '~~';
 export const QUALITY_COLORS = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80'];
