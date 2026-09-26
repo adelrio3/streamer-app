@@ -2336,7 +2336,7 @@ pages.lore = async (kind, params) => {
     });
   });
   return `<div class="lore-hero">
-      <div class="lore-chest">❖</div>
+      <div class="lore-chest">❡</div>
       <p class="kicker">Chronicle</p>
       <h1>Lore</h1>
       <p class="lore-lead">Every tale that has been lived to its end, kept here like treasure. ${told.length ? `${told.length} told` : 'None told yet'}${living.length ? ` · ${living.length} still being lived` : ''}.</p>
@@ -2564,6 +2564,11 @@ const LIVE_TESTS = {
   progress: ['Quest progress', { kind: 'quest', action: 'progress', text: 'Riverpaw Gnoll slain: 4/10' }],
   turnin: ['Quest complete', { kind: 'quest', action: 'turnin', qid: 176, title: 'Wanted: "Hogger"', xp: 250, money: 300 }],
   kill: ['Kill', { kind: 'kill', npcId: 448, name: 'Hogger' }],
+  'kill:first': ['First hunt', { kind: 'kill', npcId: 3068, name: 'Mazzranache', novel: true }],
+  'kill:elite': ['Elite hunted', { kind: 'kill', npcId: 448, name: 'Hogger', rank: 'elite', novel: true }],
+  'kill:rare': ['Rare hunted', { kind: 'kill', npcId: 471, name: 'Mother Fang', rank: 'rare', novel: true }],
+  'kill:boss': ['World boss slain', { kind: 'kill', npcId: 6109, name: 'Azuregos', rank: 'worldboss' }],
+  'loot:new': ['New item', { kind: 'loot', id: 2244, name: 'Krol Blade', q: 3, n: 1, source: 'Hogger', sourceId: 448, novel: true }],
   level: ['Level up', { kind: 'level', level: 12 }],
   rare: ['Rare spotted', { kind: 'rare', npcId: 471, name: 'Mother Fang', level: 10, rank: 'rareelite' }],
   death: ['Death', { kind: 'death', killer: 'Hogger', killerId: 448 }],
@@ -3688,9 +3693,12 @@ async function route({ keepScroll = false } = {}) {
     html = `<div class="notice error">${esc(err.message)}</div>`;
     console.error(err);
   }
+  // Compared without the active marks, so a tab strip whose only change is
+  // which tab is lit counts as unchanged and stays put.
+  const shape = (c) => c.outerHTML.replace(/ active(?=[\s"])/g, '').replace(/\s+"/g, '"');
   const was = same ? state.lastHtml || [] : null;
   main.innerHTML = html;
-  state.lastHtml = [...main.children].map((c) => c.outerHTML);
+  state.lastHtml = [...main.children].map(shape);
   navPercents().catch((err) => console.warn('percentages', err));
   if (!keepScroll) {
     // Navigation: children rise in one after another; numbers count up.
@@ -3699,7 +3707,7 @@ async function route({ keepScroll = false } = {}) {
     main.classList.add('enter');
     let i = 0;
     for (const child of main.children) {
-      const still = same && was.includes(child.outerHTML);
+      const still = same && was.includes(shape(child));
       child.classList.toggle('still', still);
       if (still) continue;
       child.style.setProperty('--i', Math.min(i++, 12));
