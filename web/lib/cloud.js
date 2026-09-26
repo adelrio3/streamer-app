@@ -188,6 +188,10 @@ export class CloudStore {
     check(await this.client.from('live').upsert({ user_id: this.userId, token, machine, state, updated_at: this.nowIso() }, { onConflict: 'user_id' }));
   }
 
+  async touchLive() {
+    check(await this.client.from('live').update({ updated_at: this.nowIso() }).eq('user_id', this.userId));
+  }
+
   async loadLive() {
     const { data, error } = await this.client.from('live').select('*').maybeSingle();
     if (error) {
@@ -217,10 +221,12 @@ export class CloudStore {
 
 // The overlay's view of the live row, by token, with only the public key
 // (the live_state function in supabase/schema.sql looks the row up).
-export async function fetchLiveByToken(url, anonKey, token) {
+// seq: the last state seen; the server answers { seq, updated_at } alone when
+// nothing changed since (schema version 4), the whole state otherwise.
+export async function fetchLiveByToken(url, anonKey, token, seq = null) {
   const res = await fetch(`${url}/rest/v1/rpc/live_state`, {
     method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_token: token }),
+    body: JSON.stringify(seq == null ? { p_token: token } : { p_token: token, p_seq: seq }),
   });
   if (!res.ok) throw new Error(`live_state: ${res.status}`);
   return res.json();

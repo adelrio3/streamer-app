@@ -217,3 +217,25 @@ drop policy if exists "own voice" on public.voice;
 create policy "own voice" on public.voice for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 grant select, insert, update, delete on public.voice to authenticated;
+
+-- Version 4 ------------------------------------------------------------------
+-- The overlay's read, cheaper: with p_seq (the state's seq it already has),
+-- an unchanged row answers with just the seq and the time, not the state.
+drop function if exists public.live_state(text);
+create or replace function public.live_state(p_token text, p_seq integer default null)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when p_seq is not null and (state->>'seq')::integer = p_seq
+      then jsonb_build_object('seq', p_seq, 'updated_at', updated_at)
+    else jsonb_build_object('state', state, 'updated_at', updated_at)
+  end
+  from public.live
+  where token = p_token and length(p_token) >= 24
+  limit 1
+$$;
+grant execute on function public.live_state(text, integer) to anon, authenticated;

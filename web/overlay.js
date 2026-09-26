@@ -459,18 +459,48 @@ function status(text) {
   el.classList.toggle('show', Boolean(text) && debug);
 }
 
+// Polling: every 2 s, and only for what is new (the server answers with a
+// seq alone when nothing changed). Several overlay windows on one computer
+// share one poller: the leader posts what it gets on a BroadcastChannel, the
+// others listen, and one of them takes over if the leader goes quiet.
+const POLL_EVERY = 2000;
+const LEADER_QUIET = 6500;
+let bus = null;
+try { bus = new BroadcastChannel(`chronicler-live-${token}`); } catch { /* no channel: poll alone */ }
+let lastHeard = 0;
+let leader = !bus;
+let knownSeq = null;
+let pollTimer = null;
+if (bus) {
+  bus.onmessage = (ev) => {
+    const m = ev.data || {};
+    if (m.type === 'state') { lastHeard = Date.now(); if (leader && Math.random() < 0.5) leader = false; if (m.state) handle(m.state); status(m.status || ''); knownSeq = m.seq ?? knownSeq; }
+  };
+}
 async function poll(cfg) {
-  try {
-    const data = await fetchLiveByToken(cfg.url, cfg.anonKey, token);
-    if (data?.state) {
-      handle(data.state);
-      const age = Date.now() - Date.parse(data.updated_at);
-      status(age > 90000 ? `gaming PC last seen ${Math.round(age / 60000)} min ago` : '');
-    } else status('no live data for this token yet');
-  } catch (err) {
-    status(err.message);
+  clearTimeout(pollTimer);
+  if (!leader && Date.now() - lastHeard > LEADER_QUIET + Math.random() * 1500) leader = true;
+  if (leader) {
+    let out = { type: 'state', status: '' };
+    try {
+      const data = await fetchLiveByToken(cfg.url, cfg.anonKey, token, knownSeq);
+      if (data?.state) {
+        knownSeq = data.state.seq ?? knownSeq;
+        handle(data.state);
+        out.state = data.state;
+      } else if (data?.seq == null) out.status = 'no live data for this token yet';
+      if (data?.updated_at) {
+        const age = Date.now() - Date.parse(data.updated_at);
+        out.status = age > 150000 ? `gaming PC last seen ${Math.round(age / 60000)} min ago` : out.status;
+      }
+      out.seq = knownSeq;
+    } catch (err) {
+      out.status = err.message;
+    }
+    status(out.status);
+    if (bus) bus.postMessage(out);
   }
-  setTimeout(() => poll(cfg), 1000);
+  pollTimer = setTimeout(() => poll(cfg), POLL_EVERY);
 }
 
 // Demo: a script of fake events, so the overlay can be laid out without playing.

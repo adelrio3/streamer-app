@@ -22,7 +22,7 @@ const REC_EVERY = 30000;
 const REFRESH_EVERY = 60000;
 const LIVE_EVERY = 1000;
 const LIVE_PUSH_GAP = 1500;
-const LIVE_HEARTBEAT = 20000;
+const LIVE_HEARTBEAT = 60000; // a touch of updated_at when nothing changed
 const LIVE_SINCE_KEY = 'chronicler.live.since';
 const LIVE_PURGE_MIN = 1024 * 1024; // empty the chat log once it is over 1 MB...
 const LIVE_PURGE_QUIET = 3 * 60 * 1000; // ...and the game has not written it for 3 minutes (logged out)
@@ -41,7 +41,9 @@ export function defaultMachineConfig(platform = globalThis.navigator?.platform ?
 
 export class Machine {
   // state: { sessions, rows, clock } shared with the UI.
-  // changed(): the UI should recompute and redraw.
+  // changed(topic): the UI should recompute and redraw the pages that show
+  // that topic: 'data' (sessions, items, screenshots, recordings), 'live'
+  // (the live link), 'voice', 'obs', 'clock', 'wow' (folder and addon state).
   constructor({ store, state, changed = () => {}, notify = () => {} }) {
     Object.assign(this, { store, state, changed, notify });
     this.config = this.loadConfig();
@@ -117,12 +119,12 @@ export class Machine {
     this.state.voice ??= [];
     this.voice.notes = new VoiceNotes({
       lang: this.config.voiceLang || 'en-US',
-      onState: (status) => { this.voice.status = status; this.changed(); },
+      onState: (status) => { this.voice.status = status; this.changed('voice'); },
       onNote: (n) => {
         const row = { id: n.id, machine: this.name, start_ms: Math.round(this.toServer(n.start)), end_ms: Math.round(this.toServer(n.end)), text: n.text };
         this.state.voice.push(row);
         this.voice.queue.push(row);
-        this.changed();
+        this.changed('voice');
       },
     });
     this.voice.notes.start();
@@ -136,7 +138,7 @@ export class Machine {
 
   restart() {
     this.stop();
-    this.start().then(() => this.changed()).catch((err) => this.notify(err.message));
+    this.start().then(() => this.changed('all')).catch((err) => this.notify(err.message));
   }
 
   every(ms, fn) {
@@ -157,7 +159,7 @@ export class Machine {
       // Store a sample when the clock moved or an hour passed.
       if (!last || Math.abs(last.offset_ms - m.offset) > 15 || Date.now() - lastAt > 3600 * 1000) {
         this.state.clock.push(await this.store.addClockSample(this.name, m.offset, m.rtt));
-        this.changed();
+        this.changed('clock');
       }
     } catch (err) {
       console.warn('clock', err);
@@ -192,13 +194,13 @@ export class Machine {
   async pickWow() {
     this.wowRoot = await folders.pickFolder('wow', 'readwrite');
     await this.checkWow();
-    this.changed();
+    this.changed('wow');
   }
 
   async grantWow() {
     await folders.requestPermission(this.wowRoot, 'readwrite');
     await this.checkWow();
-    this.changed();
+    this.changed('wow');
   }
 
   async pollWow() {
@@ -235,7 +237,7 @@ export class Machine {
       this.wow.lastIngest = { at: Date.now(), sessions: uploaded };
       this.state.sessions.sort((a, b) => a.started - b.started);
       this.markUploaded();
-      this.changed();
+      this.changed('data');
       this.notify(`Uploaded ${uploaded} session${uploaded > 1 ? 's' : ''} from WoW.`);
     }
   }
@@ -278,7 +280,7 @@ export class Machine {
     this.live.state.reset(this.toServer(since));
     this.markUploaded();
     await this.pushLive(true);
-    this.changed();
+    this.changed('live');
   }
 
   async pollLive() {
@@ -316,7 +318,7 @@ export class Machine {
       let changed = false;
       // The log carries this PC's local time; everything else runs on the server clock.
       for (const e of events) if (live.state.apply({ ...e, at: this.toServer(e.at) })) changed = true;
-      if (changed) { live.changedAt = Date.now(); this.changed(); }
+      if (changed) { live.changedAt = Date.now(); this.changed('live'); }
       await this.pushLive(changed);
       return;
     }
@@ -343,7 +345,7 @@ export class Machine {
       live.size = 0;
       live.remainder = '';
       live.fileSize = 0;
-      this.changed();
+      this.changed('live');
       await this.pushLive(true);
       return true;
     } catch (err) {
@@ -355,11 +357,18 @@ export class Machine {
   async pushLive(force) {
     const live = this.live;
     const now = Date.now();
-    const due = force || (live.state.seq !== live.pushedSeq && now - live.lastPush > LIVE_PUSH_GAP) || now - live.lastPush > LIVE_HEARTBEAT;
+    const changed = live.state.seq !== live.pushedSeq;
+    const due = force || (changed && now - live.lastPush > LIVE_PUSH_GAP) || now - live.lastPush > LIVE_HEARTBEAT;
     if (!due) return;
     live.lastPush = now;
     try {
       const token = await this.liveToken();
+      if (!force && !changed && live.pushedSeq >= 0) {
+        // Nothing new: just say this PC is still here (a tiny update, not the whole row).
+        await this.store.touchLive();
+        if (this.state.live) this.state.live.updated_at = new Date(now + (this.offset ?? 0)).toISOString();
+        return;
+      }
       const snap = live.state.snapshot(this.toServer(now));
       snap.counters = this.counterValues();
       snap.machine = this.name;
@@ -436,7 +445,7 @@ export class Machine {
     const byId = new Map(this.state.items.map((r) => [r.item_id, r]));
     for (const r of changed) byId.set(r.item_id, r);
     this.state.items = [...byId.values()];
-    this.changed();
+    this.changed('data');
   }
 
   // Screenshots taken while Chronicler was logging, shrunk and uploaded a few
@@ -462,7 +471,7 @@ export class Machine {
           const { blob, width, height } = await shrink(await shot.handle.getFile());
           const row = await this.store.saveScreenshot({ name: shot.name, flavor: inst.flavor, machine: this.name, taken_ms: Math.round(this.toServer(local)), width, height }, blob);
           this.state.screenshots.push(row);
-          this.changed();
+          this.changed('data');
         } catch (err) {
           this.skipShots.add(shot.name);
           console.warn('screenshot', shot.name, err);
@@ -481,7 +490,7 @@ export class Machine {
     }
     await folders.installAddon(install.dir, files);
     install.addonVersion = manifest.version;
-    this.changed();
+    this.changed('wow');
     return manifest.version;
   }
 
@@ -503,13 +512,13 @@ export class Machine {
   async pickRec() {
     this.recRoot = await folders.pickFolder('recordings', 'read');
     await this.checkRec();
-    this.changed();
+    this.changed('wow');
   }
 
   async grantRec() {
     await folders.requestPermission(this.recRoot, 'read');
     await this.checkRec();
-    this.changed();
+    this.changed('wow');
   }
 
   row(name) {
@@ -520,7 +529,7 @@ export class Machine {
     const saved = await this.store.saveRecording(row);
     const i = this.state.rows.findIndex((r) => r.name === row.name);
     if (i >= 0) this.state.rows[i] = saved; else this.state.rows.push(saved);
-    this.changed();
+    this.changed('data');
     return saved;
   }
 
@@ -561,7 +570,7 @@ export class Machine {
     const { port, password } = this.config.obs;
     this.obs = new ObsLink({
       port, password,
-      onStatus: (s) => { this.obsStatus = s; this.changed(); },
+      onStatus: (s) => { this.obsStatus = s; this.changed('obs'); },
       onRecording: (ev) => this.onObs(ev).catch((err) => this.notify(err.message)),
     });
     this.obs.start();
@@ -622,7 +631,7 @@ export class Machine {
       if (i >= 0) this.state.rows[i] = r; else this.state.rows.push(r);
       n++;
     }
-    if (n) this.changed();
+    if (n) this.changed('data');
   }
 }
 

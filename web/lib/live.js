@@ -234,7 +234,7 @@ export class LiveState {
       questsDone: this.questsDone, xp: this.xp, money: this.money,
       topKills: [...this.killsByName.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, n]) => ({ name, n })),
       drops: [...this.drops.values()].sort((a, b) => b.n - a.n).slice(0, 60),
-      loot: this.loot.slice(-400),
+      loot: this.loot.slice(-200),
       quests: [...this.quests.values()].sort((a, b) => b.at - a.at).slice(0, 12).map((q) => ({ ...q, objectives: Object.entries(q.objectives).map(([label, o]) => ({ label, ...o })) })),
       rares: this.rares.slice(-10),
       events: this.events.slice(-40),
