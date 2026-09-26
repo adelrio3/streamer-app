@@ -45,7 +45,8 @@ test('the addon\'s packed lines decode into events', () => {
 
 test('a chunk of chat log becomes events; the game\'s own loot lines only count without the link', () => {
   const chunk = [
-    '9/25 14:13:34.000  [7. chron0abcdef1] [Aldric]: CHRON1~B~0.4.0~Aldric~Mankrik~1~~K~6~Kobold Vermin',
+    '9/25 14:13:34.000  To Aldric: CHRON1~B~0.4.1~Aldric~Mankrik~1~~K~6~Kobold Vermin',
+    '9/25 14:13:34.000  Aldric whispers: CHRON1~B~0.4.1~Aldric~Mankrik~1~~K~6~Kobold Vermin',
     '9/25 14:13:35.000  You receive loot: |cffffffff|Hitem:2589::::::::1:::::::|h[Linen Cloth]|h|rx2.',
     'garbage',
     '9/25 16:20:00.000  You receive loot: |cff1eff00|Hitem:1121::::::::1:::::::|h[Feet of the Lynx]|h|r.',
@@ -57,6 +58,17 @@ test('a chunk of chat log becomes events; the game\'s own loot lines only count 
   assert.equal(new Date(linkSeenAt).getHours(), 14);
   const again = eventsFromChatLog('9/25 16:21:00.000  You receive loot: |cffffffff|Hitem:2589::::::::1:::::::|h[Linen Cloth]|h|r.', { now: NOW, linkSeenAt: new Date(2026, 8, 25, 16, 20, 30).getTime() });
   assert.equal(again.events.length, 0, 'the link is alive, so the duplicate game line is ignored');
+});
+
+test('a whisper to yourself is logged twice; the echo is dropped, even across chunks, but a repeat later is not', () => {
+  const one = eventsFromChatLog('9/25 14:13:34.000  To Aldric: CHRON1~K~6~Kobold Vermin', { now: NOW });
+  assert.equal(one.events.length, 1);
+  const two = eventsFromChatLog([
+    '9/25 14:13:34.100  Aldric whispers: CHRON1~K~6~Kobold Vermin',
+    '9/25 14:13:36.000  To Aldric: CHRON1~K~6~Kobold Vermin',
+    '9/25 14:13:36.100  Aldric whispers: CHRON1~K~6~Kobold Vermin',
+  ].join('\n'), { now: NOW, linkSeenAt: one.linkSeenAt, lastPayload: one.lastPayload });
+  assert.equal(two.events.length, 1, 'the echo from the previous chunk is dropped; the second kill counts once');
 });
 
 test('running totals: drops, kills and streaks, deaths, quests, character', () => {

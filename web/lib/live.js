@@ -1,7 +1,9 @@
-// The live link: the addon posts compact lines into a hidden chat channel,
+// The live link: the addon whispers compact lines to the character itself,
 // the game writes them to Logs\WoWChatLog.txt as it goes, and the app on the
 // gaming PC reads that file and turns the lines into events for the stream
-// overlay. This file is the reading side, and the running totals.
+// overlay. This file is the reading side, and the running totals. A whisper
+// to yourself lands in the log twice ("To Aldric: ..." then "Aldric
+// whispers: ..."), so the second copy of a message is dropped.
 
 export const PREFIX = 'CHRON1';
 const SEP = '~';
@@ -72,33 +74,46 @@ export function decodeLine(line) {
   }
 }
 
+// The addon's part of a chat log line, or null.
+export function livePayload(text) {
+  const i = text.indexOf(PREFIX + SEP);
+  if (i < 0) return null;
+  return text.slice(i + PREFIX.length + 1).replace(/\|r\s*$/, '');
+}
+
 // Every event in one chat log line (the addon packs several per message).
 export function decodeEvents(text) {
-  const i = text.indexOf(PREFIX + SEP);
-  if (i < 0) return [];
-  const payload = text.slice(i + PREFIX.length + 1).replace(/\|r\s*$/, '');
+  const payload = livePayload(text);
+  if (payload == null) return [];
   return payload.split(EVSEP).map(decodeLine).filter(Boolean);
 }
+
+export const ECHO_WINDOW = 5000; // ms within which the same message is the whisper's echo
 
 // A chunk of the chat log -> events with times. Addon lines win; the game's
 // own loot lines only count when the addon's link is off (no addon line in
 // the last while).
-export function eventsFromChatLog(chunk, { now = Date.now(), linkSeenAt = 0 } = {}) {
+export function eventsFromChatLog(chunk, { now = Date.now(), linkSeenAt = 0, lastPayload = null } = {}) {
   const out = [];
   let lastLink = linkSeenAt;
+  let last = lastPayload; // { text, at, echoed } of the previous addon line
   for (const raw of chunk.split(/\r?\n/)) {
     const line = parseChatLine(raw, now);
     if (!line) continue;
-    const events = decodeEvents(line.text);
-    if (events.length) {
+    const payload = livePayload(line.text);
+    if (payload != null) {
       lastLink = line.at;
-      for (const e of events) out.push({ at: line.at, ...e });
+      // Each message has exactly one echo; the same text again after that is
+      // a new message (the same mob killed twice, say).
+      if (last && !last.echoed && last.text === payload && Math.abs(line.at - last.at) < ECHO_WINDOW) { last.echoed = true; continue; }
+      last = { text: payload, at: line.at, echoed: false };
+      for (const e of payload.split(EVSEP).map(decodeLine).filter(Boolean)) out.push({ at: line.at, ...e });
       continue;
     }
     const loot = parseNativeLoot(line.text);
     if (loot && line.at - lastLink > 120000) out.push({ at: line.at, ...loot, fromGame: true });
   }
-  return { events: out, linkSeenAt: lastLink };
+  return { events: out, linkSeenAt: lastLink, lastPayload: last };
 }
 
 // Running totals for the overlay since `since`. apply() takes events in

@@ -15,7 +15,7 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - **automatic screenshots** at rares, level-ups, discoveries and deaths, plus your own
   - optional group, duel and chat logging (`/chron social on`)
   - **marks** (lore beat, beautiful shot, funny, redo) and the **sync flash**
-  - the **live link**: what happens goes into a hidden chat channel of your own, so the game's chat log carries it out as you play (nothing shows on stream); `/chron live off` stops it
+  - the **live link**: the addon whispers what happens to your own character (hidden from every chat window), so the game's chat log carries it out as you play; `/chron live off` stops it
   - every **Lua error** it catches (its own and other addons'), with the stack and where you were: `/chron errors`
 - **The web app** (`web/`, hosted on Netlify, data in Supabase) is open in Chrome on each computer and bridges them:
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
@@ -56,7 +56,7 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 | `/chron social on\|off` | Also log group, duels and chat (off by default) |
 | `/chron track on\|off` | Position tracking for the footage finder (on by default) |
 | `/chron items` | Size of the item catalog |
-| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; posts to a hidden chat channel of your own and turns the chat log on). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
+| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; whispers to yourself, hidden from chat, and turns the chat log on). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
 | `/chron errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
 | `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 

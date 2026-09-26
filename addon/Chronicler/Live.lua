@@ -1,10 +1,13 @@
 -- Live link. WoW only writes the addon's log to disk at logout or /reload,
 -- so nothing here reaches the web app while you play. The one file the game
 -- does write as it happens is the chat log (Logs\WoWChatLog.txt). This
--- module joins a hidden chat channel of your own and posts what happens
--- (loot, quest progress, kills, deaths, levels) into it, in a compact form,
--- so the chat log carries it out of the game for the stream overlay. The
--- channel is filtered out of every chat window, so nothing shows on stream.
+-- module whispers what happens (loot, quest progress, kills, deaths, levels)
+-- to your own character, in a compact form, so the chat log carries it out
+-- of the game for the stream overlay. Whispers are the one kind of chat an
+-- addon may send on its own: say, yell and channels need a key press or a
+-- click behind them, or the game answers "Interface action failed because
+-- of an AddOn" and drops the message. The whispers are filtered out of
+-- every chat window, so nothing shows on stream.
 
 local ADDON_NAME, ns = ...
 
@@ -15,11 +18,10 @@ local MIN_GAP = 0.6 -- seconds between messages (the server throttles chat)
 local HEARTBEAT = 60
 
 local queue = {}
-local channel = { name = nil, password = nil, index = 0 }
+local target = nil -- your own character, as a whisper target
 local sent = 0
 local lastSend = 0
 local lastBeat = 0
-local frames = {}
 
 local function settings()
 	ChroniclerDB = ChroniclerDB or {}
@@ -47,45 +49,33 @@ local function push(kind, ...)
 	if #queue > 300 then table.remove(queue, 1) end
 end
 
--- The channel is named after the character, so two characters never share one.
-local function channelName()
-	local guid = ns.playerGUID and ns.playerGUID() or (UnitGUID and UnitGUID("player")) or "0"
-	local hex = tostring(guid):match("(%x+)$") or "0"
-	hex = hex:sub(-8):lower()
-	return "chron" .. hex, "k" .. hex:reverse()
+-- Whispers go to yourself. Name-Realm works on every server.
+local function whisperTarget()
+	if target then return target end
+	local name = UnitName("player")
+	if not name or name == "" then return nil end
+	local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName():gsub("%s", "")) or ""
+	target = realm ~= "" and (name .. "-" .. realm) or name
+	return target
 end
 
-local function channelIndex()
-	if not channel.name or not GetChannelName then return nil end
-	local id = GetChannelName(channel.name)
-	if id and id > 0 then channel.index = id return id end
-	return nil
+-- Is this chat line one of ours? Used to hide it and to keep it out of the
+-- social log.
+local function isLiveLine(text)
+	return type(text) == "string" and text:find(PREFIX .. SEP, 1, true) == 1
 end
+ns.isLiveLine = isLiveLine
 
-local function join()
-	if not enabled() then return end
-	if not channel.name then channel.name, channel.password = channelName() end
-	if channelIndex() then return end
-	if JoinTemporaryChannel then JoinTemporaryChannel(channel.name, channel.password) end
-end
-
--- Hides the channel (its messages and its join/leave notices) from every
--- chat window. The chat log on disk still gets everything.
-local function filter(_, event, ...)
-	if not channel.name then return false end
-	for i = 1, select("#", ...) do
-		local v = select(i, ...)
-		if type(v) == "string" then
-			local lower = v:lower()
-			if lower:find(channel.name, 1, true) or v:find(PREFIX .. SEP, 1, true) == 1 then return true end
-		end
-	end
-	return false
+-- Hides the addon's whispers from every chat window (both the "To you:"
+-- copy and the "you whisper:" copy). The chat log on disk still gets them.
+local function filter(_, event, text)
+	return isLiveLine(text)
 end
 
 local function flush()
 	if #queue == 0 or not enabled() then return end
-	if channel.index == 0 and not channelIndex() then join() return end
+	local to = whisperTarget()
+	if not to then return end
 	local now = GetTime()
 	if now - lastSend < MIN_GAP then return end
 	local msg, n = "", 0
@@ -98,7 +88,7 @@ local function flush()
 		table.remove(queue, 1)
 	end
 	if n == 0 then return end
-	if SendChatMessage then SendChatMessage(PREFIX .. SEP .. msg, "CHANNEL", nil, channel.index) end
+	if SendChatMessage then SendChatMessage(PREFIX .. SEP .. msg, "WHISPER", nil, to) end
 	sent = sent + 1
 	lastSend = now
 end
@@ -112,7 +102,6 @@ end
 
 -- Everything the addon records passes through here (see record() in
 -- Chronicler.lua); the kinds the overlay cares about go out.
-local last = { loot = nil }
 ns.liveEvent = function(kind, data)
 	if not enabled() then return end
 	data = data or {}
@@ -150,18 +139,12 @@ ns.on("PLAYER_LOGIN", function()
 	if not enabled() then return end
 	if LoggingChat then LoggingChat(true) end
 	if ChatFrame_AddMessageEventFilter then
-		for _, ev in ipairs({ "CHAT_MSG_CHANNEL", "CHAT_MSG_CHANNEL_NOTICE", "CHAT_MSG_CHANNEL_NOTICE_USER", "CHAT_MSG_CHANNEL_JOIN", "CHAT_MSG_CHANNEL_LEAVE", "CHAT_MSG_CHANNEL_LIST" }) do
-			ChatFrame_AddMessageEventFilter(ev, filter)
-		end
+		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", filter)
+		ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", filter)
 	end
 	local name, realm = UnitName("player"), GetRealmName and GetRealmName() or ""
 	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"))
-	if C_Timer and C_Timer.After then C_Timer.After(2, join) else join() end
 	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.5, tick) end
-end)
-
-ns.on("PLAYER_ENTERING_WORLD", function()
-	if enabled() and C_Timer and C_Timer.After then C_Timer.After(5, join) end
 end)
 
 -- Whatever is still waiting goes out before the game closes.
@@ -175,7 +158,6 @@ ns.commands.live = function(arg)
 	if arg == "on" then
 		settings().live = true
 		if LoggingChat then LoggingChat(true) end
-		join()
 		print("|cffd4a017Chronicler|r live link on: what happens goes to Logs\\WoWChatLog.txt for the stream overlay.")
 	elseif arg == "off" then
 		settings().live = false
@@ -184,19 +166,14 @@ ns.commands.live = function(arg)
 	elseif arg == "test" then
 		-- A line the app and the overlay both show, to prove the whole chain.
 		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
-		join()
 		push("T", time())
 		lastSend = -MIN_GAP
 		flush()
-		if channel.index > 0 then
-			print(string.format("|cffd4a017Chronicler|r test line sent to channel %s (%d). Within a few seconds: Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", channel.name, channel.index))
-		else
-			print("|cffd4a017Chronicler|r not in the channel yet: it goes out as soon as the join completes (a few seconds after login). Try again in a moment.")
-		end
+		print(string.format("|cffd4a017Chronicler|r test line whispered to %s. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", whisperTarget() or "you"))
 	else
 		local logging = LoggingChat and LoggingChat() or false
-		print(string.format("|cffd4a017Chronicler|r live link %s · chat log %s · channel %s · %d messages sent, %d lines waiting. /chron live on|off|test",
-			enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", channel.index > 0 and (channel.name .. " (" .. channel.index .. ")") or "not joined yet", sent, #queue))
+		print(string.format("|cffd4a017Chronicler|r live link %s · chat log %s · whispers to %s · %d messages sent, %d lines waiting. /chron live on|off|test",
+			enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", whisperTarget() or "?", sent, #queue))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test - live link for the stream overlay (posts to a hidden chat channel of your own; on by default); test sends a line the app confirms"
+ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms"

@@ -44,8 +44,11 @@ SOUNDKIT = { RAID_WARNING = 8959 }
 date = os.date
 local sounds, timers, tickers = {}, {}, {}
 function PlaySound(id, channel) sounds[#sounds + 1] = { id, channel } end
+-- Like the game: the callback must be a Lua function (the game's own C
+-- functions, such as Screenshot, are refused).
+local function luaFunction(fn) return type(fn) == "function" and debug.getinfo(fn, "S").what ~= "C" end
 C_Timer = {
-	After = function(delay, fn) timers[#timers + 1] = fn end,
+	After = function(delay, fn) assert(luaFunction(fn), "Usage: C_Timer.After(seconds, callback)") timers[#timers + 1] = fn end,
 	NewTicker = function(interval, fn) tickers[#tickers + 1] = fn; return {} end,
 }
 local function runTimers()
@@ -55,14 +58,18 @@ local function runTimers()
 end
 local cvars = { nameplateMaxAlpha = "1" }
 -- Chat channels and the chat log (the live link).
-local chat = { logging = false, channels = {}, sent = {}, filters = {} }
+local chat = { logging = false, sent = {}, filters = {} }
+local fire -- defined with the frames below
 function LoggingChat(on) if on ~= nil then chat.logging = on end return chat.logging end
-function JoinTemporaryChannel(name, password) chat.channels[#chat.channels + 1] = { name = name, password = password } end
-function GetChannelName(name)
-	for i, c in ipairs(chat.channels) do if c.name == name then return 6 + i, name end end
-	return 0
+function GetNormalizedRealmName() return "Whitemane" end
+-- Like the game: say, yell and channels from an addon fail without a hardware event.
+function SendChatMessage(msg, kind, _, target)
+	assert(kind == "WHISPER", "Interface action failed because of an AddOn (" .. tostring(kind) .. ")")
+	chat.sent[#chat.sent + 1] = { msg = msg, kind = kind, target = target, at = clock.epoch }
+	-- The game echoes a whisper to yourself back as an incoming whisper.
+	fire("CHAT_MSG_WHISPER_INFORM", msg, "Aldric")
+	fire("CHAT_MSG_WHISPER", msg, "Aldric")
 end
-function SendChatMessage(msg, kind, _, target) chat.sent[#chat.sent + 1] = { msg = msg, kind = kind, target = target, at = clock.epoch } end
 function ChatFrame_AddMessageEventFilter(event, fn) chat.filters[#chat.filters + 1] = { event = event, fn = fn } end
 function GetCVar(k) return cvars[k] end
 function SetCVar(k, v) cvars[k] = v end
@@ -127,7 +134,7 @@ function CreateFrame(kind, name)
 end
 GameTooltip = CreateFrame("GameTooltip", "GameTooltip")
 ItemRefTooltip = CreateFrame("GameTooltip", "ItemRefTooltip")
-local function fire(event, ...)
+fire = function(event, ...)
 	for _, f in ipairs(frames) do
 		if f.events[event] and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
 	end
@@ -570,12 +577,11 @@ assert(#ChroniclerDB.sessions[1].events == skillsBefore + 2, "the skill lines we
 fire("PLAYER_LOGOUT")
 assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
 
--- The live link posted everything to its hidden channel.
+-- The live link whispered everything to the character itself.
 assert(chat.logging, "the live link turns the chat log on")
-assert(#chat.channels == 1 and chat.channels[1].name:match("^chron%x+$"), "joins a channel named after the character")
 assert(#chat.sent > 0, "sent live lines")
 for _, m in ipairs(chat.sent) do
-	assert(m.kind == "CHANNEL" and m.target == 7, "sent to the hidden channel")
+	assert(m.kind == "WHISPER" and m.target == "Aldric-Whitemane", "whispered to yourself, with the realm")
 	assert(#m.msg <= 255, "chat messages fit in 255 bytes")
 	assert(m.msg:sub(1, 7) == "CHRON1~", "prefixed")
 end
@@ -591,10 +597,13 @@ assert(all:find("~D~Hogger~448", 1, true) or all:find("~D~Hogger", 1, true), "de
 assert(all:find("~V~2", 1, true), "level line")
 local hidden = 0
 for _, f in ipairs(chat.filters) do
-	if f.event == "CHAT_MSG_CHANNEL" and f.fn(nil, "CHAT_MSG_CHANNEL", "CHRON1~K~1~x", "Aldric", "", "7. " .. chat.channels[1].name) then hidden = hidden + 1 end
-	if f.event == "CHAT_MSG_CHANNEL" then assert(not f.fn(nil, "CHAT_MSG_CHANNEL", "hello", "Bob", "", "1. General - Elwynn Forest"), "other channels are not hidden") end
+	if (f.event == "CHAT_MSG_WHISPER" or f.event == "CHAT_MSG_WHISPER_INFORM") and f.fn(nil, f.event, "CHRON1~K~1~x", "Aldric") then hidden = hidden + 1 end
+	assert(not f.fn(nil, f.event, "hello there", "Bob"), "real whispers are not hidden")
 end
-assert(hidden == 1, "the channel is hidden from chat windows")
+assert(hidden == 2, "the live whispers are hidden from chat windows, both ways")
+for _, e in ipairs(ChroniclerDB.sessions[1].events) do
+	assert(not (e.e == "chat" and e.text and e.text:find("CHRON1~", 1, true)), "the live whispers are not logged as chat")
+end
 -- The test line goes out at once, even between ticks.
 local before = #chat.sent
 SlashCmdList.CHRONICLER("live test")
@@ -604,7 +613,10 @@ assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, tru
 local log = {}
 for _, m in ipairs(chat.sent) do
 	local t = m.at
-	log[#log + 1] = string.format("9/25 %02d:%02d:%02d.%03d  [7. %s] [Aldric]: %s", math.floor(t / 3600) % 24, math.floor(t / 60) % 60, math.floor(t) % 60, math.floor((t % 1) * 1000), chat.channels[1].name, m.msg)
+	local stamp = string.format("9/25 %02d:%02d:%02d.%03d", math.floor(t / 3600) % 24, math.floor(t / 60) % 60, math.floor(t) % 60, math.floor((t % 1) * 1000))
+	-- A whisper to yourself lands in the log twice: sent, then received.
+	log[#log + 1] = stamp .. "  To Aldric: " .. m.msg
+	log[#log + 1] = stamp .. "  Aldric whispers: " .. m.msg
 end
 log[#log + 1] = "9/25 23:59:59.000  You receive loot: |cff1eff00|Hitem:1121::::::::1:::::::|h[Feet of the Lynx]|h|r."
 local lf = assert(io.open(outFile .. ".chatlog.txt", "w"))

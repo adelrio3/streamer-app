@@ -26,7 +26,7 @@ NPCs near you, loot windows and drop rates, the full item catalog, vendors, trai
 ## Done since
 
 - **The quest database** (Phase 2's core): every Classic quest, quest giver, rare and zone from Questie, with per-zone coverage for the chosen character (ready, later, done, other faction or class), unfound quest givers and rare spawns on the maps, database pages for quests and NPCs not yet logged, and every zone map whether visited or not.
-- **The live link and stream overlay**: the addon posts into a hidden chat channel, the chat log carries it out as you play, the gaming PC feeds a live row, and an OBS browser source shows drops with effects by rarity, a quest tracker, item counters, kills, streaks, deaths, levels and zones. Drops for any stretch of time.
+- **The live link and stream overlay**: the addon whispers to the character itself, hidden from chat, the chat log carries it out as you play, the gaming PC feeds a live row, and an OBS browser source shows drops with effects by rarity, a quest tracker, item counters, kills, streaks, deaths, levels and zones. Drops for any stretch of time.
 - **Voice notes**: transcribed on the gaming PC as you speak, on the timelines and exported as narration captions.
 - **The overlay pack** (Phase 4): item cards, quest and level banners and a kill counter as transparent PNGs, placed by an XML sequence.
 - **Lua error tracking** with a dump to paste into a bug report.

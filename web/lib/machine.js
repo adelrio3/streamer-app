@@ -50,7 +50,7 @@ export class Machine {
     this.seen = new Map(); // SavedVariables file -> lastModified already handled
     this.timers = [];
     // The live link: the chat log on this PC, read as the game writes it.
-    this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0, fileSize: 0, fileModified: 0, lines: 0, decoded: 0, lastLine: '' };
+    this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, lastPayload: null, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0, fileSize: 0, fileModified: 0, lines: 0, decoded: 0, lastLine: '' };
     // Voice notes: transcribed here, uploaded in batches.
     this.voice = { status: 'off', notes: null, queue: [] };
   }
@@ -238,7 +238,7 @@ export class Machine {
   }
 
   // Live link ---------------------------------------------------------------
-  // The addon posts what happens into a hidden chat channel; the game writes
+  // The addon whispers what happens to the character itself; the game writes
   // the chat log as it goes; this reads the new lines every second and keeps
   // the overlay's totals in the cloud.
 
@@ -302,8 +302,9 @@ export class Machine {
       const chunk = live.remainder + text;
       const cut = chunk.lastIndexOf('\n');
       live.remainder = cut >= 0 ? chunk.slice(cut + 1) : chunk;
-      const { events, linkSeenAt } = eventsFromChatLog(cut >= 0 ? chunk.slice(0, cut + 1) : '', { linkSeenAt: live.linkSeenAt });
+      const { events, linkSeenAt, lastPayload } = eventsFromChatLog(cut >= 0 ? chunk.slice(0, cut + 1) : '', { linkSeenAt: live.linkSeenAt, lastPayload: live.lastPayload });
       live.linkSeenAt = linkSeenAt;
+      live.lastPayload = lastPayload;
       const lines = (cut >= 0 ? chunk.slice(0, cut) : '').split('\n').filter(Boolean);
       live.lines += lines.length;
       live.decoded += events.filter((e) => !e.fromGame).length;

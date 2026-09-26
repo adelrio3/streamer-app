@@ -222,7 +222,8 @@ local RANK = { elite = true, rare = true, rareelite = true, worldboss = true }
 local function screenshot(reason)
 	if not settings().screenshots or not Screenshot then return end
 	ns.pendingShot = reason
-	if C_Timer and C_Timer.After then C_Timer.After(0.3, Screenshot) else Screenshot() end
+	-- C_Timer.After only takes a Lua function, not the game's own Screenshot.
+	if C_Timer and C_Timer.After then C_Timer.After(0.3, function() Screenshot() end) else Screenshot() end
 end
 
 local REACTION_FLAGS = { [0x10] = 5, [0x20] = 4, [0x40] = 2 } -- friendly, neutral, hostile
@@ -815,6 +816,7 @@ local CHAT = {
 }
 for event, channel in pairs(CHAT) do
 	on(event, function(text, from)
+		if ns.isLiveLine and ns.isLiveLine(text) then return end -- the live link's own whispers
 		if settings().social then record("chat", { ch = channel, from = from, text = text }) end
 	end)
 end
