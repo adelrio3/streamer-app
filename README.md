@@ -6,7 +6,7 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - every quest's full text as you read it, who gave it, its rewards, where, and at what level
   - NPC speech, gossip, books and plaques page by page, cinematics
   - **every NPC and creature near you**: targeted, moused over, on a nameplate, fighting within combat-log range, or speaking; with level, elite/rare rank, type, family, reaction and subtitle. `/chron scanner on` adds invisible nameplates to catch everything within about 40 yards
-  - **every loot window**: what dropped and from whom (including what you left behind), coins, herbs, ore and chests
+  - **every loot window**: what dropped and from whom (including what you left behind), coins, herbs, ore, chests and anything else you open (a cactus, a crate), named from the tooltip or the opening cast and remembered for every later session
   - **a full item catalog**: every tooltip line (flavor text included), stats, sell price, icon, use effect, for anything you loot, see, buy, wear, carry or hover
   - **vendors** with stock, prices, limited quantities and item costs; **trainers** and their prices; **flight masters**, routes and costs, flights taken; hearthstone location
   - **fights**: duration, damage dealt and taken, abilities, enemies, close calls, and who killed you

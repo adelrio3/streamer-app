@@ -460,6 +460,21 @@ loot = {
 fire("LOOT_OPENED")
 fire("LOOT_OPENED") -- autoloot fires twice: recorded once
 
+-- A cactus: an object you only interact with. Opening it is a cast at it by
+-- name, which names it even without a tooltip.
+fire("UNIT_SPELLCAST_SENT", "player", "Cactus Apple", "Cast-3-4372-0-0-3365-000", 3365)
+loot = { { name = "Cactus Apple", n = 1, link = "|cffffffff|Hitem:11583::::|h[Cactus Apple]|h|r", src = "GameObject-0-4372-0-17-171938-00040" } }
+fire("LOOT_OPENED")
+assert(ChroniclerDB.objects[171938] == "Cactus Apple", "object names are remembered")
+do
+	local last
+	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot_window" then last = e end end
+	assert(last.sources[1].kind == "GameObject" and last.sources[1].name == "Cactus Apple", "the loot window names the cactus")
+	local named
+	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "object" and e.objId == 171938 then named = e end end
+	assert(named and named.name == "Cactus Apple", "an object event records the name once")
+end
+
 -- A vendor, with a limited item and one costing an item.
 state.units.npc = { name = "Brother Danil", guid = "Creature-0-4372-0-17-152-00020", level = 15, react = 5, hp = 700, faction = "Alliance" }
 merchant = {

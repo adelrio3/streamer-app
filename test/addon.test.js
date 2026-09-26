@@ -99,12 +99,16 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
   assert.equal(fight.enemies[0].name, 'Defias Thug');
   assert.deepEqual(of('death')[0].killer, 'Hogger');
 
-  // Loot window with its source; opened twice, recorded once.
+  // Loot window with its source; opened twice, recorded once. Then a cactus,
+  // an object you only interact with, named from the opening cast.
   const lw = of('loot_window');
-  assert.equal(lw.length, 1);
+  assert.equal(lw.length, 2);
   assert.deepEqual(lw[0].items.map((i) => [i.id, i.n]), [[2589, 2], [159, 1]]);
   assert.equal(lw[0].money, '12 Copper');
   assert.equal(lw[0].sources[0].name, 'Defias Thug');
+  assert.deepEqual(lw[1].sources[0], { kind: 'GameObject', id: 171938, name: 'Cactus Apple' });
+  assert.deepEqual(of('object').map((e) => [e.objId, e.name]), [[171938, 'Cactus Apple']]);
+  assert.equal(db.objects[171938], 'Cactus Apple');
 
   // Vendor stock, trainer, flights, hearthstone, money with context.
   const vendor = of('vendor')[0];

@@ -160,6 +160,28 @@ end
 
 -- Remembers the last tooltip title, to name herbs, ore and chests you loot.
 local lastTip = { title = nil, at = 0 }
+-- Opening a chest, herb, ore or a cactus is a cast at the object by name.
+local lastCast = { target = nil, at = 0 }
+on("UNIT_SPELLCAST_SENT", function(unit, target)
+	if unit ~= "player" or type(target) ~= "string" or target == "" then return end
+	if UnitExists and UnitExists("target") and UnitName("target") == target then return end
+	lastCast.target = target
+	lastCast.at = GetTime()
+end)
+
+-- Names of objects learned so far (id -> name), so an object named once is
+-- named in every later session too.
+local function objectName(id, name)
+	ChroniclerDB.objects = ChroniclerDB.objects or {}
+	if name and name ~= "" then
+		if ChroniclerDB.objects[id] ~= name then
+			ChroniclerDB.objects[id] = name
+			record("object", { objId = id, name = name })
+		end
+		return name
+	end
+	return ChroniclerDB.objects[id]
+end
 local function hookTitle(tip)
 	if tip and tip.HookScript then
 		tip:HookScript("OnShow", function()
@@ -310,7 +332,12 @@ on("LOOT_OPENED", function()
 		local kind, id = parseGUID(guid)
 		local npc = seen[guid]
 		local name = npc and npc.name
-		if not name and kind == "GameObject" and GetTime() - lastTip.at < 5 then name = lastTip.title end
+		if not name and kind == "GameObject" then
+			local now = GetTime()
+			if now - lastCast.at < 12 then name = lastCast.target end
+			if not name and now - lastTip.at < 12 then name = lastTip.title end
+			name = objectName(id, name)
+		end
 		src[#src + 1] = { kind = kind, id = id, name = name, level = npc and npc.level, rank = npc and npc.rank }
 	end
 	if #items == 0 and not money then return end

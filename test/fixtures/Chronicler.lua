@@ -1,5 +1,21 @@
 
 ChroniclerDB = {
+	["errors"] = {
+		{
+			["build"] = 11507,
+			["ctx"] = "CHAT_MSG_SKILL",
+			["first"] = 1790000064,
+			["key"] = "test/addon/harness.lua:541: boom",
+			["last"] = 1790000064,
+			["level"] = 10,
+			["msg"] = "test/addon/harness.lua:541: boom",
+			["n"] = 2,
+			["session"] = "Mankrik-Aldric-1790000000",
+			["sub"] = "Goldshire",
+			["version"] = "?",
+			["zone"] = "Elwynn Forest",
+		}, -- [1]
+	},
 	["items"] = {
 		[1372] = {
 			["bind"] = 0,
@@ -101,6 +117,9 @@ ChroniclerDB = {
 			},
 			["type"] = "Trade Goods",
 		},
+	},
+	["objects"] = {
+		[171938] = "Cactus Apple",
 	},
 	["schema"] = 2,
 	["sessions"] = {
@@ -849,6 +868,42 @@ ChroniclerDB = {
 					["z"] = "Elwynn Forest",
 				}, -- [42]
 				{
+					["e"] = "object",
+					["lvl"] = 2,
+					["m"] = 1429,
+					["name"] = "Cactus Apple",
+					["objId"] = 171938,
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000028.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [43]
+				{
+					["e"] = "loot_window",
+					["items"] = {
+						{
+							["id"] = 11583,
+							["n"] = 1,
+							["name"] = "Cactus Apple",
+						}, -- [1]
+					},
+					["lvl"] = 2,
+					["m"] = 1429,
+					["sources"] = {
+						{
+							["id"] = 171938,
+							["kind"] = "GameObject",
+							["name"] = "Cactus Apple",
+						}, -- [1]
+					},
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000028.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [44]
+				{
 					["e"] = "npc",
 					["faction"] = "Alliance",
 					["full"] = true,
@@ -872,7 +927,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [43]
+				}, -- [45]
 				{
 					["e"] = "vendor",
 					["items"] = {
@@ -910,7 +965,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [44]
+				}, -- [46]
 				{
 					["ctx"] = "merchant",
 					["delta"] = -25,
@@ -923,7 +978,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [45]
+				}, -- [47]
 				{
 					["e"] = "trainer",
 					["greeting"] = "The Light calls to you.",
@@ -953,7 +1008,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [46]
+				}, -- [48]
 				{
 					["e"] = "taxi_map",
 					["lvl"] = 2,
@@ -982,7 +1037,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [47]
+				}, -- [49]
 				{
 					["cost"] = 50,
 					["e"] = "flight",
@@ -994,7 +1049,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [48]
+				}, -- [50]
 				{
 					["e"] = "flight_end",
 					["lvl"] = 2,
@@ -1004,7 +1059,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [49]
+				}, -- [51]
 				{
 					["e"] = "bind",
 					["lvl"] = 2,
@@ -1015,7 +1070,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [50]
+				}, -- [52]
 				{
 					["e"] = "equip",
 					["id"] = 2488,
@@ -1029,7 +1084,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [51]
+				}, -- [53]
 				{
 					["e"] = "talents",
 					["lvl"] = 10,
@@ -1055,7 +1110,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [52]
+				}, -- [54]
 				{
 					["ch"] = "say",
 					["e"] = "chat",
@@ -1068,7 +1123,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [53]
+				}, -- [55]
 				{
 					["e"] = "zone",
 					["lvl"] = 10,
@@ -1078,7 +1133,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [54]
+				}, -- [56]
 				{
 					["area"] = "Goldshire",
 					["e"] = "explore",
@@ -1089,7 +1144,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [55]
+				}, -- [57]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
@@ -1100,7 +1155,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [56]
+				}, -- [58]
 				{
 					["e"] = "sync",
 					["lvl"] = 10,
@@ -1110,7 +1165,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [57]
+				}, -- [59]
 				{
 					["e"] = "mark",
 					["kind"] = "lore",
@@ -1121,7 +1176,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [58]
+				}, -- [60]
 				{
 					["e"] = "mark",
 					["kind"] = "shot",
@@ -1133,7 +1188,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [59]
+				}, -- [61]
 				{
 					["e"] = "mark",
 					["kind"] = "mark",
@@ -1145,7 +1200,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [60]
+				}, -- [62]
 				{
 					["e"] = "quest_abandon",
 					["lvl"] = 10,
@@ -1156,7 +1211,7 @@ ChroniclerDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [61]
+				}, -- [63]
 				{
 					["e"] = "npc",
 					["lvl"] = 10,
@@ -1169,7 +1224,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [62]
+				}, -- [64]
 				{
 					["by"] = "Melee",
 					["e"] = "death",
@@ -1180,7 +1235,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [63]
+				}, -- [65]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
@@ -1189,7 +1244,25 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [64]
+				}, -- [66]
+				{
+					["e"] = "skill",
+					["lvl"] = 10,
+					["m"] = 1429,
+					["sz"] = "Goldshire",
+					["t"] = 1790000064.1,
+					["text"] = "Your skill in Fishing has increased to 3.",
+					["z"] = "Elwynn Forest",
+				}, -- [67]
+				{
+					["e"] = "skill",
+					["lvl"] = 10,
+					["m"] = 1429,
+					["sz"] = "Goldshire",
+					["t"] = 1790000064.1,
+					["text"] = "Your skill in Fishing has increased to 4.",
+					["z"] = "Elwynn Forest",
+				}, -- [68]
 				{
 					["e"] = "bags",
 					["items"] = {
@@ -1204,7 +1277,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [65]
+				}, -- [69]
 				{
 					["e"] = "reputation",
 					["factions"] = {
@@ -1221,7 +1294,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [66]
+				}, -- [70]
 				{
 					["e"] = "skills",
 					["lvl"] = 10,
@@ -1236,7 +1309,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [67]
+				}, -- [71]
 				{
 					["e"] = "session_end",
 					["lvl"] = 10,
@@ -1244,7 +1317,7 @@ ChroniclerDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000064.1,
 					["z"] = "Elwynn Forest",
-				}, -- [68]
+				}, -- [72]
 			},
 			["id"] = "Mankrik-Aldric-1790000000",
 			["schema"] = 2,

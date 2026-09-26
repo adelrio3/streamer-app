@@ -808,7 +808,7 @@ pages.npc = async (key) => {
   if (mapId) setTimeout(() => wireMap('npcMap', mapId, onMap.map((sp) => ({ ...sp, layer: n.object ? 'object' : n.attackable ? 'creature' : 'person', label: n.name, sub2: sp.kind, key: n.key })), { routes: false, heat: n.attackable ? { density: heatCells(onMap, 3) } : {} }));
   return `${crumb(back[0], back[1])}
     ${pageHead(kicker, `${esc(n.name)}${n.titles[0] ? ` <span class="muted" style="font-size:.55em;font-family:var(--sans);font-weight:400">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}`, '', `<div class="row">${wowhead(n.object ? 'object' : 'npc', n.npcId)}</div>`)}
-    ${facts([levelText(n) && `Level ${levelText(n)}`, rankChips(n.ranks), [n.ctype, n.family].filter(Boolean).join(' · '), n.react ? REACTION[n.react] : '', esc(n.faction ?? ''), n.hp ? `${n.hp.toLocaleString()} health` : '', esc(n.zones.join(', ')), n.npcId ? `ID ${n.npcId}` : ''])}
+    ${facts([levelText(n) && `Level ${levelText(n)}`, rankChips(n.ranks), [n.ctype, n.family].filter(Boolean).join(' · '), n.react ? REACTION[n.react] : '', esc(n.faction ?? ''), n.hp ? `${n.hp.toLocaleString()} health` : '', esc(n.zones.join(', ')), n.npcId ? `ID ${n.npcId}` : '', n.objectId ? `object ${n.objectId}` : '', n.unnamed ? '<span class="muted">name not caught: addon 0.4.0 names what you open, so open it once more</span>' : ''])}
     <div class="cards">
       ${card(n.sightings, 'times seen', '#/bestiary')}${n.attackable || n.kills ? card(n.kills, 'killed', '#/bestiary?show=killed') : ''}${n.loots ? card(n.loots, 'looted', '#/items') : ''}${n.killedYou ? card(n.killedYou, 'times it killed you', '#/highlights?kind=death') : ''}${n.quests.size ? card(n.quests.size, 'quests', '#/quests') : ''}
     </div>
@@ -875,7 +875,7 @@ pages.items = async (_, params) => {
   if (show === 'objects') {
     return `${pageHead('World', 'Herbs, ore & chests', 'Everything you gathered or opened, and what came out of it.')}${tabs}
       ${table(world.objects, [
-        { label: 'Object', value: (n) => n.name, html: (n) => npcLink(n.key, n.name) },
+        { label: 'Object', value: (n) => n.name, html: (n) => `${npcLink(n.key, n.name)}${n.unnamed && n.drops.size ? ` <span class="muted small">gives ${esc([...n.drops.values()].sort((a, b) => b.times - a.times)[0].name)}</span>` : ''}` },
         { label: 'Opened', value: (n) => n.loots, num: true },
         { label: 'Gave', value: (n) => n.drops.length, html: (n) => n.drops.slice(0, 4).map((d) => itemLink(d.id, d.name)).join(' ') + (n.drops.length > 4 ? ` <span class="muted">+${n.drops.length - 4}</span>` : ''), num: true },
         { label: 'Zones', value: (n) => n.zones.join(', ') },

@@ -11,9 +11,11 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
   const npcs = new Map();
   const items = new Map();
 
-  const npc = (npcId, name) => {
-    if (!npcId && !name) return null;
-    const key = npcKey(npcId, name);
+  // forcedKey: objects are keyed by their object id (o<id>), so one named
+  // later (or in another session) merges with the same one seen unnamed.
+  const npc = (npcId, name, forcedKey) => {
+    if (!npcId && !name && !forcedKey) return null;
+    const key = forcedKey ?? npcKey(npcId, name);
     let n = npcs.get(key);
     if (!n) {
       n = {
@@ -87,9 +89,19 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           spot(n, s, e, 'kill');
           break;
         }
+        case 'object': { // the addon learned an object's name (cactus, chest, herb)
+          if (e.objId && e.name) {
+            const n = npc(null, e.name, `o${e.objId}`);
+            n.object = true; n.objectId = e.objId; n.name = e.name; n.unnamed = false;
+          }
+          break;
+        }
         case 'loot_window': {
           for (const src of e.sources || []) {
-            const n = npc(src.id && src.kind === 'Creature' ? src.id : null, src.name ?? (src.kind === 'GameObject' ? `Object ${src.id}` : null));
+            const n = src.kind === 'GameObject'
+              ? npc(null, src.name ?? `Object ${src.id}`, src.id ? `o${src.id}` : undefined)
+              : npc(src.id && src.kind === 'Creature' ? src.id : null, src.name ?? null);
+            if (src.kind === 'GameObject') { n.objectId = src.id ?? null; if (src.name) { n.name = src.name; n.unnamed = false; } else if (n.unnamed == null) n.unnamed = true; }
             if (!n) continue;
             if (src.kind === 'GameObject') n.object = true;
             n.loots++;
