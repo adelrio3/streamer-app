@@ -11,7 +11,7 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + a no-build web app (`web/`) hosted on 
   (`https://github.com/adelrio3/streamer-app/blob/<branch>/<path>`), the full Windows path for files on their PC
   (e.g. `C:\Program Files (x86)\World of Warcraft\_classic_era_\WTF\Account\<ACCOUNT>\SavedVariables\Chronicler.lua`),
   or the web address / menu path for external services (Supabase, Netlify). Don't say "the schema file" or "the README" bare.
-- They play Classic Era (interface 11509 as of 1.15.9) on a Windows PC and record with OBS on a separate Mac (no file sharing between them), editing in Premiere Pro.
+- They play Classic Era (interface 11509 as of 1.15.9) on a Windows PC (Chrome can't open Program Files, so WoW gets moved to `C:\Games\World of Warcraft`) and record with OBS on a separate Mac (no file sharing between them), editing in Premiere Pro.
 - Give exact values to enter and direct links (Supabase dashboard links can use `https://supabase.com/dashboard/project/_/...`), so they don't have to hunt or guess.
 
 ## Checks
