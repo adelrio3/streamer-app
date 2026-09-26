@@ -9,7 +9,8 @@
 
 import { measureClock } from './cloud.js';
 import { readAddonLog, mergeSession } from './sessions.js';
-import { clockModel, startFromName, baseName } from './timeline.js';
+import { clockModel, startFromName, baseName, eventMs } from './timeline.js';
+import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken } from './live.js';
 import { ObsLink } from './obs.js';
 import * as folders from './folders.js';
 
@@ -18,6 +19,10 @@ const CLOCK_EVERY = 10 * 60 * 1000;
 const WOW_EVERY = 5000;
 const REC_EVERY = 30000;
 const REFRESH_EVERY = 60000;
+const LIVE_EVERY = 1000;
+const LIVE_PUSH_GAP = 1500;
+const LIVE_HEARTBEAT = 20000;
+const LIVE_SINCE_KEY = 'chronicler.live.since';
 
 export function defaultMachineConfig(platform = globalThis.navigator?.platform ?? '') {
   const mac = /mac/i.test(platform);
@@ -43,6 +48,8 @@ export class Machine {
     this.obsStatus = { state: 'off' };
     this.seen = new Map(); // SavedVariables file -> lastModified already handled
     this.timers = [];
+    // The live link: the chat log on this PC, read as the game writes it.
+    this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0 };
   }
 
   loadConfig() {
@@ -72,6 +79,10 @@ export class Machine {
     if (this.config.plays) {
       await this.initWow();
       this.every(WOW_EVERY, () => this.pollWow());
+      if (this.liveEnabled()) {
+        this.live.status = 'waiting';
+        this.every(LIVE_EVERY, () => this.pollLive());
+      }
     }
     if (this.config.records) {
       await this.initRec();
@@ -185,9 +196,128 @@ export class Machine {
     if (uploaded) {
       this.wow.lastIngest = { at: Date.now(), sessions: uploaded };
       this.state.sessions.sort((a, b) => a.started - b.started);
+      this.markUploaded();
       this.changed();
       this.notify(`Uploaded ${uploaded} session${uploaded > 1 ? 's' : ''} from WoW.`);
     }
+  }
+
+  // Live link ---------------------------------------------------------------
+  // The addon posts what happens into a hidden chat channel; the game writes
+  // the chat log as it goes; this reads the new lines every second and keeps
+  // the overlay's totals in the cloud.
+
+  // When the current stream session started. A session survives reloading
+  // the tab, but not two days.
+  loadSince() {
+    try {
+      const v = Number(localStorage.getItem(LIVE_SINCE_KEY)) || 0;
+      if (v && Date.now() - v < 48 * 3600 * 1000) return v;
+    } catch { /* storage off */ }
+    return Date.now();
+  }
+
+  liveEnabled() {
+    return Boolean(this.config.plays && this.config.live !== false);
+  }
+
+  // Everything uploaded so far ends here (server ms); live loot after it is
+  // not in any session yet.
+  markUploaded() {
+    const clock = clockModel(this.state.clock);
+    let until = 0;
+    for (const s of this.state.sessions) {
+      const last = s.events.at(-1);
+      if (last) until = Math.max(until, eventMs(s, last, clock));
+    }
+    this.live.state.uploadedUntil = until;
+  }
+
+  // A new stream session: the overlay's counters start from now.
+  async resetLive() {
+    const since = Date.now();
+    try { localStorage.setItem(LIVE_SINCE_KEY, String(since)); } catch { /* storage off */ }
+    this.live.state.reset(this.toServer(since));
+    this.markUploaded();
+    await this.pushLive(true);
+    this.changed();
+  }
+
+  async pollLive() {
+    if (!this.liveEnabled() || this.wow.state !== 'ok') return;
+    const live = this.live;
+    if (!live.file) {
+      for (const inst of this.wow.installs) {
+        const f = await folders.chatLogFile(inst.dir);
+        if (f) { live.file = f; live.flavor = inst.flavor; break; }
+      }
+      if (!live.file) { live.status = 'no-log'; await this.pushLive(false); return; }
+      live.status = 'ok';
+      this.markUploaded();
+    }
+    let file;
+    try { file = await live.file.getFile(); } catch (err) { live.file = null; live.status = 'no-log'; live.error = err.message; return; }
+    if (file.size < live.size) { live.size = 0; live.remainder = ''; } // the game started the log over
+    if (live.size === 0) live.size = Math.max(0, file.size - 512 * 1024); // catch up on the end of the file
+    if (file.size > live.size) {
+      const text = await file.slice(live.size, file.size).text();
+      live.size = file.size;
+      const chunk = live.remainder + text;
+      const cut = chunk.lastIndexOf('\n');
+      live.remainder = cut >= 0 ? chunk.slice(cut + 1) : chunk;
+      const { events, linkSeenAt } = eventsFromChatLog(cut >= 0 ? chunk.slice(0, cut + 1) : '', { linkSeenAt: live.linkSeenAt });
+      live.linkSeenAt = linkSeenAt;
+      let changed = false;
+      // The log carries this PC's local time; everything else runs on the server clock.
+      for (const e of events) if (live.state.apply({ ...e, at: this.toServer(e.at) })) changed = true;
+      if (changed) { live.changedAt = Date.now(); this.changed(); }
+      await this.pushLive(changed);
+      return;
+    }
+    await this.pushLive(false);
+  }
+
+  async pushLive(force) {
+    const live = this.live;
+    const now = Date.now();
+    const due = force || (live.state.seq !== live.pushedSeq && now - live.lastPush > LIVE_PUSH_GAP) || now - live.lastPush > LIVE_HEARTBEAT;
+    if (!due) return;
+    live.lastPush = now;
+    try {
+      const token = await this.liveToken();
+      const snap = live.state.snapshot(this.toServer(now));
+      snap.counters = this.counterValues();
+      snap.machine = this.name;
+      snap.link = { status: live.status, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0 };
+      await this.store.saveLive(token, this.name, snap);
+      live.pushedSeq = live.state.seq;
+      live.error = null;
+      this.state.live = { token, machine: this.name, state: snap, updated_at: new Date(now + (this.offset ?? 0)).toISOString() };
+    } catch (err) {
+      live.error = err.message;
+      if (!/does not exist|schema cache/i.test(err.message)) console.warn('live', err);
+    }
+  }
+
+  // A test event from the Live page, shown by the overlay like a real one.
+  async liveTest(ev) {
+    this.live.state.apply({ at: this.toServer(Date.now()), ...ev });
+    await this.pushLive(true);
+  }
+
+  async liveToken() {
+    if (!this.state.settings.liveToken) {
+      this.state.settings = { ...this.state.settings, liveToken: randomToken() };
+      await this.store.saveSettings(this.state.settings);
+    }
+    return this.state.settings.liveToken;
+  }
+
+  counterValues() {
+    const counters = this.state.settings.liveCounters || [];
+    if (!counters.length) return [];
+    const clock = clockModel(this.state.clock);
+    return counterValues(counters, pastLoot(this.state.sessions, (s, e) => eventMs(s, e, clock)), this.live.state);
   }
 
   // Position points go up in chunks of 1000; only chunks with new points.

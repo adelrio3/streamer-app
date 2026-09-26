@@ -54,6 +54,16 @@ local function runTimers()
 	for _, fn in ipairs(list) do fn() end
 end
 local cvars = { nameplateMaxAlpha = "1" }
+-- Chat channels and the chat log (the live link).
+local chat = { logging = false, channels = {}, sent = {}, filters = {} }
+function LoggingChat(on) chat.logging = on end
+function JoinTemporaryChannel(name, password) chat.channels[#chat.channels + 1] = { name = name, password = password } end
+function GetChannelName(name)
+	for i, c in ipairs(chat.channels) do if c.name == name then return 6 + i, name end end
+	return 0
+end
+function SendChatMessage(msg, kind, _, target) chat.sent[#chat.sent + 1] = { msg = msg, kind = kind, target = target, at = clock.epoch } end
+function ChatFrame_AddMessageEventFilter(event, fn) chat.filters[#chat.filters + 1] = { event = event, fn = fn } end
 function GetCVar(k) return cvars[k] end
 function SetCVar(k, v) cvars[k] = v end
 
@@ -329,6 +339,7 @@ assert(loadfile(addonDir .. "/Boot.lua"))("Chronicler", ns)
 local bootSlash = SlashCmdList.CHRONICLER
 assert(loadfile(addonDir .. "/Chronicler.lua"))("Chronicler", ns)
 assert(loadfile(addonDir .. "/Capture.lua"))("Chronicler", ns)
+assert(loadfile(addonDir .. "/Live.lua"))("Chronicler", ns)
 
 -- Scenario ------------------------------------------------------------------
 assert(SlashCmdList.CHRONICLER ~= bootSlash, "main file should replace the boot fallback")
@@ -513,6 +524,42 @@ fire("PLAYER_DEAD")
 runTimers()
 fire("PLAYER_LOGOUT")
 assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
+
+-- The live link posted everything to its hidden channel.
+assert(chat.logging, "the live link turns the chat log on")
+assert(#chat.channels == 1 and chat.channels[1].name:match("^chron%x+$"), "joins a channel named after the character")
+assert(#chat.sent > 0, "sent live lines")
+for _, m in ipairs(chat.sent) do
+	assert(m.kind == "CHANNEL" and m.target == 7, "sent to the hidden channel")
+	assert(#m.msg <= 255, "chat messages fit in 255 bytes")
+	assert(m.msg:sub(1, 7) == "CHRON1~", "prefixed")
+end
+local all = {}
+for _, m in ipairs(chat.sent) do all[#all + 1] = m.msg end
+all = table.concat(all, "\n")
+assert(all:find("~~L~2589~Linen Cloth~1~2~", 1, true) or all:find("~L~2589~Linen Cloth~1~2~", 1, true), "loot line with count: " .. all)
+assert(all:find("Q~accept~7~Kobold Camp Cleanup", 1, true), "quest accepted line")
+assert(all:find("Q~progress~-~Kobold Vermin slain: 2/10", 1, true), "quest progress line")
+assert(all:find("Q~turnin~7~", 1, true), "quest turn-in line")
+assert(all:find("K~6~Kobold Vermin", 1, true), "kill line")
+assert(all:find("~D~Hogger~448", 1, true) or all:find("~D~Hogger", 1, true), "death line: " .. all)
+assert(all:find("~V~2", 1, true), "level line")
+local hidden = 0
+for _, f in ipairs(chat.filters) do
+	if f.event == "CHAT_MSG_CHANNEL" and f.fn(nil, "CHAT_MSG_CHANNEL", "CHRON1~K~1~x", "Aldric", "", "7. " .. chat.channels[1].name) then hidden = hidden + 1 end
+	if f.event == "CHAT_MSG_CHANNEL" then assert(not f.fn(nil, "CHAT_MSG_CHANNEL", "hello", "Bob", "", "1. General - Elwynn Forest"), "other channels are not hidden") end
+end
+assert(hidden == 1, "the channel is hidden from chat windows")
+-- A chat log the way WoW writes it, for the web side's tests.
+local log = {}
+for _, m in ipairs(chat.sent) do
+	local t = m.at
+	log[#log + 1] = string.format("9/25 %02d:%02d:%02d.%03d  [7. %s] [Aldric]: %s", math.floor(t / 3600) % 24, math.floor(t / 60) % 60, math.floor(t) % 60, math.floor((t % 1) * 1000), chat.channels[1].name, m.msg)
+end
+log[#log + 1] = "9/25 23:59:59.000  You receive loot: |cff1eff00|Hitem:1121::::::::1:::::::|h[Feet of the Lynx]|h|r."
+local lf = assert(io.open(outFile .. ".chatlog.txt", "w"))
+lf:write(table.concat(log, "\n") .. "\n")
+lf:close()
 
 -- Serialize like WoW -------------------------------------------------------
 local function quote(s)

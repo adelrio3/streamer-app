@@ -2,9 +2,10 @@
 ## Title: Chronicler
 ## Notes: Logs quests, lore, NPCs, loot, items, vendors, fights, gear and your route with precise timestamps so the Chronicler web app can line them up with your recordings.
 ## Author: Chronicler
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: ChroniclerDB
 
 Boot.lua
 Chronicler.lua
 Capture.lua
+Live.lua

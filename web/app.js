@@ -18,6 +18,7 @@ import { ROLE_NAMES } from './lib/world.js';
 import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS } from './lib/maps.js';
 import { looseEnds } from './lib/coverage.js';
 import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS } from './lib/questdb.js';
+import { pastLoot, dropsBetween } from './lib/live.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -514,6 +515,7 @@ pages[''] = async () => {
     m.config.records ? ['OBS', m.obsStatus.state === 'connected' ? `<span class="dot ${m.obsStatus.recording ? 'live' : 'ok'}"></span> ${m.obsStatus.recording ? 'recording' : 'connected'}` : `<a href="#/setup">${esc(m.obsStatus.state)}</a>`] : null,
     ['Last session', lastSession ? esc(when(lastSession.events.at(-1)?.t ?? lastSession.started)) : '<span class="muted">none yet</span>'],
     ['Recordings', `${d.recordings.length}${unsynced ? ` · <a href="#/recordings">${unsynced} not synced</a>` : ''}`],
+    m.liveEnabled?.() ? ['Live link', m.live.status === 'ok' ? `<span class="dot live"></span> reading the chat log · <a href="#/live">overlay</a>` : m.live.status === 'no-log' ? '<a href="#/live">no chat log yet</a>' : `<a href="#/live">${esc(m.live.status)}</a>`] : null,
     ['Database', state.schema2 ? '<span class="dot ok"></span> up to date' : '<a href="#/setup">needs update</a>'],
   ].filter(Boolean);
   return `
@@ -1537,6 +1539,263 @@ pages.marks = async () => {
     ], { search: (m) => `${m.kind} ${m.note} ${m.z} ${m.sz}`, sort: 4, desc: true, empty: 'No marks yet.' })}`;
 };
 
+// Stream: live overlay and drops ----------------------------------------------
+
+const OVERLAY_WIDGETS = [['toasts', 'Drop toasts'], ['tracker', 'Quest tracker'], ['counters', 'Item counters'], ['kills', 'Kills & streaks'], ['timer', 'Session timer & XP'], ['callouts', 'Callouts (levels, deaths, rares, quests)']];
+const OVERLAY_POSITIONS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['ml', 'Middle left'], ['mr', 'Middle right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
+const DEFAULT_OVERLAY = { show: ['toasts', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
+const LIVE_TESTS = {
+  'loot:1': ['Common drop', { kind: 'loot', id: 2589, name: 'Linen Cloth', q: 1, n: 3, source: 'Kobold Vermin', sourceId: 6 }],
+  'loot:2': ['Uncommon drop', { kind: 'loot', id: 1121, name: 'Feet of the Lynx', q: 2, n: 1, source: 'Mother Fang', sourceId: 471 }],
+  'loot:3': ['Rare drop', { kind: 'loot', id: 2244, name: 'Krol Blade', q: 3, n: 1, source: 'Hogger', sourceId: 448 }],
+  'loot:4': ['Epic drop', { kind: 'loot', id: 871, name: 'Flurry Axe', q: 4, n: 1, source: 'Hogger', sourceId: 448 }],
+  'loot:5': ['Legendary drop', { kind: 'loot', id: 17182, name: 'Sulfuras, Hand of Ragnaros', q: 5, n: 1, source: 'Ragnaros', sourceId: 11502 }],
+  quest: ['New quest', { kind: 'quest', action: 'accept', qid: 176, title: 'Wanted: "Hogger"' }],
+  progress: ['Quest progress', { kind: 'quest', action: 'progress', text: 'Riverpaw Gnoll slain: 4/10' }],
+  turnin: ['Quest complete', { kind: 'quest', action: 'turnin', qid: 176, title: 'Wanted: "Hogger"', xp: 250, money: 300 }],
+  kill: ['Kill', { kind: 'kill', npcId: 448, name: 'Hogger' }],
+  level: ['Level up', { kind: 'level', level: 12 }],
+  rare: ['Rare spotted', { kind: 'rare', npcId: 471, name: 'Mother Fang', level: 10, rank: 'rareelite' }],
+  death: ['Death', { kind: 'death', killer: 'Hogger', killerId: 448 }],
+  zone: ['Zone change', { kind: 'zone', zone: 'Westfall', sub: 'Sentinel Hill' }],
+};
+
+function overlayConfig() {
+  const c = { ...DEFAULT_OVERLAY, ...(state.settings.overlay || {}) };
+  c.show = Array.isArray(c.show) ? c.show : DEFAULT_OVERLAY.show;
+  return c;
+}
+
+function overlayUrl(cfg, token, { demo = false } = {}) {
+  const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}overlay.html`;
+  const p = new URLSearchParams();
+  if (demo) p.set('demo', '1'); else if (token) p.set('token', token);
+  p.set('show', cfg.show.join(','));
+  if (Number(cfg.scale) !== 1) p.set('scale', String(cfg.scale));
+  for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k] && cfg[k] && cfg[k] !== DEFAULT_OVERLAY[k]) p.set(k, cfg[k]);
+  return `${base}?${p}`;
+}
+
+async function liveRow() {
+  if (state.live) return state.live;
+  try { return await state.store.loadLive(); } catch { return null; }
+}
+
+// A test event, shown by the overlay like a real one. From the gaming PC it
+// joins the live totals; from anywhere else it is added to the cloud row.
+async function liveTestEvent(ev) {
+  const m = state.machine;
+  if (m.liveEnabled() && m.wow.state === 'ok') { await m.liveTest(ev); return; }
+  const row = await liveRow();
+  const snap = row?.state ? { ...row.state } : { since: Date.now(), seq: 0, events: [], quests: [], counters: [], kills: 0, deaths: 0, character: {} };
+  const seq = (snap.seq || 0) + 1;
+  const at = Date.now() + (m.offset ?? 0);
+  snap.events = [...(snap.events || []), { seq, at, ...ev }].slice(-40);
+  snap.seq = seq;
+  snap.at = at;
+  const token = state.settings.liveToken || row?.token;
+  if (!token) throw new Error('No overlay address yet: open Chronicler on the gaming PC once.');
+  await state.store.saveLive(token, m.name, snap);
+  state.live = { token, machine: m.name, state: snap, updated_at: new Date(at).toISOString() };
+}
+
+pages.live = async () => {
+  const m = state.machine;
+  const row = await liveRow();
+  const snap = row?.state ?? null;
+  const token = state.settings.liveToken || row?.token || null;
+  const cfg = overlayConfig();
+  const age = row?.updated_at ? Date.now() + (m.offset ?? 0) - Date.parse(row.updated_at) : null;
+  const here = m.liveEnabled();
+  const addon = m.wow.installs?.map((i) => i.addonVersion).filter(Boolean)[0] ?? null;
+  const linkStatus = here
+    ? { ok: '<span class="dot live"></span> reading the chat log', 'no-log': 'no chat log yet: log in to WoW with addon 0.4.0 or later (it turns chat logging on)', waiting: 'waiting for the WoW folder', off: 'off' }[m.live.status] ?? esc(m.live.status)
+    : snap ? (age < 60000 ? `<span class="dot live"></span> ${esc(snap.machine ?? 'the gaming PC')} is feeding it` : `last heard from ${esc(snap.machine ?? 'the gaming PC')} ${esc(when(Date.parse(row.updated_at) / 1000))}`) : 'nothing yet: open Chronicler on the gaming PC while you play';
+  const counters = state.settings.liveCounters || [];
+  const { world } = derived();
+  setTimeout(() => wireLive(cfg, token));
+  return `${pageHead('Stream', 'Live overlay', 'What happens in the game, on stream as it happens: drops with icons and effects by rarity, a quest tracker, item counters, kills and streaks, deaths, levels. Add the address below to OBS as a Browser source.', `<div class="row"><span class="chip ${here && m.live.status === 'ok' || (!here && age < 60000) ? 'done' : ''}">${linkStatus}</span>${here && m.live.error ? `<span class="chip bad">${esc(m.live.error)}</span>` : ''}</div>`)}
+    ${state.schema2 ? '' : schemaNotice()}
+    ${here && (!addon || addon < '0.4.0') ? '<div class="notice">The live link needs addon <b>0.4.0</b> or later: <a href="#/setup">update the addon</a>, then <code>/reload</code> in game.</div>' : ''}
+    <div class="two">
+      <div>
+        <div class="panel"><h3>This stream session</h3>
+          <div class="cards" style="margin:8px 0 12px">
+            ${card(snap?.kills ?? 0, 'kills', '#/drops')}${card(snap?.deaths ?? 0, 'deaths', '#/drops')}${card(snap?.drops?.reduce((n, d) => n + d.n, 0) ?? 0, 'items dropped', '#/drops?range=session')}${card(snap?.questsDone ?? 0, 'quests turned in', '#/quests')}${card(snap?.seq ?? 0, 'events', '#/live')}
+          </div>
+          <p class="small muted">Since ${snap?.since ? esc(when(snap.since / 1000)) : '—'}${snap?.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}${snap?.character?.name ? ` · ${esc(snap.character.name)} level ${snap.character.level ?? '?'}${snap.character.zone ? ` in ${esc(snap.character.zone)}` : ''}` : ''}</p>
+          <div class="row">${here ? '<button data-live="reset">Start a new stream session (counters from now)</button>' : '<span class="muted small">Counters restart from the gaming PC: open this page there.</span>'}<a class="btn ghost" href="#/drops?range=session">Drops this session</a></div>
+        </div>
+        <div class="panel"><h3>Try it</h3>
+          <p class="small muted">Sends a fake event to the overlay so you can see each effect in OBS (they also count in this session's totals).</p>
+          <div class="tests">${Object.entries(LIVE_TESTS).map(([k, [label, ev]]) => `<button class="ghost ${ev.kind === 'loot' ? `q${ev.q}` : ''}" data-test="${k}">${esc(label)}</button>`).join('')}</div>
+        </div>
+        <form id="countersForm" class="panel"><h3>Item counters</h3>
+          <p class="small muted">Show how many of an item have dropped: this session, or all time across every session (plus an offset if you started counting before Chronicler).</p>
+          <table class="counters-list"><tbody>
+            ${counters.map((c, i) => `<tr><td>${itemLink(c.id, c.name, c.q)}</td><td><select name="mode${i}"><option value="session" ${c.mode !== 'ongoing' ? 'selected' : ''}>this session</option><option value="ongoing" ${c.mode === 'ongoing' ? 'selected' : ''}>all time</option></select></td><td><input type="number" name="add${i}" value="${Number(c.add) || 0}" title="Added to the count"></td><td class="num">${snap?.counters?.find((x) => x.id === c.id && (x.mode || 'session') === (c.mode || 'session'))?.n ?? ''}</td><td><button class="ghost small" type="button" data-remove="${i}" title="Remove">✕</button></td></tr>`).join('') || '<tr><td class="muted" colspan="5">No counters yet.</td></tr>'}
+          </tbody></table>
+          <div class="row" style="margin-top:8px"><input type="text" name="item" list="itemNames" placeholder="Item name or id…" style="max-width:280px"><datalist id="itemNames">${world.items.slice(0, 2000).map((i) => `<option value="${esc(i.name ?? '')}" data-id="${i.id}">${i.id}</option>`).join('')}</datalist><select name="newMode"><option value="session">this session</option><option value="ongoing">all time</option></select><button type="submit">Add</button></div>
+        </form>
+      </div>
+      <div>
+        <form id="overlayForm" class="panel"><h3>Overlay address for OBS</h3>
+          <div class="widgets">${OVERLAY_WIDGETS.map(([k, label]) => `<label><input type="checkbox" name="show" value="${k}" ${cfg.show.includes(k) ? 'checked' : ''}><span>${esc(label)}</span>${DEFAULT_OVERLAY[k] ? `<select name="${k}">${OVERLAY_POSITIONS.map(([p, pl]) => `<option value="${p}" ${cfg[k] === p ? 'selected' : ''}>${pl}</option>`).join('')}</select>` : ''}</label>`).join('')}</div>
+          <label style="margin-top:10px"><span>Size <b id="scaleOut">${Number(cfg.scale).toFixed(2)}×</b></span><input type="range" name="scale" min="0.6" max="1.8" step="0.05" value="${cfg.scale}"></label>
+          <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Chronicler has run on the gaming PC.'}</p>
+          <div class="row"><button type="button" id="copyUrl" ${token ? '' : 'disabled'}>Copy address</button><a class="btn ghost" href="${overlayUrl(cfg, token, { demo: true })}" target="_blank" rel="noopener">Open the demo</a></div>
+          <p class="small muted">In OBS: <b>Sources › + › Browser</b>, paste the address, width <b>1920</b>, height <b>1080</b>, FPS <b>60</b>. Untick <i>Shutdown source when not visible</i>. Put it above the game capture. The background is transparent. Keep this address to yourself: anyone with it can watch your counters.</p>
+        </form>
+        <div class="panel"><h3>Preview <span class="muted small">demo events</span></h3><div class="overlay-preview" id="overlayPreview"><iframe title="Overlay preview" src="${overlayUrl(cfg, token, { demo: true })}"></iframe></div></div>
+      </div>
+    </div>`;
+};
+
+function wireLive(cfg, token) {
+  const m = state.machine;
+  const form = document.getElementById('overlayForm');
+  const readForm = () => {
+    const f = new FormData(form);
+    const next = { ...cfg, show: f.getAll('show'), scale: Number(f.get('scale')) || 1 };
+    for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k]) next[k] = f.get(k) || DEFAULT_OVERLAY[k];
+    return next;
+  };
+  const fit = () => {
+    const box = document.getElementById('overlayPreview');
+    const frame = box?.querySelector('iframe');
+    if (!box || !frame) return;
+    const s = box.clientWidth / 1920;
+    frame.style.transform = `scale(${s})`;
+    box.style.height = `${Math.round(1080 * s)}px`;
+  };
+  fit();
+  new ResizeObserver(fit).observe(document.getElementById('overlayPreview'));
+  let saveTimer = null;
+  form?.addEventListener('input', () => {
+    const next = readForm();
+    document.getElementById('scaleOut').textContent = `${Number(next.scale).toFixed(2)}×`;
+    document.getElementById('overlayUrl').textContent = token ? overlayUrl(next, token) : '';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      state.settings = { ...state.settings, overlay: next };
+      try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); }
+      const frame = document.querySelector('#overlayPreview iframe');
+      if (frame) frame.src = overlayUrl(next, token, { demo: true });
+    }, 400);
+  });
+  document.getElementById('copyUrl')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(overlayUrl(readForm(), token)); toast('Overlay address copied. Paste it into an OBS Browser source.'); } catch (err) { toast(err.message); }
+  });
+  for (const b of document.querySelectorAll('[data-test]')) {
+    b.addEventListener('click', async () => {
+      try { await liveTestEvent(LIVE_TESTS[b.dataset.test][1]); toast(`${LIVE_TESTS[b.dataset.test][0]} sent to the overlay.`); } catch (err) { toast(err.message); }
+    });
+  }
+  document.querySelector('[data-live="reset"]')?.addEventListener('click', async () => {
+    if (!window.confirm('Start a new stream session? The overlay\'s kills, drops and session counters start again from now.')) return;
+    try { await m.resetLive(); toast('New stream session started.'); route({ keepScroll: true }); } catch (err) { toast(err.message); }
+  });
+  const cform = document.getElementById('countersForm');
+  const saveCounters = async (list) => {
+    state.settings = { ...state.settings, liveCounters: list };
+    try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); return; }
+    if (m.liveEnabled()) m.pushLive(true).catch(() => {});
+    route({ keepScroll: true });
+  };
+  cform?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(cform);
+    const list = (state.settings.liveCounters || []).map((c, i) => ({ ...c, mode: f.get(`mode${i}`) || c.mode, add: Number(f.get(`add${i}`)) || 0 }));
+    const text = String(f.get('item') || '').trim();
+    if (text) {
+      const { world } = derived();
+      const opt = [...document.querySelectorAll('#itemNames option')].find((o) => o.value === text);
+      const id = Number(opt?.dataset.id) || Number(text) || null;
+      const it = id ? world.byItem.get(id) : world.items.find((i) => (i.name ?? '').toLowerCase() === text.toLowerCase());
+      if (!it && !id) { toast('Pick an item from the list, or type its id.'); return; }
+      list.push({ id: it?.id ?? id, name: it?.name ?? text, q: it?.quality ?? null, mode: f.get('newMode') || 'session', add: 0 });
+    }
+    await saveCounters(list);
+  });
+  for (const b of document.querySelectorAll('[data-remove]')) {
+    b.addEventListener('click', async () => {
+      const list = (state.settings.liveCounters || []).filter((_, i) => i !== Number(b.dataset.remove));
+      await saveCounters(list);
+    });
+  }
+}
+
+const toLocalInput = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+pages.drops = async (_, params) => {
+  const d = derived();
+  const m = state.machine;
+  const past = pastLoot(d.sessions, (s, e) => eventMs(s, e, d.clock));
+  let since = null; let uploadedUntil = 0; let liveLoot = [];
+  if (m.liveEnabled() && m.wow.state === 'ok') {
+    since = m.live.state.since; uploadedUntil = m.live.state.uploadedUntil; liveLoot = m.live.state.loot;
+  } else {
+    const row = await liveRow();
+    if (row?.state) { since = row.state.since; uploadedUntil = row.state.uploadedUntil || 0; liveLoot = row.state.loot || []; }
+  }
+  const all = [...past, ...liveLoot.filter((l) => l.at > uploadedUntil)].sort((a, b) => a.at - b.at);
+  const now = Date.now() + (m.offset ?? 0);
+  const day = new Date(now); day.setHours(0, 0, 0, 0);
+  const lastSession = d.sessions.at(-1);
+  const presets = [
+    ['session', 'This stream session', since ? [since, now] : null],
+    ['today', 'Today', [day.getTime(), now]],
+    ['last', 'Last uploaded session', lastSession?.events.length ? [eventMs(lastSession, lastSession.events[0], d.clock), eventMs(lastSession, lastSession.events.at(-1), d.clock)] : null],
+    ['all', 'Everything', [all[0]?.at ?? now - 3600000, now]],
+  ];
+  const range = params.get('range') || (params.get('from') ? 'custom' : since ? 'session' : 'all');
+  const preset = presets.find(([k]) => k === range)?.[2];
+  const from = Number(params.get('from')) || preset?.[0] || 0;
+  const to = Number(params.get('to')) || preset?.[1] || now;
+  const sum = dropsBetween(all, from, to);
+  let kills = 0; let money = 0; let quests = 0;
+  for (const s of d.sessions) {
+    for (const e of s.events) {
+      if (e.e !== 'kill' && e.e !== 'money' && e.e !== 'quest_turnin') continue;
+      const at = eventMs(s, e, d.clock);
+      if (at < from || at > to) continue;
+      if (e.e === 'kill') kills++; else if (e.e === 'money' && e.delta > 0) money += e.delta; else quests++;
+    }
+  }
+  setTimeout(() => {
+    const form = document.getElementById('rangeForm');
+    form?.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = new FormData(form);
+      const a = new Date(f.get('from')).getTime(); const b = new Date(f.get('to')).getTime();
+      if (!a || !b) return;
+      location.hash = `#/drops?range=custom&from=${a}&to=${b}`;
+    });
+    document.getElementById('dropsCsv')?.addEventListener('click', () => {
+      const lines = [['item_id', 'item', 'quality', 'count', 'times', 'from', 'first', 'last'], ...sum.rows.map((r) => [r.id, r.name, qualityName(r.q) ?? '', r.n, r.times, r.sources.map((x) => `${x.name} x${x.n}`).join('; '), new Date(r.first).toISOString(), new Date(r.last).toISOString()])];
+      download(`drops-${toLocalInput(from).replace(/[T:]/g, '-')}.csv`, 'text/csv', lines.map((l) => l.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n'));
+    });
+  });
+  return `${pageHead('Stream', 'Drops', 'Everything that dropped in a stretch of time: a stream session, a day, or any two moments you pick. Uploaded sessions and the live session are combined.', `<div class="row"><button class="ghost" id="dropsCsv">Download CSV</button></div>`)}
+    <div class="row" style="margin-bottom:10px">${presets.map(([k, label, r]) => (r ? `<a class="chip ${range === k ? 'active' : ''}" href="#/drops?range=${k}">${label}</a>` : '')).join(' ')}</div>
+    <form id="rangeForm" class="panel range-form">
+      <label>From<input type="datetime-local" name="from" value="${toLocalInput(from)}" step="60"></label>
+      <label>To<input type="datetime-local" name="to" value="${toLocalInput(to)}" step="60"></label>
+      <button type="submit">Show</button>
+      <span class="muted small">${esc(when(from / 1000))} → ${esc(when(to / 1000))}${liveLoot.length ? ' · live session included' : ''}</span>
+    </form>
+    <div class="cards">${card(sum.items, 'items dropped', '#/drops')}${card(sum.kinds, 'different items', '#/drops')}${card(sum.rows.filter((r) => (r.q ?? 0) >= 3).reduce((n, r) => n + r.n, 0), 'rare or better', '#/drops')}${card(kills, 'kills (uploaded sessions)', '#/bestiary')}${card(quests, 'quests turned in', '#/quests')}${card(Math.floor(money / 10000), 'gold looted', '#/items')}</div>
+    ${table(sum.rows, [
+      { label: 'Item', value: (r) => r.name ?? '', html: (r) => itemLink(r.id, r.name, r.q) },
+      { label: 'Quality', value: (r) => r.q ?? -1, html: (r) => `<span class="q-${r.q ?? 1}">${esc(qualityName(r.q) ?? '')}</span>`, num: true },
+      { label: 'Count', value: (r) => r.n, num: true },
+      { label: 'Drops', value: (r) => r.times, num: true },
+      { label: 'From', value: (r) => r.sources.map((x) => x.name).join(', '), html: (r) => r.sources.slice(0, 3).map((x) => `${esc(x.name)} <span class="muted">×${x.n}</span>`).join(', ') + (r.sources.length > 3 ? ` <span class="muted">+${r.sources.length - 3}</span>` : '') },
+      { label: 'First', value: (r) => r.first, html: (r) => esc(when(r.first / 1000)) },
+      { label: 'Last', value: (r) => r.last, html: (r) => esc(when(r.last / 1000)) },
+    ], { search: (r) => `${r.name} ${qualityName(r.q)} ${r.sources.map((x) => x.name).join(' ')}`, sort: 1, desc: true, empty: 'Nothing dropped in this stretch.' })}`;
+};
+
 pages.sessions = async () => {
   const list = state.sessions.map((s) => ({
     id: s.id, char: s.char, build: s.build, flavor: s.flavor, machine: s.machine, events: s.events.length,
@@ -1914,6 +2173,7 @@ pages.setup = async () => {
       </div>
       <label class="check"><input type="checkbox" name="plays" ${cfg.plays ? 'checked' : ''}><span>I play WoW on this computer</span></label>
       <label class="check"><input type="checkbox" name="records" ${cfg.records ? 'checked' : ''}><span>OBS records on this computer</span></label>
+      <label class="check"><input type="checkbox" name="live" ${cfg.live !== false ? 'checked' : ''}><span>Feed the <a href="#/live">stream overlay</a> while I play (reads the game's chat log, <code>Logs\WoWChatLog.txt</code>, as it is written)</span></label>
       <button class="primary" type="submit">${cfg.fresh ? 'Save and continue' : 'Save'}</button>
       ${cfg.fresh ? '<p class="muted small">These are guesses for this computer; change them if they are wrong.</p>' : ''}
     </form>
@@ -1995,7 +2255,7 @@ function wireSetup() {
   document.getElementById('machineForm')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
-    m.saveConfig({ name: String(f.get('name')).trim() || m.config.name, plays: f.get('plays') === 'on', records: f.get('records') === 'on' });
+    m.saveConfig({ name: String(f.get('name')).trim() || m.config.name, plays: f.get('plays') === 'on', records: f.get('records') === 'on', live: f.get('live') === 'on' });
     toast('Saved.');
     // Stay here for the next steps (folders, OBS).
     if (location.hash !== '#/setup') location.hash = '#/setup'; else route();

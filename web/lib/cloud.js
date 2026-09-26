@@ -148,7 +148,7 @@ export class CloudStore {
   // (screenshots and, unless keepMaps, your map images). Settings keep only
   // what is passed in `keepSettings`.
   async deleteAll({ keepMaps = true } = {}) {
-    for (const table of ['tracks', 'screenshots', 'items', 'clock_samples', 'recordings', 'sessions']) {
+    for (const table of ['voice', 'tracks', 'screenshots', 'items', 'clock_samples', 'recordings', 'sessions']) {
       const { error } = await this.client.from(table).delete().eq('user_id', this.userId);
       if (error && !/does not exist|schema cache/i.test(error.message)) throw new Error(error.message);
     }
@@ -169,12 +169,48 @@ export class CloudStore {
     }
   }
 
+  // What is happening in the game right now (one row per user), which the
+  // stream overlay reads through its token without logging in.
+  async saveLive(token, machine, state) {
+    check(await this.client.from('live').upsert({ user_id: this.userId, token, machine, state, updated_at: this.nowIso() }, { onConflict: 'user_id' }));
+  }
+
+  async loadLive() {
+    const { data, error } = await this.client.from('live').select('*').maybeSingle();
+    if (error) {
+      if (/does not exist|schema cache|not found/i.test(error.message)) return null;
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  // Voice notes (schema version 3).
+  async saveVoice(rows) {
+    if (!rows.length) return;
+    check(await this.client.from('voice').upsert(rows.map((r) => ({ ...r, user_id: this.userId, updated_at: this.nowIso() })), { onConflict: 'user_id,id' }));
+  }
+
+  async loadVoice() {
+    return (await optional(() => all(() => this.client.from('voice').select('*').order('start_ms', { ascending: true })))) ?? [];
+  }
+
   // Server clock in epoch ms.
   async serverTime() {
     const { data, error } = await this.client.rpc('server_time');
     if (error) throw new Error(error.message);
     return Number(data);
   }
+}
+
+// The overlay's view of the live row, by token, with only the public key
+// (the live_state function in supabase/schema.sql looks the row up).
+export async function fetchLiveByToken(url, anonKey, token) {
+  const res = await fetch(`${url}/rest/v1/rpc/live_state`, {
+    method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_token: token }),
+  });
+  if (!res.ok) throw new Error(`live_state: ${res.status}`);
+  return res.json();
 }
 
 // Resolves to null when a table does not exist yet (schema not updated).

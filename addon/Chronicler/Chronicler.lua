@@ -104,6 +104,9 @@ local function record(kind, data)
 	end
 	local events = session.events
 	events[#events + 1] = data
+	-- The live link (Live.lua) passes what the overlay needs out of the game.
+	local live = ns.liveEvent
+	if live then live(kind, data) end
 	return data
 end
 

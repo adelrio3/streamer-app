@@ -163,3 +163,57 @@ create policy "chronicler screenshots update" on storage.objects for update to a
 drop policy if exists "chronicler screenshots delete" on storage.objects;
 create policy "chronicler screenshots delete" on storage.objects for delete to authenticated
   using (bucket_id = 'screenshots' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- Version 3 ------------------------------------------------------------------
+-- The stream overlay and voice notes. Running this whole file again adds
+-- these without touching anything you already have.
+
+-- What is happening in the game right now, written by the gaming PC every
+-- couple of seconds and read by the stream overlay (an OBS browser source on
+-- the recording computer) through the token in its address, without a login.
+create table if not exists public.live (
+  user_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  token text not null,
+  machine text,
+  state jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+create index if not exists live_token on public.live (token);
+alter table public.live enable row level security;
+drop policy if exists "own live" on public.live;
+create policy "own live" on public.live for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+grant select, insert, update, delete on public.live to authenticated;
+
+-- The overlay's read: the token is a 32-character secret from the overlay's address.
+create or replace function public.live_state(p_token text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object('state', state, 'updated_at', updated_at)
+  from public.live
+  where token = p_token and length(p_token) >= 24
+  limit 1
+$$;
+grant execute on function public.live_state(text) to anon, authenticated;
+
+-- What you said while playing, transcribed on the gaming PC (server-clock ms).
+create table if not exists public.voice (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  id text not null,
+  machine text,
+  start_ms bigint not null,
+  end_ms bigint,
+  text text not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+create index if not exists voice_time on public.voice (user_id, start_ms);
+alter table public.voice enable row level security;
+drop policy if exists "own voice" on public.voice;
+create policy "own voice" on public.voice for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+grant select, insert, update, delete on public.voice to authenticated;

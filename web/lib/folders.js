@@ -104,6 +104,12 @@ export async function savedVariablesFiles(root) {
   return out;
 }
 
+// The chat log the game writes as you play (Logs\WoWChatLog.txt), or null.
+export async function chatLogFile(flavorDir) {
+  const logs = await child(flavorDir, 'Logs');
+  return logs ? child(logs, 'WoWChatLog.txt', 'file') : null;
+}
+
 // Version of the installed addon in a flavor folder, or null.
 export async function installedAddonVersion(flavorDir) {
   const addons = await child(await child(flavorDir, 'Interface') ?? flavorDir, 'AddOns');

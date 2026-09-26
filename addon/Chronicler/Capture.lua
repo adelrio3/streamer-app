@@ -215,6 +215,7 @@ local function noteUnit(unit, source)
 	ev.level = UnitLevel(unit)
 	local rank = UnitClassification(unit)
 	if rank and rank ~= "normal" then ev.rank = rank end
+	if ev.rank and ev.rank:find("rare") and ns.liveEvent then ns.liveEvent("rare", ev) end
 	ev.ctype = UnitCreatureType(unit)
 	ev.family = UnitCreatureFamily(unit)
 	ev.react = UnitReaction(unit, "player") or ev.react
@@ -274,6 +275,7 @@ end
 
 local looted = {} -- source GUIDs already recorded this session
 
+local lastLootSources
 on("LOOT_OPENED", function()
 	if not session() then return end
 	local items, sources, money = {}, {}, nil
@@ -312,8 +314,14 @@ on("LOOT_OPENED", function()
 		src[#src + 1] = { kind = kind, id = id, name = name, level = npc and npc.level, rank = npc and npc.rank }
 	end
 	if #items == 0 and not money then return end
+	lastLootSources = { at = GetTime(), list = src }
 	record("loot_window", { items = items, money = money, sources = src, fishing = IsFishingLoot and IsFishingLoot() or nil })
 end)
+
+-- Who the loot that follows came from (for the live link).
+ns.lastLoot = function()
+	if lastLootSources and GetTime() - lastLootSources.at < 15 then return lastLootSources.list[1] end
+end
 
 -- Vendors, trainers, flight masters ------------------------------------------
 

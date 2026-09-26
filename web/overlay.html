@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chronicler overlay</title>
+  <!--
+    The stream overlay: add this page to OBS as a Browser source (1920×1080)
+    with the address from Chronicler › Live overlay. It shows what happens in
+    the game as it happens: drops with their icons, quest progress, kills,
+    deaths, levels. Nothing here is clickable; the background is transparent.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="overlay.css">
+  <script>const whTooltips = { colorLinks: false, iconizeLinks: true, renameLinks: false, iconSize: 'large' };</script>
+  <script src="https://wow.zamimg.com/js/tooltips.js" async></script>
+</head>
+<body>
+  <canvas id="fx"></canvas>
+  <div id="flash"></div>
+  <div id="callouts"></div>
+  <div id="tracker" class="widget"></div>
+  <div id="counters" class="widget"></div>
+  <div id="kills" class="widget"></div>
+  <div id="timer" class="widget"></div>
+  <div id="toasts" class="widget"></div>
+  <div id="status"></div>
+  <script type="module" src="overlay.js"></script>
+</body>
+</html>
