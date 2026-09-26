@@ -93,20 +93,34 @@ function invalidate() {
 // web/data/classic/*.json (every Classic quest, from Questie), fetched once
 // the first time a page needs it. null when the files are missing.
 
+// A data file, past a stale copy: a miss or an error is retried straight
+// from the server, since the browser may have kept a 404 from before the
+// file was deployed.
+async function fetchData(path) {
+  let res = await fetch(path);
+  if (!res.ok) res = await fetch(path, { cache: 'reload' });
+  if (!res.ok) throw new Error(`${path.split('/').pop()}: ${res.status}`);
+  return res.json();
+}
+
 async function questDB() {
-  if (state.db !== undefined) return state.db;
+  if (state.db) return state.db;
+  if (state.db === null && Date.now() - (state.dbFailedAt || 0) < 30000) return null; // try again in a moment, not on every call
   state.dbLoading ??= (async () => {
     try {
       const names = ['quests', 'npcs', 'objects', 'items', 'zones'];
-      const parts = await Promise.all(names.map((n) => fetch(`data/classic/${n}.json`).then((r) => { if (!r.ok) throw new Error(`${n}.json: ${r.status}`); return r.json(); })));
+      const parts = await Promise.all(names.map((n) => fetchData(`data/classic/${n}.json`)));
       state.db = indexDB({ quests: parts[0].quests, npcs: parts[1].npcs, objects: parts[2].objects, items: parts[3].items, zones: parts[4].zones });
+      state.dbError = null;
       if (state.cache) state.cache.index = null;
     } catch (err) {
       console.warn('Quest database not available:', err.message);
       state.db = null;
       state.dbError = err.message;
-      toast(`The quest database did not load (${err.message}). World pages need it.`);
+      state.dbFailedAt = Date.now();
+      toast(`The quest database did not load (${err.message}). Reload the page; it is retried automatically.`);
     }
+    state.dbLoading = null;
     return state.db;
   })();
   return state.dbLoading;
@@ -115,7 +129,7 @@ async function questDB() {
 // Spawn points (a bigger file), only for maps.
 async function spawnTable() {
   if (!state.spawns) {
-    try { state.spawns = (await fetch('data/classic/spawns.json').then((r) => r.json())).spawns; } catch { state.spawns = {}; }
+    try { state.spawns = (await fetchData('data/classic/spawns.json')).spawns; } catch { state.spawns = {}; }
   }
   return state.spawns;
 }
@@ -1074,7 +1088,7 @@ function tooltipBox(lines) {
 async function itemTable() {
   if (state.itemdb !== undefined) return state.itemdb;
   try {
-    const data = (await fetch('data/classic/itemdb.json').then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })).items;
+    const data = (await fetchData('data/classic/itemdb.json')).items;
     state.itemdb = new Map(Object.entries(data).map(([id, v]) => [Number(id), v]));
   } catch { state.itemdb = null; }
   return state.itemdb;
