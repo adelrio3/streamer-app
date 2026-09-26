@@ -3520,7 +3520,7 @@ function dataNotes() {
       const dq = q.qid ? db.quests.get(q.qid) : null;
       if (!dq) continue;
       if (q.title && squash(q.title) !== squash(dq.n)) notes.push({ kind: 'quest', field: 'title', key: q.key, name: q.title, ours: q.title, theirs: dq.n });
-      if (q.objectives && dq.o && squash(q.objectives) !== squash(dq.o)) notes.push({ kind: 'quest', field: 'objectives', key: q.key, name: q.title, ours: q.objectives, theirs: dq.o });
+      if (q.objectives && dq.o && !/\d+\s*\/\s*\d+/.test(q.objectives) && squash(q.objectives) !== squash(dq.o)) notes.push({ kind: 'quest', field: 'objectives', key: q.key, name: q.title, ours: q.objectives, theirs: dq.o });
     }
     for (const n of d.world.npcs) {
       if (!n.name || n.object) continue;
@@ -3614,26 +3614,41 @@ async function route({ keepScroll = false } = {}) {
   // A refresh (new data, same page) must be seamless: remember the numbers on
   // screen so only the ones that changed get a shine.
   const before = keepScroll ? statSnapshot(main) : null;
+  // The same page with other parameters (a tab, a filter): only what
+  // changed gets to animate; the head and everything else stays still.
+  const same = !keepScroll && state.lastRoute === pathPart;
+  state.lastRoute = pathPart;
+  state.lastHref = location.href;
   if (keepScroll) main.classList.remove('enter');
+  let html;
   try {
-    main.innerHTML = await render(rest.map(decodeURIComponent).join('/'), params);
+    html = await render(rest.map(decodeURIComponent).join('/'), params);
   } catch (err) {
-    main.innerHTML = `<div class="notice error">${esc(err.message)}</div>`;
+    html = `<div class="notice error">${esc(err.message)}</div>`;
     console.error(err);
   }
+  const was = same ? state.lastHtml || [] : null;
+  main.innerHTML = html;
+  state.lastHtml = [...main.children].map((c) => c.outerHTML);
   navPercents().catch((err) => console.warn('percentages', err));
   if (!keepScroll) {
     // Navigation: children rise in one after another; numbers count up.
     main.classList.remove('enter');
     void main.offsetWidth;
     main.classList.add('enter');
-    [...main.children].forEach((child, i) => child.style.setProperty('--i', Math.min(i, 12)));
-    animateNumbers(main);
+    let i = 0;
+    for (const child of main.children) {
+      const still = same && was.includes(child.outerHTML);
+      child.classList.toggle('still', still);
+      if (still) continue;
+      child.style.setProperty('--i', Math.min(i++, 12));
+      animateNumbers(child);
+    }
   } else {
     shineChanged(main, before);
   }
   moveNavGlow();
-  window.scrollTo(0, keepScroll ? y : 0);
+  window.scrollTo(0, keepScroll || same ? y : 0);
   const box = document.getElementById('searchBox');
   if (box && page === 'search' && document.activeElement !== box) box.value = params.get('q') || '';
   // Wowhead's script turns item links into icons with tooltips.
@@ -3720,8 +3735,10 @@ window.addEventListener('keydown', (ev) => {
     box?.select();
   }
 });
-window.addEventListener('hashchange', () => { document.getElementById('side')?.classList.remove('open'); route(); });
-window.addEventListener('popstate', () => route());
+// A hash change fires both events; the page is drawn once per address.
+const onNav = () => { if (location.href !== state.lastHref) route(); };
+window.addEventListener('hashchange', () => { document.getElementById('side')?.classList.remove('open'); onNav(); });
+window.addEventListener('popstate', onNav);
 document.getElementById('menuToggle')?.addEventListener('click', (ev) => {
   const side = document.getElementById('side');
   side.classList.toggle('open');

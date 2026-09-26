@@ -58,7 +58,7 @@ export function decodeLine(line) {
   switch (kind) {
     case 'L': return { kind: 'loot', id: num(f[1]), name: str(f[2]), q: num(f[3]), n: num(f[4]) ?? 1, source: str(f[5]), sourceId: num(f[6]) };
     case 'Q': return { kind: 'quest', action: str(f[1]), qid: num(f[2]), title: f[1] === 'progress' ? null : str(f[3]), text: f[1] === 'progress' ? str(f[3]) : null, xp: num(f[4]), money: num(f[5]) };
-    case 'K': return { kind: 'kill', npcId: num(f[1]), name: str(f[2]) };
+    case 'K': return { kind: 'kill', npcId: num(f[1]), name: str(f[2]), rank: str(f[3]) };
     case 'D': return { kind: 'death', killer: str(f[1]), killerId: num(f[2]) };
     case 'V': return { kind: 'level', level: num(f[1]) };
     case 'Z': return { kind: 'zone', zone: str(f[1]), sub: str(f[2]) };
@@ -160,6 +160,7 @@ export class LiveState {
       case 'heartbeat': Object.assign(c, { level: e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; return true;
       case 'loot': {
         if (!e.id) return false;
+        e.first = !this.drops.has(e.id); // the first of its kind this session
         const d = this.drops.get(e.id) || { id: e.id, name: e.name, q: e.q, n: 0, times: 0, sources: {} };
         d.n += e.n || 1;
         d.times++;
@@ -172,6 +173,7 @@ export class LiveState {
       }
       case 'kill': {
         this.kills++;
+        e.first = Boolean(e.name) && !this.killsByName.has(e.name); // the first of its kind this session
         if (e.name) this.killsByName.set(e.name, (this.killsByName.get(e.name) || 0) + 1);
         this.streak = e.at - this.lastKillAt <= STREAK_WINDOW ? this.streak + 1 : 1;
         this.bestStreak = Math.max(this.bestStreak, this.streak);

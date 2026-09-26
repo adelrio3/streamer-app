@@ -369,6 +369,7 @@ export class Machine {
         if (this.state.live) this.state.live.updated_at = new Date(now + (this.offset ?? 0)).toISOString();
         return;
       }
+      this.markNovel(live.state.events);
       const snap = live.state.snapshot(this.toServer(now));
       snap.counters = this.counterValues();
       snap.machine = this.name;
@@ -387,6 +388,19 @@ export class Machine {
   async liveTest(ev) {
     this.live.state.apply({ at: this.toServer(Date.now()), ...ev });
     await this.pushLive(true);
+  }
+
+  // An item looted or a creature hunted for the first time this session is
+  // "novel" when the wiki (every uploaded session) has never had it either:
+  // the overlay calls those out. Decided once per event, when the wiki is loaded.
+  markNovel(events) {
+    const world = this.state?.cache?.world;
+    if (!world) return;
+    for (const e of events) {
+      if (e.novel !== undefined || !e.first) continue;
+      if (e.kind === 'loot') e.novel = !world.byItem?.get(Number(e.id))?.obtained;
+      else if (e.kind === 'kill') e.novel = !(world.byNpc?.get(`n${e.npcId}`)?.kills > 0) && !world.creatures?.some((c) => c.name === e.name && c.kills > 0);
+    }
   }
 
   async liveToken() {

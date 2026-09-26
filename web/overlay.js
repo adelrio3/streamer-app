@@ -243,11 +243,11 @@ function fullScreenFx(q) {
 
 const queue = [];
 let showing = false;
-function callout(kind, title, sub, hold = 2600) {
+function callout(kind, title, sub, hold = 2600, extra = {}) {
   raceFx(innerWidth / 2, innerHeight * 0.3, 40, 1.4);
   setTimeout(() => raceFx(innerWidth / 2, innerHeight * 0.3, 24, 0.8), 400);
   if (!show.has('callouts')) return;
-  queue.push({ kind, title, sub, hold });
+  queue.push({ kind, title, sub, hold, ...extra });
   pump();
 }
 function pump() {
@@ -255,9 +255,10 @@ function pump() {
   showing = true;
   const c = queue.shift();
   const el = document.createElement('div');
-  el.className = `callout ${c.kind}`;
-  el.innerHTML = `<div class="ctitle">${esc(c.title)}</div>${c.sub ? `<div class="csub">${esc(c.sub)}</div>` : ''}`;
+  el.className = `callout ${c.kind}${c.cls ? ` ${c.cls}` : ''}`;
+  el.innerHTML = `${c.kicker ? `<div class="ckicker">${esc(c.kicker)}</div>` : ''}${c.item ? `<div class="cicon">${itemIcon(c.item.id, c.item.name)}</div>` : ''}<div class="ctitle">${esc(c.title)}</div>${c.sub ? `<div class="csub">${esc(c.sub)}</div>` : ''}`;
   $('callouts').append(el);
+  if (c.item) fillIcons(el);
   requestAnimationFrame(() => el.classList.add('in'));
   setTimeout(() => {
     el.classList.add('out');
@@ -404,7 +405,8 @@ let lastSnapLocal = Date.now();
 
 function onEvent(e) {
   switch (e.kind) {
-    case 'loot': toast(e); fullScreenFx(Math.max(0, Math.min(6, e.q ?? 1))); break;
+    case 'loot': toast(e); fullScreenFx(Math.max(0, Math.min(6, e.q ?? 1))); if (e.novel) newItem(e); break;
+    case 'kill': hunted(e); break;
     case 'level': callout('level', `LEVEL ${e.level}`, 'ding', 3600); flash(accent()); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 120, speed: 9, life: 1500, sizeMax: 5 }); break;
     case 'death': callout('death', 'YOU DIED', e.killer ? `killed by ${e.killer}` : '', 3400); flash('#ff2a2a'); shake(true); break;
     case 'rare': callout('rare', e.name || 'Rare', `rare spotted${e.level ? ` · level ${e.level}` : ''}`, 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.28, color: '#ff6fb5', n: 70, speed: 7, life: 1200 }); break;
@@ -417,6 +419,35 @@ function onEvent(e) {
     case 'test': callout('quest', 'LIVE LINK OK', 'the game reaches the overlay', 3000); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#5fd3ff', n: 60, speed: 6, life: 1100 }); break;
     case 'skill': break;
     default: break;
+  }
+}
+
+// An item the wiki has never held: a callout with its art.
+function newItem(e) {
+  const q = Math.max(0, Math.min(6, e.q ?? 1));
+  callout('newitem', e.name || 'New item', 'new to the compendium', 3400, { cls: `q${q}`, kicker: 'NEW ITEM', item: { id: e.id, name: e.name } });
+  burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: QCOLOR[q], n: 60 + q * 15, speed: 6, life: 1200 });
+}
+
+// A creature hunted: a rare or a boss every time, an elite or anything
+// else the first time the wiki has seen it fall.
+const RANK_WORD = { elite: 'elite', rare: 'rare', rareelite: 'rare elite', worldboss: 'world boss' };
+function hunted(e) {
+  const rank = e.rank && RANK_WORD[e.rank] ? e.rank : null;
+  const big = rank === 'rare' || rank === 'rareelite' || rank === 'worldboss';
+  if (!e.novel && !big) return;
+  const kicker = big ? (rank === 'worldboss' ? 'WORLD BOSS SLAIN' : 'RARE HUNTED') : rank === 'elite' ? 'ELITE HUNTED' : 'FIRST HUNT';
+  const sub = e.novel ? `new to the bestiary${rank ? ` · ${RANK_WORD[rank]}` : ''}` : RANK_WORD[rank];
+  callout('hunt', e.name || 'Hunted', sub, big ? 3800 : 3000, { cls: rank ? `r-${rank}` : '', kicker });
+  if (big) {
+    flash(rank === 'worldboss' ? '#ff9f43' : '#ff6fb5');
+    shake(rank === 'worldboss');
+    burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: rank === 'worldboss' ? '#ff9f43' : '#ff6fb5', n: 140, speed: 9, life: 1500, sizeMax: 6 });
+    setTimeout(() => burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#ffffff', n: 60, speed: 5, life: 1000 }), 350);
+  } else if (rank === 'elite') {
+    burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#ffd35a', n: 90, speed: 7, life: 1300 });
+  } else {
+    burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 50, speed: 6, life: 1100 });
   }
 }
 
@@ -518,17 +549,18 @@ function runDemo() {
     { id: 1121, name: 'Feet of the Lynx', mode: 'ongoing', n: 3 + (live.drops.get(1121)?.n ?? 0) },
   ];
   const script = [
-    { kind: 'kill', npcId: 448, name: 'Hogger' },
+    { kind: 'kill', npcId: 448, name: 'Hogger', rank: 'elite', first: true, novel: true },
     { kind: 'loot', id: 2589, name: 'Linen Cloth', q: 1, n: 3, source: 'Hogger' },
     { kind: 'quest', action: 'progress', text: 'Kobold Worker slain: 4/10' },
-    { kind: 'loot', id: 1121, name: 'Feet of the Lynx', q: 2, n: 1, source: 'Hogger' },
+    { kind: 'loot', id: 1121, name: 'Feet of the Lynx', q: 2, n: 1, source: 'Hogger', first: true, novel: true },
     { kind: 'kill', npcId: 257, name: 'Kobold Worker' }, { kind: 'kill', npcId: 257, name: 'Kobold Worker' }, { kind: 'kill', npcId: 257, name: 'Kobold Worker' },
     { kind: 'quest', action: 'progress', text: 'Kobold Worker slain: 7/10' },
     { kind: 'loot', id: 2244, name: 'Krol Blade', q: 3, n: 1, source: 'Kobold Worker' },
     { kind: 'kill', npcId: 257, name: 'Kobold Worker' }, { kind: 'kill', npcId: 257, name: 'Kobold Worker' },
     { kind: 'rare', npcId: 471, name: 'Mother Fang', level: 10, rank: 'rare' },
-    { kind: 'kill', npcId: 471, name: 'Mother Fang' },
-    { kind: 'loot', id: 871, name: 'Flurry Axe', q: 4, n: 1, source: 'Mother Fang' },
+    { kind: 'kill', npcId: 471, name: 'Mother Fang', rank: 'rare', first: true, novel: true },
+    { kind: 'loot', id: 871, name: 'Flurry Axe', q: 4, n: 1, source: 'Mother Fang', first: true, novel: true },
+    { kind: 'kill', npcId: 3068, name: 'Mazzranache', first: true, novel: true },
     { kind: 'quest', action: 'progress', text: 'Kobold Worker slain: 10/10' },
     { kind: 'quest', action: 'complete', qid: 62, title: 'The Fargodeep Mine' },
     { kind: 'quest', action: 'turnin', qid: 62, title: 'The Fargodeep Mine', xp: 450, money: 900 },
@@ -541,7 +573,9 @@ function runDemo() {
   ];
   let i = 0;
   const push = () => {
-    live.apply({ at: Date.now(), ...script[i % script.length] });
+    const step = script[i % script.length];
+    live.apply({ at: Date.now(), ...step });
+    if (step.novel) { const last = live.events.at(-1); if (last) { last.first = true; last.novel = true; } }
     i++;
     const snap = live.snapshot(Date.now());
     snap.counters = counters();

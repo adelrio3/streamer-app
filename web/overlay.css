@@ -150,6 +150,25 @@ body.single .callout .ctitle { font-size: 64px; }
 .callout.quest .ctitle { font-size: 56px; }
 .callout.zone .ctitle { font-size: 48px; font-weight: 600; }
 .callout.level .ctitle { font-size: 96px; }
+/* New item and hunt callouts: a kicker line above the name, the item's art beside it. */
+.callout .ckicker { font-size: 20px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
+.callout.newitem .ctitle { font-size: 56px; }
+.callout.newitem .cicon { display: flex; justify-content: center; margin-bottom: 10px; }
+.callout.newitem .cicon .ticon { width: 88px; height: 88px; border-radius: 12px; box-shadow: 0 0 0 3px rgba(0, 0, 0, .6), 0 0 34px var(--qc, rgba(var(--gold-rgb), .5)); animation: iconpulse 1.6s ease-in-out infinite; }
+.callout.newitem.q2 { --qc: rgba(30, 255, 0, .55); } .callout.newitem.q2 .ctitle { color: #1eff00; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(30, 255, 0, .6); }
+.callout.newitem.q3 { --qc: rgba(0, 112, 221, .7); } .callout.newitem.q3 .ctitle { color: #4aa3ff; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(0, 112, 221, .8); }
+.callout.newitem.q4 { --qc: rgba(163, 53, 238, .75); } .callout.newitem.q4 .ctitle { color: #c76bff; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(163, 53, 238, .9); }
+.callout.newitem.q5 { --qc: rgba(255, 128, 0, .8); } .callout.newitem.q5 .ctitle { color: #ff8000; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(255, 128, 0, .9), 0 0 80px rgba(255, 128, 0, .5); }
+.callout.hunt .ctitle { font-size: 64px; }
+.callout.hunt.r-elite .ctitle { color: #ffd35a; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(255, 211, 90, .8); }
+.callout.hunt.r-elite .ckicker { color: #ffd35a; }
+.callout.hunt.r-rare .ctitle, .callout.hunt.r-rareelite .ctitle { color: #ff6fb5; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(255, 111, 181, .8), 0 0 90px rgba(255, 111, 181, .4); font-size: 80px; animation: rarepulse 1.2s ease-in-out infinite; }
+.callout.hunt.r-rare .ckicker, .callout.hunt.r-rareelite .ckicker { color: #ff6fb5; }
+.callout.hunt.r-worldboss .ctitle { color: #ff9f43; font-size: 92px; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 40px rgba(255, 159, 67, .9), 0 0 120px rgba(255, 159, 67, .5); animation: rarepulse .9s ease-in-out infinite; }
+.callout.hunt.r-worldboss .ckicker { color: #ff9f43; }
+@keyframes iconpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes rarepulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+@media (prefers-reduced-motion: reduce) { .callout .ticon, .callout .ctitle { animation: none !important; } }
 
 #status { position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%); font-size: 12px; color: rgba(255, 255, 255, .6); background: rgba(0, 0, 0, .5); padding: 3px 10px; border-radius: 99px; display: none; }
 #status.show { display: block; }

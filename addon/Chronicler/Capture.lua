@@ -215,6 +215,8 @@ end
 -- NPCs ----------------------------------------------------------------------
 
 local seen = {}   -- unit GUID -> its "npc" event, one per spawn per session
+-- The rank (elite, rare, rareelite, worldboss) of a unit seen this session, for the live link.
+ns.rankOf = function(guid) local ev = guid and seen[guid]; return ev and ev.rank or nil end
 local rares = {}  -- npc IDs already announced this session
 
 local RANK = { elite = true, rare = true, rareelite = true, worldboss = true }

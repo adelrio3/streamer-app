@@ -530,7 +530,7 @@ local function recordKill(guid, name, killingBlow)
 	credited[guid] = true
 	damaged[guid] = nil
 	local kind, id = parseGUID(guid)
-	record("kill", { name = name, npcId = id, npcKind = kind, blow = killingBlow or nil })
+	record("kill", { name = name, npcId = id, npcKind = kind, blow = killingBlow or nil, rank = ns.rankOf and ns.rankOf(guid) or nil })
 end
 
 local function sweep()
