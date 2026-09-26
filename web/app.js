@@ -2096,9 +2096,11 @@ function linkCheck(here, m, snap, row) {
     rows.push(['Lines read since this tab opened', `${l.lines.toLocaleString()} lines, ${l.decoded.toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
     if (l.lastLine) rows.push(['Last line', `<code class="small">${esc(l.lastLine)}</code>`]);
     rows.push(['Cloud', l.error ? no(esc(l.error)) : l.lastPush ? yes(`pushed ${esc(when((l.lastPush + (m.offset ?? 0)) / 1000))}`) : no('nothing pushed yet')]);
+    rows.push(['Chat log clean-up', l.purgedAt ? yes(`emptied it (${(l.purgedBytes / 1048576).toFixed(1)} MB) ${esc(when((l.purgedAt + (m.offset ?? 0)) / 1000))}`) : l.purgeError ? no(`could not empty it yet (${esc(l.purgeError)}); tries again while you are logged out`) : 'the file is emptied by this tab once it is over 1 MB and you have been logged out for 3 minutes']);
   } else {
     const l = snap?.link;
     rows.push(['Gaming PC', l ? (l.status === 'ok' ? yes(`reading ${esc(l.flavor ?? '')}\\Logs\\WoWChatLog.txt${l.fileModified ? `, last written ${esc(when(l.fileModified / 1000))}` : ''}`) : no(esc(l.status))) : no('has not reported yet')]);
+    if (l?.purgedAt) rows.push(['Chat log clean-up', `emptied (${((l.purgedBytes || 0) / 1048576).toFixed(1)} MB) ${esc(when(l.purgedAt / 1000))}`]);
     if (l) rows.push(['Lines it read', `${(l.lines ?? 0).toLocaleString()} lines, ${(l.decoded ?? 0).toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
     rows.push(['Last update from it', row?.updated_at ? esc(when(Date.parse(row.updated_at) / 1000)) : 'never']);
   }

@@ -24,6 +24,9 @@ const LIVE_EVERY = 1000;
 const LIVE_PUSH_GAP = 1500;
 const LIVE_HEARTBEAT = 20000;
 const LIVE_SINCE_KEY = 'chronicler.live.since';
+const LIVE_PURGE_MIN = 1024 * 1024; // empty the chat log once it is over 1 MB...
+const LIVE_PURGE_QUIET = 3 * 60 * 1000; // ...and the game has not written it for 3 minutes (logged out)
+const LIVE_PURGE_RETRY = 60 * 1000; // try again a minute later if the game still had it open
 
 export function defaultMachineConfig(platform = globalThis.navigator?.platform ?? '') {
   const mac = /mac/i.test(platform);
@@ -294,6 +297,7 @@ export class Machine {
     try { file = await live.file.getFile(); } catch (err) { live.file = null; live.status = 'no-log'; live.error = err.message; return; }
     live.fileSize = file.size;
     live.fileModified = file.lastModified;
+    if (await this.purgeChatLog(file)) return;
     if (file.size < live.size) { live.size = 0; live.remainder = ''; } // the game started the log over
     if (live.size === 0) live.size = Math.max(0, file.size - 512 * 1024); // catch up on the end of the file
     if (file.size > live.size) {
@@ -319,6 +323,35 @@ export class Machine {
     await this.pushLive(false);
   }
 
+  // The filler the addon sends makes the chat log grow by tens of MB in a
+  // session, so this empties it when the game is not writing it. While you
+  // are logged in the addon writes the file at least once a minute (the
+  // heartbeat and its filler), so a file untouched for a few minutes means
+  // you are logged out and the game has closed it; Windows refuses the
+  // replace while it is open, and then this simply tries again later.
+  async purgeChatLog(file) {
+    const live = this.live;
+    const now = Date.now();
+    if (file.size < LIVE_PURGE_MIN || now - file.lastModified < LIVE_PURGE_QUIET || now - (live.purgeTriedAt || 0) < LIVE_PURGE_RETRY) return false;
+    live.purgeTriedAt = now;
+    try {
+      const w = await live.file.createWritable({ keepExistingData: false });
+      await w.close();
+      live.purgedAt = now;
+      live.purgedBytes = file.size;
+      live.purgeError = null;
+      live.size = 0;
+      live.remainder = '';
+      live.fileSize = 0;
+      this.changed();
+      await this.pushLive(true);
+      return true;
+    } catch (err) {
+      live.purgeError = err.message; // in use by the game, most likely
+      return false;
+    }
+  }
+
   async pushLive(force) {
     const live = this.live;
     const now = Date.now();
@@ -330,7 +363,7 @@ export class Machine {
       const snap = live.state.snapshot(this.toServer(now));
       snap.counters = this.counterValues();
       snap.machine = this.name;
-      snap.link = { status: live.status, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0, fileSize: live.fileSize, fileModified: live.fileModified ? this.toServer(live.fileModified) : 0, lines: live.lines, decoded: live.decoded };
+      snap.link = { status: live.status, purgedAt: live.purgedAt ? this.toServer(live.purgedAt) : 0, purgedBytes: live.purgedBytes || 0, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0, fileSize: live.fileSize, fileModified: live.fileModified ? this.toServer(live.fileModified) : 0, lines: live.lines, decoded: live.decoded };
       await this.store.saveLive(token, this.name, snap);
       live.pushedSeq = live.state.seq;
       live.error = null;

@@ -56,7 +56,7 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 | `/chron social on\|off` | Also log group, duels and chat (off by default) |
 | `/chron track on\|off` | Position tracking for the footage finder (on by default) |
 | `/chron items` | Size of the item catalog |
-| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; writes hidden lines to the chat log and turns chat logging on; `pad KB` sets how much filler follows each line, since the game writes the file only when its 64 KB buffer fills). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
+| `/chron live on\|off\|test` | The live link for the stream overlay (on by default; writes hidden lines to the chat log and turns chat logging on; `pad KB` sets how much filler follows each line, since the game writes the file only when its 64 KB buffer fills; the app on the gaming PC empties the file once it is over 1 MB and you have been logged out for 3 minutes). `test` sends a line the Live overlay page confirms and the overlay shows as LIVE LINK OK; `/chron live` alone prints the addon's status |
 | `/chron errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
 | `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 
