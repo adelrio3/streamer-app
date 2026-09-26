@@ -70,6 +70,7 @@ ns.isLiveLine = isLiveLine
 -- Hides the addon's whispers from every chat window (both the "To you:"
 -- copy and the "you whisper:" copy). The chat log on disk still gets them.
 local function filter(_, event, text)
+	if settings().liveShow then return false end -- /chron live show, for checking
 	return isLiveLine(text)
 end
 
@@ -180,6 +181,9 @@ ns.commands.live = function(arg)
 		settings().live = false
 		queue = {}
 		print("|cffd4a017Chronicler|r live link off.")
+	elseif arg == "show" or arg == "hide" then
+		settings().liveShow = arg == "show" or nil
+		print("|cffd4a017Chronicler|r live link whispers are now " .. (arg == "show" and "shown in chat (for checking)" or "hidden from chat") .. ".")
 	elseif arg == "test" then
 		-- A line the app and the overlay both show, to prove the whole chain.
 		if not enabled() then print("|cffd4a017Chronicler|r live link is off: /chron live on first.") return end
@@ -191,8 +195,9 @@ ns.commands.live = function(arg)
 		print(string.format("|cffd4a017Chronicler|r test line whispered to %s. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", whisperTarget() or "you"))
 	else
 		local logging = LoggingChat and LoggingChat() or false
-		print(string.format("|cffd4a017Chronicler|r live link %s · chat log %s · whispers to %s · %d messages sent, %d lines waiting. /chron live on|off|test",
-			enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", whisperTarget() or "?", sent, #queue))
+		local version = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?"
+		print(string.format("|cffd4a017Chronicler|r %s · live link %s · chat log %s · whispers to %s (%s) · %d messages sent, %d lines waiting. /chron live on|off|test|show|hide",
+			version, enabled() and "on" or "off", logging and "on (Logs\\WoWChatLog.txt)" or "OFF", whisperTarget() or "?", settings().liveShow and "shown" or "hidden", sent, #queue))
 	end
 end
-ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms"
+ns.helpLines[#ns.helpLines + 1] = "/chron live on|off|test|show|hide - live link for the stream overlay (whispers to yourself, hidden from chat; on by default); test sends a line the app confirms; show/hide the whispers in chat"
