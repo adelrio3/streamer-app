@@ -15,13 +15,14 @@ import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
 import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
-import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS } from './lib/maps.js';
+import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS, cachedMapImage, memoMapImage } from './lib/maps.js';
 import { looseEnds } from './lib/coverage.js';
 import { indexDB, questState, fits, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS, itemClassName, ITEM_CLASS_ORDER, ZONE_GROUPS, completionTree, npcsByZone, npcTotals, requirementText } from './lib/questdb.js';
 import { pastLoot, dropsBetween } from './lib/live.js';
 import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
 import { makeZip } from './lib/zip.js';
 import { storylines, storylinesByContinent, storylineOutline } from './lib/story.js';
+import { narrate, narrativeText } from './lib/narrative.js';
 import { findShorts, toShortXML, shortsCSV } from './lib/shorts.js';
 import { assembleEpisode, toEpisodeXML, episodeChapters } from './lib/episode.js';
 import { planReplay, drawReplayFrame, easeProgress } from './lib/replay.js';
@@ -139,7 +140,7 @@ async function spawnTable() {
 function coverageWho() {
   const d = derived();
   const chars = d.characters.slice().sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
-  const wanted = state.coverageWho || chars[0]?.key || 'all';
+  const wanted = state.coverageWho || 'all';
   const c = wanted === 'all' ? null : chars.find((x) => x.key === wanted) ?? null;
   const who = c ? { raceToken: c.info.raceToken, classToken: c.info.classToken, faction: c.info.faction } : null;
   const { done, active } = progressSets(d.codex.quests, c ? c.key : null);
@@ -548,7 +549,7 @@ pages[''] = async () => {
   ].filter(Boolean);
   return `
     ${needsSetup ? `<div class="notice">This computer (<b>${esc(m.name)}</b>) isn't fully set up yet. <a href="#/setup">Open This computer</a> to finish.</div>` : ''}
-    ${pageHead('Chronicle', 'Overview', 'What you have done and recorded so far, against everything Classic holds.')}
+    ${pageHead('Chronicle', 'Overview', '')}
     ${progressCharts()}
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
@@ -746,9 +747,17 @@ pages.quests = async (_, params) => {
   const c = await codex();
   const db = await questDB();
   const show = params.get('show') || (db ? 'zones' : 'logged');
-  const tabs = tabsHtml([...(db ? [['zones', 'By zone'], ['categories', 'Class, profession & events']] : []), ['logged', 'Logged', c.quests.length]], show, '#/quests?show=');
+  const notes = db ? dataNotes() : [];
+  const tabs = tabsHtml([...(db ? [['zones', 'By zone'], ['categories', 'Class, profession & events']] : []), ['logged', 'Logged', c.quests.length], ...(notes.length ? [['notes', 'Notes', notes.length]] : [])], show, '#/quests?show=');
   if (show === 'zones' && db) return questZonesPage(db, params, tabs);
   if (show === 'categories' && db) return questCategoriesPage(db, tabs);
+  if (show === 'notes') return `${pageHead('World', 'Quests', 'Where what the game showed you differs from the database. The wiki keeps the first-hand version and tags it; the database version is kept here.')}
+    ${tabs}
+    ${table(notes, [
+      { label: 'Entry', value: (n) => n.name, html: (n) => `<a href="${n.kind === 'quest' ? `#/quest/${enc(n.key)}` : `#/npc/${enc(n.key)}`}">${esc(n.name)}</a> <span class="chip">${n.kind} ${n.field}</span>` },
+      { label: 'In game', value: (n) => n.ours, html: (n) => esc(n.ours) },
+      { label: 'Database', value: (n) => n.theirs, html: (n) => `<span class="muted">${esc(n.theirs)}</span>` },
+    ], { search: (n) => `${n.name} ${n.ours} ${n.theirs}`, empty: 'Nothing differs so far.' })}`;
   return `${pageHead('World', 'Quests', 'Every quest you have been offered, accepted or turned in, with the text exactly as you read it.')}
     ${tabs}
     ${table(c.quests, [
@@ -864,12 +873,13 @@ pages.quest = async (key) => {
   const en = dq ? enders(db, dq) : [];
   const who = (g) => (g.kind === 'npc' ? `<a href="#/npc/n${g.id}">${esc(g.name)}</a>` : esc(g.name));
   return `${crumb('#/quests', 'Quests')}
-    ${pageHead('Quest', esc(q.title ?? dq?.n ?? `Quest ${q.qid}`), '', `<div class="row"><span class="chip ${q.status}">${q.status}</span>${req}${wowhead('quest', q.qid)}</div>`)}
+    ${pageHead('Quest', esc(q.title ?? dq?.n ?? `Quest ${q.qid}`), '', `<div class="row"><span class="chip ${q.status}">${q.status}</span>${req}${firstHandChip('quest', q.key)}${wowhead('quest', q.qid)}</div>`)}
     ${facts([zoneName ? `<a href="#/locations">${esc(zoneName)}</a>` : '', dq?.l ? `level ${dq.l}` : q.level ? `level ${q.level}` : '', gv.length ? `from ${gv.map(who).join(', ')}` : q.giver ? `from <a href="#/npc/${enc(q.giver.npcId ? `n${q.giver.npcId}` : `s${q.giver.name}`)}">${esc(q.giver.name)}</a>` : '', en.length && (en.length !== gv.length || en.some((e, i) => e.id !== gv[i]?.id)) ? `turn in to ${en.map(who).join(', ')}` : '', q.qid ? `ID ${q.qid}` : ''])}
     ${q.text ? `<h3>Description</h3>${lore(q.text)}` : ''}
     ${q.objectives ? `<h3>Objectives</h3>${lore(q.objectives)}` : dq?.o ? `<h3>Objectives</h3>${lore(dq.o)}` : ''}
     ${q.progress ? `<h3>Progress</h3>${lore(q.progress)}` : ''}
     ${q.reward ? `<h3>Completion</h3>${lore(q.reward)}` : ''}
+    ${noteFor('quest', q.key).length ? `<details class="panel"><summary>The database says otherwise</summary>${noteFor('quest', q.key).map((n) => `<p class="small"><b>${esc(n.field)}</b>: ${esc(n.theirs)}</p>`).join('')}</details>` : ''}
     ${dq ? await dbQuestBody(db, dq, cov, { map: true, text: false }) : ''}
     <h2>Your history</h2>
     <div class="panel"><table><tbody>${moments.map(([what, m]) => `<tr><td>${esc(what)}</td><td>${play(m)}</td><td class="muted">${esc(when(m.t))}</td><td class="muted">${esc((m.sz || m.z) ?? '')}</td></tr>`).join('')}</tbody></table>
@@ -973,23 +983,32 @@ function peopleStatus(n) {
 pages.people = async (_, params) => {
   const { world } = derived();
   const db = await questDB();
-  const zone = params.get('zone') || 'all';
-  const show = params.get('show') || 'all';
+  const role = params.get('role') || 'all';
+  const zone = params.get('zone') || '';
+  const status = params.get('status') || 'all';
   const zones = [...new Set(world.people.flatMap((n) => n.zones))].sort();
-  const inZone = (z) => (z === 'all' ? world.people : world.people.filter((n) => n.zones.includes(z)));
   const met = (arr) => arr.filter((n) => peopleStatus(n) !== 'seen').length;
-  let list = inZone(zone);
-  if (show === 'ambient') list = list.filter((n) => peopleStatus(n) === 'ambient');
-  else if (show !== 'all') list = list.filter((n) => n.roles.includes(show));
+  const ROLES = [['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['other', 'Townsfolk']];
+  const ofRole = (r) => (r === 'all' ? world.people : world.people.filter((n) => n.roles.includes(r)));
+  let list = ofRole(role);
+  if (zone) list = list.filter((n) => n.zones.includes(zone));
+  if (status === 'met') list = list.filter((n) => peopleStatus(n) === 'met');
+  else if (status === 'notyet') list = list.filter((n) => peopleStatus(n) === 'seen');
   const total = db ? npcTotals(db).people : 0;
-  setTimeout(() => document.getElementById('roleSel')?.addEventListener('change', (ev) => { location.hash = `#/people?zone=${enc(zone)}&show=${ev.target.value}`; }));
-  return `${pageHead('World', 'People', 'Everyone you have come across, zone by zone. A name stays grey until you take a quest, buy, train, fly or talk with them; someone with nothing to say or sell counts as met on sight.')}
+  const link = (r = role, z = zone, st = status) => `#/people?role=${enc(r)}${z ? `&zone=${enc(z)}` : ''}${st !== 'all' ? `&status=${st}` : ''}`;
+  setTimeout(() => {
+    document.getElementById('zoneSel')?.addEventListener('change', (ev) => { location.hash = link(role, ev.target.value, status); });
+    document.getElementById('statusSel')?.addEventListener('change', (ev) => { location.hash = link(role, zone, ev.target.value); });
+  });
+  return `${pageHead('World', 'People', 'Everyone you have come across, by what they do for you. A name stays grey until you take a quest, buy, train, fly or talk with them.')}
     <p class="muted small">${met(world.people).toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ''} people met · ${world.people.length.toLocaleString()} come across.</p>
-    ${tabsHtml([['all', 'Everywhere', `${met(world.people)}/${world.people.length}`], ...zones.map((z) => [z, z, `${met(inZone(z))}/${inZone(z).length}`])], zone, '#/people?zone=')}
-    <div class="row spread" style="margin-bottom:10px"><span></span>
-      <select id="roleSel">${[['all', 'Everyone'], ['quest', 'Quest givers'], ['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight masters'], ['innkeeper', 'Innkeepers'], ['banker', 'Bankers'], ['talker', 'Speak'], ['ambient', 'Ambient (nothing to say or sell)'], ['other', 'Passed by']].map(([k, l]) => `<option value="${k}" ${k === show ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    ${tabsHtml([['all', 'Everyone', `${met(world.people)}/${world.people.length}`], ...ROLES.filter(([k]) => ofRole(k).length).map(([k, l]) => [k, l, `${met(ofRole(k))}/${ofRole(k).length}`])], role, '#/people?role=')}
+    <div class="row spread" style="margin-bottom:10px"><span></span><span class="row">
+      <select id="statusSel">${[['all', 'Everyone'], ['met', 'Met'], ['notyet', 'Not yet met']].map(([k, l]) => `<option value="${k}" ${k === status ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="zoneSel"><option value="">All zones</option>${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select>
+    </span></div>
     ${table(list, [
-      { label: 'Name', value: (n) => (peopleStatus(n) !== 'seen' ? 1 : 0), html: (n) => `${wikiName(`#/npc/${enc(n.key)}`, n.name, peopleStatus(n) !== 'seen')}${n.titles[0] ? ` <span class="muted small">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}${peopleStatus(n) === 'ambient' ? ' <span class="chip" title="Nothing to say or sell: met on sight">ambient</span>' : ''}` },
+      { label: 'Name', value: (n) => (peopleStatus(n) !== 'seen' ? 1 : 0), html: (n) => `${wikiName(`#/npc/${enc(n.key)}`, n.name, peopleStatus(n) !== 'seen')}${n.titles[0] ? ` <span class="muted small">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}` },
       { label: 'Does', value: (n) => n.roles.join(' '), html: (n) => n.roles.filter((r) => r !== 'other').map((r) => `<span class="chip">${esc(ROLE_NAMES[r] ?? r)}</span>`).join(' ') },
       { label: 'Zones', value: (n) => n.zones.join(', ') },
       { label: 'Quests', value: (n) => n.quests.size, num: true },
@@ -1004,6 +1023,8 @@ pages.npc = async (key) => {
   const quests = [...n.quests].map((qk) => codex.quests.find((q) => q.key === qk)).filter(Boolean);
   const kicker = n.object ? 'Object' : n.attackable ? 'Creature' : n.roles.filter((r) => r !== 'other' && r !== 'talker').map((r) => ROLE_NAMES[r]).join(' · ') || 'Person';
   const back = n.object ? ['#/items?show=objects', 'Herbs, ore & chests'] : n.attackable ? ['#/bestiary', 'Bestiary'] : ['#/people', 'People'];
+  const ambient = !n.object && !n.attackable && peopleStatus(n) === 'ambient';
+  const firstHand = firstHandChip('npc', n.key);
   const section = (title, body) => (body ? `<h2>${title}</h2>${body}` : '');
   const byMap = new Map();
   for (const sp of n.spots) { if (!byMap.has(sp.m)) byMap.set(sp.m, []); byMap.get(sp.m).push(sp); }
@@ -1011,12 +1032,13 @@ pages.npc = async (key) => {
   const onMap = n.spots.filter((sp) => sp.m === mapId);
   if (mapId) setTimeout(() => wireMap('npcMap', mapId, onMap.map((sp) => ({ ...sp, layer: n.object ? 'object' : n.attackable ? 'creature' : 'person', label: n.name, sub2: sp.kind, key: n.key })), { routes: false, heat: n.attackable ? { density: heatCells(onMap, 3) } : {} }));
   return `${crumb(back[0], back[1])}
-    ${pageHead(kicker, `${esc(n.name)}${n.titles[0] ? ` <span class="muted" style="font-size:.55em;font-family:var(--sans);font-weight:400">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}`, '', `<div class="row">${wowhead(n.object ? 'object' : 'npc', n.npcId)}</div>`)}
+    ${pageHead(kicker, `${esc(n.name)}${n.titles[0] ? ` <span class="muted" style="font-size:.55em;font-family:var(--sans);font-weight:400">&lt;${esc(n.titles.join('> <'))}&gt;</span>` : ''}`, '', `<div class="row">${firstHand}${wowhead(n.object ? 'object' : 'npc', n.npcId)}</div>`)}
     ${facts([levelText(n) && `Level ${levelText(n)}`, rankChips(n.ranks), [n.ctype, n.family].filter(Boolean).join(' · '), n.react ? REACTION[n.react] : '', esc(n.faction ?? ''), n.hp ? `${n.hp.toLocaleString()} health` : '', esc(n.zones.join(', ')), n.npcId ? `ID ${n.npcId}` : '', n.objectId ? `object ${n.objectId}` : '', n.unnamed ? '<span class="muted">name not caught: addon 0.4.0 names what you open, so open it once more</span>' : ''])}
     <div class="cards">
       ${card(n.sightings, 'encounters', '#/bestiary')}${n.attackable || n.kills ? card(n.kills, 'killed', '#/bestiary?show=killed') : ''}${n.loots ? card(n.loots, 'looted', '#/items') : ''}${n.killedYou ? card(n.killedYou, 'times it killed you', '#/highlights?kind=death') : ''}${n.quests.size ? card(n.quests.size, 'quests', '#/quests') : ''}
     </div>
     <div class="row">${n.first ? `First met ${play(n.first)}` : ''} ${n.firstKill ? `First kill ${play(n.firstKill)}` : ''}</div>
+    ${ambient ? '<p class="muted small">Ambient: this one has nothing to say and nothing to sell, so coming across them counts as meeting them.</p>' : ''}
     ${section('Drops', n.drops.length ? `<p class="muted small">From ${n.loots} loot${n.loots === 1 ? '' : 's'}${n.moneyDrops ? `, dropped coins ${n.moneyDrops} time${n.moneyDrops === 1 ? '' : 's'}` : ''}.</p>` + table(n.drops, [
       { label: 'Item', value: (d) => d.name, html: (d) => itemLink(d.id, d.name) },
       { label: 'Times', value: (d) => d.times, num: true },
@@ -1164,7 +1186,7 @@ pages.items = async (_, params) => {
   return `${pageHead('World', 'Items', 'Every item you have come across, by kind, against everything in Classic. Obtained means it was yours at some point: looted, bought, handed over, made, worn or carried. A name stays grey until then.', `<div class="row"><a class="btn ghost" href="#/items?show=gathering">Gathering <span class="muted">${world.objects.length}</span></a></div>`)}
     ${state.schema2 ? '' : schemaNotice()}
     <p class="muted small">${allObtained.toLocaleString()}${itemdb ? ` of ${itemdb.size.toLocaleString()}` : ''} items obtained · ${world.items.length.toLocaleString()} come across.</p>
-    <div class="kinds">${kinds.map((k, i) => `<a class="kind" href="${link(k.name)}" style="--i:${i}"><span class="ring" style="--p:${pctOf(k.done, k.total)};--s:56px"><span>${pctOf(k.done, k.total)}<i>%</i></span></span><span class="kind-ico">${ITEM_ICONS[k.name] ?? '✦'}</span><b>${esc(k.name)}</b><small>${k.done.toLocaleString()} of ${k.total.toLocaleString()}</small><small class="muted">${k.seen} come across · ${k.types} type${k.types === 1 ? '' : 's'}</small></a>`).join('')}</div>
+    <div class="kinds">${kinds.map((k, i) => `<a class="kind" href="${link(k.name)}" style="--i:${i}"><span class="pring" style="--p:${pctOf(k.done, k.total)};--s:56px"><span>${pctOf(k.done, k.total)}<i>%</i></span></span><span class="kind-ico">${ITEM_ICONS[k.name] ?? '✦'}</span><b>${esc(k.name)}</b><small>${k.done.toLocaleString()} of ${k.total.toLocaleString()}</small><small class="muted">${k.seen} come across · ${k.types} type${k.types === 1 ? '' : 's'}</small></a>`).join('')}</div>
     ${kinds.length ? '' : '<p class="muted">No items yet. They appear as you loot, buy, receive and wear them.</p>'}
     ${recent.length ? `<h2>New in the compendium</h2><p class="muted small">The latest items to enter the wiki, whoever found them.</p><div class="recent">${recent.map(({ i, t }) => `<div class="recent-item ${i.obtained ? '' : 'dim-item'}">${itemLink(i.id, i.name, i.quality, { size: 'medium' })}<small class="muted">${esc(kindOf(i).type)} · ${esc(when(t))}</small></div>`).join('')}</div>` : ''}`;
 };
@@ -1229,11 +1251,12 @@ function charCard(c) {
 
 pages.characters = async () => {
   const { characters } = derived();
-  return `${pageHead('Chronicle', 'Characters', "Each character's journey: levels, quests, gear, talents, and the footage they appear in.")}
+  return `${pageHead('Chronicle', 'Characters', '')}
     <div class="cards">${characters.map(charCard).join('') || '<p class="muted">No characters yet.</p>'}</div>`;
 };
 
-pages.character = async (key) => {
+pages.character = async (key, params = new URLSearchParams()) => {
+  const tab = params.get('tab') || 'journal';
   const c = derived().characters.find((x) => x.key === key);
   if (!c) return '<p>Character not found.</p>';
   setTimeout(() => document.getElementById('delChar')?.addEventListener('click', async () => {
@@ -1263,7 +1286,8 @@ pages.character = async (key) => {
         ${facts([i.guild ? `&lt;${esc(i.guild)}&gt;` : '', i.bind ? `Hearth: ${esc(i.bind)}` : '', moneyNow != null ? money(moneyNow) : '', i.xpMax ? `${Math.round(xpPct * 100)}% into level ${c.level}` : ''])}
       </div>
     </header>
-    <div class="cards">
+    ${tabsHtml([['journal', 'Journal'], ['progress', 'Progress'], ['places', 'Places']], tab, `#/character/${enc(c.key)}?tab=`)}
+    ${tab === 'journal' ? characterJournal(c) : tab === 'places' ? characterPlaces(c) : `<div class="cards">
       ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'kills', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
       ${card(c.zones.length, 'zones visited', '#/zones')}${card(c.recordings.length, 'recordings', '#/recordings')}${card(Math.round(c.playSeconds / 3600), 'hours logged', '#/sessions')}
     </div>
@@ -1314,8 +1338,39 @@ pages.character = async (key) => {
     <div class="panel danger"><h3>Delete ${esc(c.name)}</h3>
       <p class="small">Removes this character's ${c.sessions.length} session${c.sessions.length === 1 ? '' : 's'} and their routes from the chronicle, on every computer. Recordings and screenshots stay. The addon's own log on the gaming PC is not changed, and these sessions will not be uploaded again. Type the character's name to confirm.</p>
       <div class="row"><input type="text" id="delCharName" placeholder="${esc(c.name)}" autocomplete="off"><button id="delChar" class="danger">Delete character</button></div>
-    </div>`;
+    </div>`}`;
 };
+
+// The Journal: the character's journey told as a story, from the log.
+function characterJournal(c) {
+  const d = derived();
+  const sessions = d.sessions.filter((sess) => c.sessions.includes(sess.id));
+  let story;
+  try { story = narrate({ character: c, sessions, world: d.world, codex: d.codex, moment: d.moment }); } catch (err) { console.warn('journal', err); story = { chapters: [] }; }
+  setTimeout(() => document.getElementById('journalDl')?.addEventListener('click', () => download(`${c.name.toLowerCase()}-journal.md`, 'text/markdown', narrativeText(story))));
+  if (!story.chapters.length) return '<p class="muted">Nothing to tell yet. The journal writes itself from what the addon logs as you play.</p>';
+  return `<div class="journal">
+    ${story.chapters.map((ch, i) => `<article class="chapter-story" style="--i:${Math.min(i, 12)}">
+      <h2>${esc(ch.title)}</h2>
+      <p class="muted small">${[ch.zone, ch.started ? when(ch.started) : ''].filter(Boolean).map(esc).join(' · ')}</p>
+      ${ch.paragraphs.map((pg) => `<p>${esc(pg.text)}${pg.footage ? ` ${play(pg)}` : ''}</p>`).join('')}
+    </article>`).join('')}
+    <p><button class="ghost small" id="journalDl">Journal as Markdown</button></p>
+  </div>`;
+}
+
+// Places: where this character has been, with the maps explored and loose ends.
+function characterPlaces(c) {
+  const d = derived();
+  const codexZones = new Map(d.codex.zones.map((z) => [z.name, z]));
+  return `${table(c.zones, [
+      { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` },
+      { label: 'First visit', value: (z) => z.t, html: (z) => play(z) },
+      { label: 'Areas', value: (z) => codexZones.get(z.name)?.discovered?.length ?? 0, num: true },
+      { label: 'Loose ends', value: (z) => looseEnds(z.name, d.codex, d.world).total, html: (z) => { const n = looseEnds(z.name, d.codex, d.world).total; return n ? `<a class="chip active" href="#/zone/${enc(z.name)}#loose">${n}</a>` : '<span class="chip done">clear</span>'; }, num: true },
+    ], { sort: 1, empty: 'No zones yet.' })}
+    ${exploredMaps()}`;
+}
 
 async function deleteCharacter(c) {
   const ids = c.sessions.slice();
@@ -1454,7 +1509,7 @@ pages.highlights = async (_, params) => {
 // the page's HTML; after(continent, zone) runs once it is in the document.
 function rpgMenu(spec) {
   const { base, groups, footer = '' } = spec;
-  const ring = (done, total, size = 44) => `<span class="ring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
+  const ring = (done, total, size = 44) => `<span class="pring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
   const levelText = (z) => (z.minLevel ? `${z.minLevel}${z.maxLevel && z.maxLevel !== z.minLevel ? `–${z.maxLevel}` : ''}` : '');
   const link = (c, z) => `${base}?continent=${enc(c)}${z ? `&zone=${z}` : ''}`;
   const left = () => `${groups.map((g) => { const r = spec.ring(g); return `<a class="rpg-item ${g === spec.continent ? 'active' : ''}" href="${link(g.name)}" data-continent="${esc(g.name)}" title="${esc(g.name)}">${ring(r.done, r.total, 40)}<span class="rpg-text"><b>${esc(g.name)}</b><small>${r.sub ?? `${r.done.toLocaleString()} / ${r.total.toLocaleString()}`}</small></span></a>`; }).join('')}
@@ -1507,7 +1562,7 @@ function reqChip(q, cov) {
   if (who ? fits(q, who) : (text === 'Alliance' || text === 'Horde')) return '';
   return ` <span class="chip req">${esc(text)}</span>`;
 }
-const rpgRing = (done, total, size = 72) => `<span class="ring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
+const rpgRing = (done, total, size = 72) => `<span class="pring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
 const rpgStat = (label, done, total, href = '') => `<${href ? `a href="${href}"` : 'div'} class="rpg-stat"><span class="muted small">${label}</span><b>${done.toLocaleString()}${total != null ? ` <span class="muted">/ ${total.toLocaleString()}</span>` : ''}</b>${total != null ? `<span class="bar"><span style="width:${pctOf(done, total)}%"></span></span>` : ''}</${href ? 'a' : 'div'}>`;
 // A name in the wiki: normal once done (killed, met, obtained), gray until then.
 const wikiName = (href, name, done, count = 0) => `<a href="${href}" class="${done ? '' : 'dim'}">${esc(name)}</a>${count > 1 ? ` <span class="count">×${count}</span>` : ''}`;
@@ -1515,7 +1570,8 @@ const wikiName = (href, name, done, count = 0) => `<a href="${href}" class="${do
 pages.locations = async (_, params) => {
   const db = await questDB();
   if (!db) return `${pageHead('World', 'Locations', 'Every place you have been. The quest database is not available, so there is nothing to show yet.')}`;
-  const { maps, codex: c, world } = derived();
+  const spawns = await spawnTable();
+  const { maps, codex: c, world, sessions } = derived();
   const cov = coverageWho();
   const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
   const codexZone = (name) => c.zones.find((x) => x.name.toLowerCase() === String(name).toLowerCase());
@@ -1528,7 +1584,20 @@ pages.locations = async (_, params) => {
   const byZone = npcsByZone(db);
   const visitedAll = groups.reduce((n, g) => n + g.visited, 0);
   const zonesAll = groups.reduce((n, g) => n + g.zones.length, 0);
-  const mapFor = (z) => { const zm = maps.filter((m) => m.zone?.toLowerCase() === z.name.toLowerCase()); return { id: zm[0]?.id ?? z.mapId ?? null, markers: zm.flatMap((m) => m.markers) }; };
+  const stories = storylines(db, cov.ctx);
+  const experienced = new Set(c.quests.map((q) => q.qid).filter(Boolean));
+  const mapIdFor = (z) => maps.find((m) => m.zone?.toLowerCase() === z.name.toLowerCase())?.id ?? z.mapId ?? null;
+  // Verified pins: where the database places the people you have met, the
+  // creatures you have hunted and the objects you have opened in this zone.
+  // A few spawn points each, every one a link to its page.
+  const pinsFor = (z) => {
+    const out = [];
+    const add = (n, layer, pts, max) => { for (const [x, y] of pts.slice(0, max)) out.push({ x, y, layer, label: n.name, key: n.key, href: `#/npc/${enc(n.key)}` }); };
+    for (const n of world.people) if (n.zones.includes(z.name) && peopleStatus(n) !== 'seen') for (const id of n.ids || (n.npcId ? [n.npcId] : [])) add(n, n.quests.size ? 'quest' : 'person', spawns[`n${id}`]?.[z.zoneId] || [], 4);
+    for (const n of world.creatures) if (n.zones.includes(z.name) && n.kills > 0) for (const id of n.ids || (n.npcId ? [n.npcId] : [])) add(n, 'creature', spawns[`n${id}`]?.[z.zoneId] || [], 6);
+    for (const n of world.objects) if (n.zones.includes(z.name) && n.loots > 0 && n.objectId) add(n, 'object', spawns[`o${n.objectId}`]?.[z.zoneId] || [], 6);
+    return out;
+  };
   const detail = (cont, z) => {
     if (!z) {
       return `<div class="rpg-title"><div><span class="kicker">Continent</span><h2>${esc(cont.name)}</h2></div>${rpgRing(cont.visited, cont.zones.length)}</div>
@@ -1541,36 +1610,79 @@ pages.locations = async (_, params) => {
     }
     const cz = codexZone(z.name);
     const d = discovery(z.name);
-    const { id: mapId } = mapFor(z);
+    const mapId = mapIdFor(z);
     const people = world.people.filter((n) => n.zones.includes(z.name)).sort((a, b) => a.name.localeCompare(b.name));
     const creatures = world.creatures.filter((n) => n.zones.includes(z.name)).sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name));
+    const objects = world.objects.filter((n) => n.zones.includes(z.name));
     const dbPeople = byZone.get(z.zoneId)?.people.length ?? 0;
     const dbCreatures = byZone.get(z.zoneId)?.creatures.length ?? 0;
+    const dbQuests = (db.questsByZone.get(z.zoneId) || []).filter((q) => !q.hidden).length;
     const quests = (cz ? [...cz.quests] : []).map((k) => c.quests.find((q) => q.key === k)).filter(Boolean).sort((a, b) => (a.status === 'done' ? 0 : 1) - (b.status === 'done' ? 0 : 1) || String(a.title).localeCompare(String(b.title)));
-    const marks = c.marks.filter((m) => m.z === z.name);
-    const lore = c.books.filter((b) => b.zone === z.name).length + world.npcs.filter((n) => n.zones.includes(z.name)).reduce((n, x) => n + x.lines.length, 0);
     const list = (title, items, more = '') => (items.length ? `<div class="wiki-sec"><h3>${title} <span class="muted">${items.length}</span>${more}</h3><p class="wiki-names">${items.join(' · ')}</p></div>` : '');
-    return `<div class="rpg-title"><div><span class="kicker">${esc(cont.name)}${z.minLevel ? ` · level ${z.minLevel}${z.maxLevel !== z.minLevel ? `–${z.maxLevel}` : ''}` : ''}</span><h2>${esc(z.name)}</h2></div>${rpgRing(d?.discovered ?? 0, d?.known ?? 0)}</div>
+    if (!cz) {
+      return `<div class="rpg-title"><div><span class="kicker">${esc(cont.name)}${z.minLevel ? ` · level ${z.minLevel}${z.maxLevel !== z.minLevel ? `–${z.maxLevel}` : ''}` : ''}</span><h2>${esc(z.name)}</h2></div>${rpgRing(0, 0)}</div>
+        ${mapId ? `<div class="map wiki-map" id="locMap"></div>` : ''}
+        <p class="muted">Not visited yet. ${dbQuests.toLocaleString()} quests, ${dbPeople.toLocaleString()} people and ${dbCreatures.toLocaleString()} creatures are waiting here.</p>`;
+    }
+    // What happened here, from every character's log.
+    const here = { deaths: 0, rares: [], items: new Map(), first: null, last: null, events: 0, chars: new Set(), levels: 0, gold: 0 };
+    for (const sess of sessions) for (const e of sess.events) {
+      if (e.z !== z.name) continue;
+      here.events++;
+      if (sess.char?.name) here.chars.add(sess.char.name);
+      if (e.e === 'death') here.deaths++;
+      if (e.e === 'level') here.levels++;
+      if (e.e === 'money' && e.delta > 0) here.gold += e.delta;
+      if (e.e === 'loot' && e.id && (e.q ?? 1) >= 2) here.items.set(e.id, { id: e.id, name: e.name, q: e.q ?? world.byItem.get(e.id)?.quality ?? 1 });
+      if (!here.first || e.t < here.first) here.first = e.t;
+      if (!here.last || e.t > here.last) here.last = e.t;
+    }
+    const rares = creatures.filter((n) => n.rare);
+    const roles = [['vendor', 'Vendors'], ['trainer', 'Trainers'], ['taxi', 'Flight master'], ['innkeeper', 'Innkeeper'], ['banker', 'Bank']].map(([r, l]) => [l, people.filter((n) => n.roles.includes(r) && n.met)]).filter(([, arr]) => arr.length);
+    const storiesHere = stories.filter((st) => st.zones.includes(z.name) && st.quests.some((r) => experienced.has(r.q.id)));
+    const kinds = new Map();
+    for (const n of creatures) { const k = n.ctype || 'Other'; kinds.set(k, (kinds.get(k) || 0) + 1); }
+    const factions = new Map();
+    for (const n of people) { const f = n.faction || ''; if (f) factions.set(f, (factions.get(f) || 0) + 1); }
+    const marks = c.marks.filter((m) => m.z === z.name);
+    const texts = c.books.filter((b) => b.zone === z.name).length;
+    const overheard = world.npcs.filter((n) => n.zones.includes(z.name)).reduce((n, x) => n + x.lines.length, 0);
+    return `<div class="rpg-title"><div><span class="kicker">${esc(cont.name)}${z.minLevel ? ` · level ${z.minLevel}${z.maxLevel !== z.minLevel ? `–${z.maxLevel}` : ''}` : ''}</span><h2>${esc(z.name)}</h2>
+        <div class="muted small">${here.first ? `First set foot ${esc(when(here.first))}` : ''}${here.chars.size ? ` · ${[...here.chars].map(esc).join(', ')}` : ''}</div></div>${rpgRing(d?.discovered ?? 0, d?.known ?? 0)}</div>
       ${mapId ? `<div class="map wiki-map" id="locMap"></div>` : ''}
-      ${cz ? `<div class="rpg-stats four">
+      <div class="rpg-stats four">
         ${rpgStat('Areas discovered', d.discovered, d.known, mapId ? `#/map/${mapId}` : '')}
         ${rpgStat('Quests done', z.done, z.total, `#/quests?continent=${enc(cont.name)}&zone=${z.zoneId}`)}
         ${rpgStat('People met', people.filter((n) => peopleStatus(n) !== 'seen').length, dbPeople, `#/people?zone=${enc(z.name)}`)}
         ${rpgStat('Monsters hunted', creatures.filter((n) => n.kills > 0).length, dbCreatures, `#/bestiary?zone=${enc(z.name)}`)}
       </div>
+      <div class="wiki-kv">
+        ${here.levels ? `<div><small>Levels gained here</small><b>${here.levels}</b></div>` : ''}
+        ${here.deaths ? `<div><small>Deaths here</small><b>${here.deaths}</b></div>` : ''}
+        ${rares.length ? `<div><small>Rares met</small><b>${rares.filter((n) => n.kills > 0).length} / ${rares.length}</b></div>` : ''}
+        ${here.gold ? `<div><small>Gold earned here</small><b>${money(here.gold)}</b></div>` : ''}
+        ${kinds.size ? `<div><small>Kinds of creature</small><b>${kinds.size}</b></div>` : ''}
+        ${factions.size ? `<div><small>Factions</small><b>${[...factions.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([f]) => esc(f)).join(', ')}</b></div>` : ''}
+        ${texts || overheard ? `<div><small>Words heard</small><b>${overheard} overheard${texts ? `, ${texts} book${texts === 1 ? '' : 's'}` : ''}</b></div>` : ''}
+        ${marks.length ? `<div><small>Marks</small><b>${marks.length}</b></div>` : ''}
+      </div>
       <div class="wiki-cols">
         ${list('Areas', (d.areas || []).map((a) => `<span class="chip done">${esc(a)}</span>`).concat([...new Set(cz.subzones || [])].filter((x) => !(d.areas || []).includes(x)).map((a) => `<span class="chip">${esc(a)}</span>`)))}
+        ${list('Storylines here', storiesHere.map((st) => `<a href="#/storyline/${st.id}">${esc(st.name)}</a> <span class="muted small">${pctOf(st.done, st.total)}%</span>`))}
         ${list('Quests', quests.map((q) => `<a href="#/quest/${enc(q.key)}" class="${q.status === 'done' ? '' : 'dim'}">${esc(q.title ?? `Quest ${q.qid}`)}</a>`), z.total ? ` <span class="muted small">of ${z.total} here</span>` : '')}
-        ${list('People', people.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, peopleStatus(n) !== 'seen')))}
-        ${list('Creatures', creatures.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0)))}
+        ${roles.map(([l, arr]) => list(l, arr.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, true)))).join('')}
+        ${list('People', people.filter((n) => !roles.some(([, arr]) => arr.includes(n))).map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, peopleStatus(n) !== 'seen')))}
+        ${list('Rares', rares.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0)))}
+        ${list('Creatures', creatures.filter((n) => !n.rare).map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0)))}
+        ${list('Gathered here', objects.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.loots > 0)))}
+        ${list('Notable finds', [...here.items.values()].sort((a, b) => b.q - a.q).slice(0, 24).map((it) => itemLink(it.id, it.name, it.q)))}
       </div>
-      <div class="row" style="margin-top:14px">${mapId ? `<a class="btn" href="#/map/${mapId}">Full map</a>` : ''}<a class="btn ghost" href="#/zone/${enc(z.name)}">Journal</a>${lore ? `<a class="btn ghost" href="#/lore?zone=${enc(z.name)}">Lore from here <span class="muted">${lore}</span></a>` : ''}${marks.length ? `<a class="btn ghost" href="#/marks">Marks <span class="muted">${marks.length}</span></a>` : ''}</div>`
-      : `<p class="muted">Not visited yet. ${(db.questsByZone.get(z.zoneId) || []).filter((q) => !q.hidden).length.toLocaleString()} quests, ${dbPeople.toLocaleString()} people and ${dbCreatures.toLocaleString()} creatures are waiting here.</p>`}`;
+      <div class="row" style="margin-top:14px">${mapId ? `<a class="btn" href="#/map/${mapId}">Full map</a>` : ''}</div>`;
   };
   const after = (cont, z) => {
     if (!z) return;
-    const { id: mapId, markers } = mapFor(z);
-    if (mapId) wireMap('locMap', mapId, markers, { routes: Boolean(codexZone(z.name)), hidden: new Set(['creature', 'density', 'time', 'unfound', 'rares']) });
+    const mapId = mapIdFor(z);
+    if (mapId) wireMap('locMap', mapId, pinsFor(z), { routes: false, hidden: new Set(['density', 'time', 'unfound', 'rares']) });
   };
   return `${pageHead('World', 'Locations', 'Every place in Classic as you have found it: the map, the areas you discovered, the quests, people and creatures you met there. Grey means not yet.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
     ${rpgMenu({
@@ -1651,10 +1763,10 @@ pages.storyline = async (id) => {
     ${completionHero(s.done, s.total, `${s.done} of ${s.total} chapters done.`, `${s.quests.filter((r) => codexQuests.has(`q${r.q.id}`)).length} chapters found so far; the rest stay grey until you find them.`)}
     <ol class="chapters">
       ${s.quests.filter((r) => r.state !== 'excluded').map((r, i) => { const cq = codexQuests.get(`q${r.q.id}`); const seen = Boolean(cq); const req = reqChip(r.q, cov); return seen ? `<li class="chapter st-${r.state}">
-        <div class="row spread"><span><span class="muted">${i + 1}.</span> <a href="#/quest/q${r.q.id}"><b>${esc(r.q.n)}</b></a> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}${req}</span>${r.state === 'other' ? '' : stateChip(r.state)}</div>
+        <div class="row spread"><span><span class="muted">${i + 1}.</span> <a href="#/quest/q${r.q.id}"><b>${esc(r.q.n)}</b></a> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}</span><span class="tags">${req}${r.state === 'other' ? '' : stateChip(r.state)}</span></div>
         <div class="muted small">${esc(db.zoneName(r.q.zone ?? r.q.z) ?? '')}${giverName(r.q) ? ` · from ${giverName(r.q)}` : ''}</div>
         ${r.q.o ? `<div class="small">${esc(r.q.o)}</div>` : ''}
-      </li>` : `<li class="chapter dim"><span class="muted">${i + 1}.</span> <span class="dim">${esc(r.q.n)}</span> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}${req}</li>`; }).join('')}
+      </li>` : `<li class="chapter dim"><div class="row spread"><span><span class="muted">${i + 1}.</span> <span class="dim">${esc(r.q.n)}</span> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}</span><span class="tags">${req}</span></div></li>`; }).join('')}
     </ol>
     <p class="muted small"><button class="ghost small" id="outlineDl">Outline for writing (Markdown)</button></p>`;
 };
@@ -1886,7 +1998,10 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
     }
     if (state.shotUrls.get(own)) candidates.unshift(state.shotUrls.get(own));
   }
-  const src = candidates[0];
+  // Your own uploaded map comes through a temporary link, straight; a
+  // Wowhead map is kept locally and reused, so redraws never reload it.
+  const first = candidates[0];
+  const src = own ? first : memoMapImage(first) || '';
   const pins = cluster(markers);
   const routeLines = Array.isArray(routes) ? routes : routes ? routesFor(mapId, derived().sessions, state.tracks) : [];
   const path = (r) => r.points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
@@ -1907,6 +2022,7 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
     el.classList.add('no-image');
     el.querySelector('.map-missing').hidden = false;
   });
+  if (!src) cachedMapImage(first).then((u) => { if (img.isConnected) img.src = u; }).catch(() => { if (img.isConnected) img.src = first; });
   const info = document.getElementById('mapInfo');
   el.addEventListener('click', (ev) => {
     const pin = ev.target.closest('.pin');
@@ -2050,11 +2166,60 @@ function schemaNotice() {
   return `<div class="notice">Your database needs the version 2 update for items, routes and screenshots. Copy the setup file again from <a href="https://github.com/adelrio3/streamer-app/blob/claude/wow-lore-youtube-concept-311j74/supabase/schema.sql" target="_blank" rel="noopener">supabase/schema.sql</a> (the two-squares <b>Copy raw file</b> button), paste it into <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> and click <b>Run</b>. Then reload this page.</div>`;
 }
 
-pages.texts = (_, params) => pages.lore(_, params);
+// Lore: the story so far, across every character: storylines, zones,
+// factions, peoples and the notable finds. The shape a summary takes for a
+// short, a zone episode or a long sit is in mind here, without saying so.
+pages.lore = async () => {
+  const c = await codex();
+  const db = await questDB();
+  const { world, characters } = derived();
+  const cov = coverageWho();
+  const experienced = new Set(c.quests.map((q) => q.qid).filter(Boolean));
+  const stories = db ? storylines(db, cov.ctx).filter((st) => st.quests.some((r) => experienced.has(r.q.id))).sort((a, b) => pctOf(b.done, b.total) - pctOf(a.done, a.total) || a.name.localeCompare(b.name)) : [];
+  const zones = c.zones.slice().sort((a, b) => (a.first?.t ?? 0) - (b.first?.t ?? 0));
+  const quests = new Map(c.quests.map((q) => [q.key, q]));
+  const standing = new Map();
+  for (const ch of characters) for (const f of ch.reputation || []) { const cur = standing.get(f.name); if (!cur || f.standing > cur.standing) standing.set(f.name, { ...f, who: ch.name }); }
+  const peoples = new Map();
+  for (const n of world.people) if (n.faction) peoples.set(n.faction, (peoples.get(n.faction) || 0) + 1);
+  const kinds = new Map();
+  for (const n of world.creatures) if (n.kills > 0) { const k = n.ctype || 'Other'; kinds.set(k, (kinds.get(k) || 0) + n.kills); }
+  const finds = world.items.filter((i) => i.obtained && (i.quality ?? 0) >= 3).sort((a, b) => (b.quality ?? 0) - (a.quality ?? 0)).slice(0, 24);
+  const rares = world.creatures.filter((n) => n.rare);
+  const roster = characters.map((ch) => `<a href="#/character/${enc(ch.key)}"><b>${esc(ch.name)}</b></a> <span class="muted small">level ${ch.level} ${esc([ch.info.race, ch.info.class].filter(Boolean).join(' '))}${ch.info.faction ? ` · ${esc(ch.info.faction)}` : ''}</span>`);
+  const sec = (title, body, sub = '') => (body ? `<section class="lore-sec"><h2>${title}${sub ? ` <span class="muted small">${sub}</span>` : ''}</h2>${body}</section>` : '');
+  return `${pageHead('Chronicle', 'Lore', 'The story so far, across every character: the threads picked up, the lands walked, the peoples met and what was found.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${sec('Who', roster.length ? `<p class="wiki-names">${roster.join(' · ')}</p>` : '')}
+    ${sec('Threads', stories.length ? table(stories, [
+      { label: 'Storyline', value: (st) => st.name, html: (st) => `<a href="#/storyline/${st.id}">${esc(st.name)}</a> <span class="muted small">${esc(st.zones.join(' → '))}</span>` },
+      { label: 'Told', value: (st) => pctOf(st.done, st.total), html: (st) => covBar(st.done, st.total), num: true },
+      { label: 'Chapters', value: (st) => st.done, html: (st) => `${st.done} / ${st.total}`, num: true },
+      { label: 'Next', value: (st) => st.next?.n ?? '', html: (st) => (st.next ? `<a href="#/quest/q${st.next.id}">${esc(st.next.n)}</a>` : (st.total && st.done === st.total ? '<span class="chip done">finished</span>' : '')) },
+    ], { sort: 1, desc: true, limit: 60 }) : '<p class="muted">No storyline started yet.</p>', `${stories.filter((st) => st.total && st.done === st.total).length} finished of ${stories.length} started`)}
+    ${sec('Lands', zones.length ? table(zones, [
+      { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/locations">${esc(z.name)}</a>` },
+      { label: 'Since', value: (z) => z.first?.t ?? 0, html: (z) => `<span class="muted">${esc(when(z.first?.t))}</span>` },
+      { label: 'Areas found', value: (z) => z.discovered?.length ?? 0, num: true },
+      { label: 'Quests done', value: (z) => z.quests.filter((k) => quests.get(k)?.status === 'done').length, html: (z) => `${z.quests.filter((k) => quests.get(k)?.status === 'done').length} <span class="muted">/ ${z.quests.length} found</span>`, num: true },
+      { label: 'Hunts', value: (z) => z.kills, num: true },
+      { label: 'Episode', value: () => '', html: (z) => `<a class="chip" href="#/episodes?zone=${enc(z.name)}">assemble</a>` },
+    ], { sort: 1 }) : '', `${zones.length} zones`)}
+    ${sec('Factions', standing.size || peoples.size ? `<div class="wiki-cols">
+      ${standing.size ? `<div class="wiki-sec"><h3>Standing</h3>${table([...standing.values()], [
+        { label: 'Faction', value: (f) => f.name },
+        { label: 'Standing', value: (f) => f.standing, html: (f) => esc(REACTION[f.standing] ?? f.standing) },
+        { label: 'By', value: (f) => f.who },
+      ], { sort: 1, desc: true })}</div>` : ''}
+      ${peoples.size ? `<div class="wiki-sec"><h3>Peoples met</h3><p class="wiki-names">${[...peoples.entries()].sort((a, b) => b[1] - a[1]).map(([f, n]) => `${esc(f)} <span class="muted small">${n}</span>`).join(' · ')}</p></div>` : ''}
+    </div>` : '')}
+    ${sec('The hunt', kinds.size ? `<p class="wiki-names">${[...kinds.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<a href="#/bestiary?type=${enc(k)}">${esc(k)}</a> <span class="muted small">${n}</span>`).join(' · ')}</p>${rares.length ? `<p class="wiki-names">Rares: ${rares.map((n) => wikiName(`#/npc/${enc(n.key)}`, n.name, n.kills > 0)).join(' · ')}</p>` : ''}` : '')}
+    ${sec('Notable finds', finds.length ? `<p class="wiki-names">${finds.map((i) => itemLink(i.id, i.name, i.quality)).join(' · ')}</p>` : '')}
+    ${sec('Words', `<p class="muted">${c.books.length} book${c.books.length === 1 ? '' : 's'} and plaques, ${world.npcs.reduce((n, x) => n + x.lines.filter((l) => l.kind !== 'gossip').length, 0)} things overheard, ${world.npcs.reduce((n, x) => n + x.lines.filter((l) => l.kind === 'gossip').length, 0)} conversations. <a href="#/texts">Read them</a>.</p>`)}`;
+};
 
-// Lore: every text and every line of dialogue, by zone, for scripts ----------
+// Texts: books, plaques, what was said aloud and in conversation ---------------
 
-pages.lore = async (_, params) => {
+pages.texts = async (_, params) => {
   const c = await codex();
   const { world } = derived();
   const show = params.get('show') || 'all';
@@ -2064,7 +2229,6 @@ pages.lore = async (_, params) => {
   for (const n of world.npcs) {
     for (const l of n.lines) entries.push({ kind: l.kind === 'gossip' ? 'gossip' : 'speech', title: n.name, key: n.key, zone: n.zones[0] ?? null, text: l.text, moment: firstFootage(l.moments), heard: l.moments.length, sub: n.titles[0] });
   }
-  for (const q of c.quests) if (q.text) entries.push({ kind: 'quest', title: q.title, qkey: q.key, zone: q.zone, text: [q.text, q.objectives, q.reward].filter(Boolean).join('\n\n'), moment: q.offered[0] ?? q.accepted[0], heard: 1 });
   entries.sort((a, b) => (b.moment?.t ?? 0) - (a.moment?.t ?? 0));
   const zones = [...new Set(entries.map((e) => e.zone).filter(Boolean))].sort();
   let list = show === 'all' ? entries : entries.filter((e) => e.kind === show);
@@ -2073,14 +2237,14 @@ pages.lore = async (_, params) => {
   if (q) list = list.filter((e) => `${e.title} ${e.text}`.toLowerCase().includes(q));
   const count = (k) => entries.filter((e) => e.kind === k).length;
   setTimeout(() => {
-    const go = () => { const zs = document.getElementById('loreZone')?.value || ''; const qq = document.getElementById('loreQ')?.value || ''; location.hash = `#/lore?show=${show}${zs ? `&zone=${enc(zs)}` : ''}${qq ? `&q=${enc(qq)}` : ''}`; };
+    const go = () => { const zs = document.getElementById('loreZone')?.value || ''; const qq = document.getElementById('loreQ')?.value || ''; location.hash = `#/texts?show=${show}${zs ? `&zone=${enc(zs)}` : ''}${qq ? `&q=${enc(qq)}` : ''}`; };
     document.getElementById('loreZone')?.addEventListener('change', go);
     document.getElementById('loreQ')?.addEventListener('change', go);
   });
   const KIND = { text: 'Book / plaque', gossip: 'Gossip', speech: 'Said aloud', quest: 'Quest text' };
-  return `${pageHead('Chronicle', 'Lore', 'Everything the world told you, in its own words: books and plaques, what NPCs said when you spoke to them, what they shouted across the zone, and every quest text. Filter by zone when writing a script.')}
+  return `${pageHead('Chronicle', 'Texts', 'The world in its own words: books and plaques, what people said when you spoke to them, and what was shouted across the zone.')}
     <div class="row spread">
-      ${tabsHtml([['all', 'Everything', entries.length], ['quest', 'Quest text', count('quest')], ['gossip', 'Conversations', count('gossip')], ['speech', 'Overheard', count('speech')], ['text', 'Books & plaques', count('text')]], show, '#/lore?show=')}
+      ${tabsHtml([['all', 'Everything', entries.length], ['gossip', 'Conversations', count('gossip')], ['speech', 'Overheard', count('speech')], ['text', 'Books & plaques', count('text')]], show, '#/texts?show=')}
       <div class="row"><select id="loreZone"><option value="">All zones</option>${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select><input type="search" id="loreQ" placeholder="Words in the text…" value="${esc(params.get('q') || '')}"></div>
     </div>
     <p class="muted small">${list.length} of ${entries.length}</p>
@@ -2092,8 +2256,9 @@ pages.lore = async (_, params) => {
     ${list.length > 150 ? `<p class="muted">Showing 150. Narrow it down with the zone or word filters.</p>` : ''}`;
 };
 
-pages.zones = (a, b) => pages.journal(a, b);
-pages.journal = async () => {
+pages.zones = () => pages.characters();
+pages.journal = () => pages.characters();
+async function oldJournalPage() {
   const c = await codex();
   const db = await questDB();
   const quests = new Map(c.quests.map((q) => [q.key, q]));
@@ -2126,7 +2291,7 @@ pages.journal = async () => {
       { label: 'Later', value: (z) => z.counts.later ?? 0, num: true },
       { label: 'Other faction or class', value: (z) => z.counts.other ?? 0, num: true },
     ], { search: (z) => z.name, sort: 3, desc: true })}` : ''}`;
-};
+}
 
 pages.zone = async (name) => {
   const c = await codex();
@@ -2138,8 +2303,8 @@ pages.zone = async (name) => {
   const people = world.people.filter((k) => k.zones.includes(name));
   const marks = c.marks.filter((m) => m.z === name);
   const zoneMaps = maps.filter((m) => m.zone === name);
-  return `${crumb('#/journal', 'Journal')}
-    ${pageHead('Zone', esc(name), esc(z.subzones.join(' · ')), zoneMaps.length ? `<div class="row">${zoneMaps.map((m) => `<a class="btn" href="#/map/${m.id}">Open map${zoneMaps.length > 1 ? ` ${m.id}` : ''}</a>`).join('')}<a class="btn ghost" href="#/lore?zone=${enc(name)}">Lore from here</a><a class="btn ghost" href="#/bestiary?zone=${enc(name)}">Creatures here</a></div>` : '')}
+  return `${crumb('#/characters', 'Characters')}
+    ${pageHead('Zone', esc(name), esc(z.subzones.join(' · ')), zoneMaps.length ? `<div class="row">${zoneMaps.map((m) => `<a class="btn" href="#/map/${m.id}">Open map${zoneMaps.length > 1 ? ` ${m.id}` : ''}</a>`).join('')}<a class="btn ghost" href="#/texts?zone=${enc(name)}">Words from here</a><a class="btn ghost" href="#/bestiary?zone=${enc(name)}">Creatures here</a></div>` : '')}
     <h2>Quests (${quests.filter((q) => q.status === 'done').length}/${quests.length} done)</h2>
     ${table(quests, [
       { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.key)}">${esc(q.title)}</a>` },
@@ -3226,6 +3391,41 @@ function renderConnect(message = '') {
 // Router and start-up -------------------------------------------------------
 
 let redrawTimer = null;
+// Data notes: the text the addon read in game against the database. The
+// first-hand version is what the wiki shows; a difference is kept as a
+// note (quest titles and objectives, NPC names by id) for later.
+const squash = (t) => String(t ?? '').toLowerCase().replace(/[\u2018\u2019\u201c\u201d"']/g, '').replace(/\s+/g, ' ').trim();
+function dataNotes() {
+  const d = derived();
+  if (d.notes) return d.notes;
+  const db = state.db;
+  const notes = [];
+  if (db) {
+    for (const q of d.codex.quests) {
+      const dq = q.qid ? db.quests.get(q.qid) : null;
+      if (!dq) continue;
+      if (q.title && squash(q.title) !== squash(dq.n)) notes.push({ kind: 'quest', field: 'title', key: q.key, name: q.title, ours: q.title, theirs: dq.n });
+      if (q.objectives && dq.o && squash(q.objectives) !== squash(dq.o)) notes.push({ kind: 'quest', field: 'objectives', key: q.key, name: q.title, ours: q.objectives, theirs: dq.o });
+    }
+    for (const n of d.world.npcs) {
+      if (!n.name || n.object) continue;
+      for (const id of n.ids || (n.npcId ? [n.npcId] : [])) {
+        const dn = db.npc(id);
+        if (dn && squash(dn.n) !== squash(n.name)) notes.push({ kind: 'npc', field: 'name', key: n.key, name: n.name, ours: n.name, theirs: dn.n });
+      }
+    }
+  }
+  d.notes = notes;
+  // Say so once when new differences turn up.
+  try {
+    const seen = Number(localStorage.getItem('chronicler.notes.seen') || 0);
+    if (notes.length > seen) { toast(`${notes.length - seen} new place${notes.length - seen === 1 ? '' : 's'} where the game's text differs from the database. See Quests › Notes.`); localStorage.setItem('chronicler.notes.seen', String(notes.length)); }
+  } catch { /* storage off */ }
+  return notes;
+}
+const noteFor = (kind, key) => dataNotes().filter((n) => n.kind === kind && n.key === key);
+const firstHandChip = (kind, key) => (noteFor(kind, key).length ? ' <span class="chip firsthand" title="What the game showed differs from the database; the first-hand version is used">first-hand</span>' : '');
+
 // Which pages show which topics. Everything else redraws only when the
 // recorded data changes, so a kill on the live link never rebuilds a map.
 const PAGE_TOPICS = { '': ['data', 'voice'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
@@ -3287,7 +3487,7 @@ async function route({ keepScroll = false } = {}) {
   const params = new URLSearchParams(query);
   for (const a of document.querySelectorAll('#nav a')) {
     const target = a.getAttribute('href').slice(2);
-    let alias = { item: 'items', character: 'characters', quest: 'quests', zone: 'journal', zones: 'journal', recording: 'recordings', session: 'sessions', map: 'locations', texts: 'lore', vendors: 'people', creatures: 'bestiary', npcs: 'people', creature: 'bestiary', storyline: 'storylines' }[page] ?? page;
+    let alias = { item: 'items', character: 'characters', quest: 'quests', zone: 'characters', zones: 'characters', journal: 'characters', recording: 'recordings', session: 'sessions', map: 'locations', texts: 'lore', vendors: 'people', creatures: 'bestiary', npcs: 'people', creature: 'bestiary', storyline: 'storylines' }[page] ?? page;
     if (page === 'npc') {
       const n = state.cache?.world?.byNpc.get(rest.map(decodeURIComponent).join('/'));
       alias = n?.attackable ? 'bestiary' : n?.object ? 'items' : 'people';

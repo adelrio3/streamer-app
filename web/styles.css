@@ -547,10 +547,10 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 15%, var(--panel
 .rpg-item small { color: var(--muted); font-size: .78rem; }
 .rpg-foot { margin-top: 8px; padding: 10px 10px 4px; border-top: 1px solid var(--line); }
 .rpg-foot .cov { margin: 6px 0; }
-.ring { --p: 0; --s: 44px; position: relative; flex: none; width: var(--s); height: var(--s); border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--gold) calc(var(--p) * 1%), var(--panel-3) 0); box-shadow: 0 0 14px rgba(var(--gold-rgb), calc(var(--p) / 260)); }
-.ring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--panel); }
-.ring > span { position: relative; font-family: var(--serif); font-weight: 600; font-size: calc(var(--s) * .32); color: var(--gold-2); line-height: 1; font-variant-numeric: tabular-nums; }
-.ring > span i { font-style: normal; font-size: .6em; opacity: .8; }
+.pring { --p: 0; --s: 44px; position: relative; flex: none; width: var(--s); height: var(--s); border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--gold) calc(var(--p) * 1%), var(--panel-3) 0); box-shadow: 0 0 14px rgba(var(--gold-rgb), calc(var(--p) / 260)); }
+.pring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--panel); }
+.pring > span { position: relative; font-family: var(--serif); font-weight: 600; font-size: calc(var(--s) * .32); color: var(--gold-2); line-height: 1; font-variant-numeric: tabular-nums; }
+.pring > span i { font-style: normal; font-size: .6em; opacity: .8; }
 .rpg-list { padding: 6px; max-height: 70vh; overflow: auto; }
 .rpg-head { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .rpg-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--text); text-decoration: none; border: 1px solid transparent; }
@@ -610,9 +610,10 @@ a.dim:hover { color: var(--muted); }
 @keyframes pctshine { 0% { filter: brightness(1); transform: scale(1); } 25% { filter: brightness(1.8); transform: scale(1.18); text-shadow: 0 0 18px rgba(var(--gold2-rgb), .9); } 100% { filter: brightness(1); transform: scale(1); } }
 
 /* The navigator folds to a rail once a zone is chosen: the page is the point. */
-.rpg.rpg--zone { grid-template-columns: 72px 210px minmax(0, 1fr); }
-.rpg--zone .rpg-item { justify-content: center; padding: 8px 6px; }
-.rpg--zone .rpg-item .rpg-text, .rpg--zone .rpg-foot { display: none; }
+.rpg.rpg--zone { grid-template-columns: 118px 210px minmax(0, 1fr); }
+.rpg--zone .rpg-item { flex-direction: column; gap: 6px; padding: 10px 6px; text-align: center; }
+.rpg--zone .rpg-item .rpg-text b { font-size: .8rem; line-height: 1.15; font-family: var(--sans); font-weight: 600; }
+.rpg--zone .rpg-item .rpg-text small, .rpg--zone .rpg-foot { display: none; }
 .rpg--zone .rpg-row { grid-template-columns: minmax(0, 1fr) auto; padding: 7px 10px; }
 .rpg--zone .rpg-lvl, .rpg--zone .rpg-bars { display: none; }
 .rpg--zone .rpg-pct { font-size: 1rem; }
@@ -622,18 +623,40 @@ a.dim:hover { color: var(--muted); }
 .rpg-stats.four { grid-template-columns: repeat(4, 1fr); }
 .wiki-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
 .wiki-map { margin: 4px 0 14px; }
-@media (max-width: 1100px) { .rpg.rpg--zone { grid-template-columns: 72px 1fr; } .rpg-stats.four { grid-template-columns: 1fr 1fr; } .wiki-cols { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .rpg.rpg--zone { grid-template-columns: 118px 1fr; } .rpg-stats.four { grid-template-columns: 1fr 1fr; } .wiki-cols { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .rpg.rpg--zone { grid-template-columns: 1fr; } }
 
 /* Item kinds as a shelf, and the newest entries in the compendium */
-.kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin: 10px 0 22px; }
+.kinds { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 10px 0 22px; }
+@media (max-width: 1180px) { .kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kind { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px 14px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); text-decoration: none; box-shadow: var(--shadow); transition: transform .2s, border-color .2s, box-shadow .2s; overflow: hidden; }
 .kind::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% -20%, rgba(var(--gold-rgb), .18), transparent 60%); pointer-events: none; }
 .kind:hover { transform: translateY(-2px); border-color: rgba(var(--gold-rgb), .5); box-shadow: 0 10px 30px -12px rgba(var(--gold-rgb), .35), var(--shadow); text-decoration: none; }
-.kind .ring { margin-bottom: 4px; }
+.kind .pring { margin-bottom: 4px; }
 .kind-ico { font-size: 1.3rem; color: var(--gold); text-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
 .kind b { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
 .kind small { font-size: .8rem; color: var(--text-2); }
 main.enter .kind { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
 .recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .recent-item { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+
+/* Storyline chapter tags sit together on the right */
+.chapter .tags { display: flex; gap: 6px; align-items: center; flex: none; }
+.chip.req { color: var(--text-2); }
+/* Zone page extras */
+.wiki-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
+.wiki-kv div { padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.wiki-kv small { display: block; color: var(--muted); font-size: .75rem; }
+.wiki-kv b { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; }
+/* Data notes: first-hand text that differs from the database */
+.chip.firsthand { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 45%, transparent); }
+
+/* The Journal, told as a story; the Lore summary */
+.journal { max-width: 78ch; }
+.chapter-story { margin: 0 0 26px; }
+.chapter-story h2 { margin-bottom: 2px; }
+.chapter-story p { font-family: var(--serif); font-size: 1.12rem; line-height: 1.65; margin: 10px 0; }
+main.enter .chapter-story { animation: rise .5s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 40ms); }
+.lore-sec { margin: 6px 0 22px; }
+.lore-sec h2 { margin-bottom: 8px; }

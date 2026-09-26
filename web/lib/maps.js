@@ -285,3 +285,46 @@ export function toGeoJSON({ name, mapId, zone, markers = [], routes = [] }) {
     features,
   };
 }
+
+
+// Map images, kept locally: a Wowhead map is fetched once, stored in
+// IndexedDB and reused as an object URL, so a page can redraw without the
+// image loading again (no flash). After a day it is refreshed quietly in
+// the background; the page keeps showing what it has.
+const MAP_MEMO = new Map(); // url -> object URL for this tab
+const MAP_DB = 'chronicler-maps';
+const MAP_MAX_AGE = 24 * 3600 * 1000;
+function mapStore(mode, fn) {
+  return new Promise((resolve, reject) => {
+    if (!globalThis.indexedDB) { resolve(null); return; }
+    const open = indexedDB.open(MAP_DB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('maps');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('maps', mode);
+      const req = fn(tx.objectStore('maps'));
+      tx.oncomplete = () => { db.close(); resolve(req?.result ?? null); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+  });
+}
+export function memoMapImage(url) { return MAP_MEMO.get(url) || null; }
+export async function cachedMapImage(url) {
+  if (MAP_MEMO.has(url)) return MAP_MEMO.get(url);
+  let entry = null;
+  try { entry = await mapStore('readonly', (st) => st.get(url)); } catch { /* no storage */ }
+  const fetchIt = async () => {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    try { await mapStore('readwrite', (st) => st.put({ blob, at: Date.now() }, url)); } catch { /* no storage */ }
+    return blob;
+  };
+  let blob = entry?.blob ?? null;
+  if (!blob) blob = await fetchIt();
+  else if (Date.now() - (entry.at || 0) > MAP_MAX_AGE) fetchIt().catch(() => {}); // a quiet daily check; the page keeps what it has
+  const objectUrl = URL.createObjectURL(blob);
+  MAP_MEMO.set(url, objectUrl);
+  return objectUrl;
+}
