@@ -4,7 +4,7 @@ WoW addon (`addon/Chronicler`, Lua 5.1) + a no-build web app (`web/`) hosted on 
 
 ## Working with the user
 
-- Don't include the ZIP download link in messages. The addon installs and updates from the web app (This computer › Update addon), and the site deploys itself from this branch on Netlify.
+- Don't include the ZIP download link in messages. The addon installs and updates from the web app (This computer › Update addon). Netlify deploys this branch automatically on every push: never ask the user to trigger a deploy (each manual deploy costs build minutes on top of the automatic one). Batch related changes into one push. Only two things need telling: re-running `supabase/schema.sql` after a schema change, and updating the addon in game after an addon change.
 - Whenever you mention a file, say where it is or how to open it: a GitHub link for files in this repo
   (`https://github.com/adelrio3/streamer-app/blob/<branch>/<path>`), the full Windows path for files on their PC
   (e.g. `C:\Program Files (x86)\World of Warcraft\_classic_era_\WTF\Account\<ACCOUNT>\SavedVariables\Chronicler.lua`),
