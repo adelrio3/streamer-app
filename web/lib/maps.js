@@ -132,7 +132,29 @@ export function spread(pins, radius = 1.4) {
   return pins;
 }
 
-// Wowhead hosts zone map images by UiMap ID.
+// Classic zone maps: the game's UiMap ID -> the older zone (area) ID that
+// some map image hosts still use.
+export const CLASSIC_ZONE_IDS = {
+  1411: 14, 1412: 215, 1413: 17, 1414: 1637, 1415: 1638, 1416: 36, 1417: 45, 1418: 3, 1419: 4, 1420: 85, 1421: 130, 1422: 28,
+  1423: 139, 1424: 267, 1425: 47, 1426: 1, 1427: 51, 1428: 46, 1429: 12, 1430: 41, 1431: 10, 1432: 38, 1433: 44, 1434: 33,
+  1435: 8, 1436: 40, 1437: 11, 1438: 141, 1439: 148, 1440: 331, 1441: 400, 1442: 406, 1443: 405, 1444: 357, 1445: 15,
+  1446: 440, 1447: 16, 1448: 361, 1449: 490, 1450: 493, 1451: 1377, 1452: 618, 1453: 1519, 1454: 1637, 1455: 1537,
+  1456: 1638, 1457: 1657, 1458: 1497,
+};
+
+// Places a zone map image might be found, tried in order until one loads.
+export function mapImageCandidates(mapId) {
+  const ids = [mapId];
+  if (CLASSIC_ZONE_IDS[mapId]) ids.push(CLASSIC_ZONE_IDS[mapId]);
+  const out = [];
+  for (const id of ids) {
+    out.push(`https://wow.zamimg.com/images/wow/maps/enus/zoom/${id}.jpg`);
+    out.push(`https://wow.zamimg.com/images/wow/maps/enus/original/${id}.jpg`);
+    out.push(`https://wow.zamimg.com/images/wow/maps/enus/${id}.jpg`);
+  }
+  return out;
+}
+
 export function wowheadMapUrl(mapId) {
-  return `https://wow.zamimg.com/images/wow/maps/enus/zoom/${mapId}.jpg`;
+  return mapImageCandidates(mapId)[0];
 }

@@ -15,7 +15,7 @@ import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
 import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
-import { buildMaps, routesFor, cluster, LAYERS, wowheadMapUrl } from './lib/maps.js';
+import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates } from './lib/maps.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -756,24 +756,32 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
   const el = document.getElementById(elId);
   if (!el) return;
   const own = state.settings.maps?.[mapId];
-  let src = wowheadMapUrl(mapId);
+  const candidates = mapImageCandidates(mapId);
   if (own) {
     if (!state.shotUrls.has(own)) {
-      try { for (const [p, u] of await state.store.screenshotUrls([own])) state.shotUrls.set(p, u); } catch { /* fall back to Wowhead */ }
+      try { for (const [p, u] of await state.store.screenshotUrls([own])) state.shotUrls.set(p, u); } catch { /* fall back to the public sources */ }
     }
-    src = state.shotUrls.get(own) || src;
+    if (state.shotUrls.get(own)) candidates.unshift(state.shotUrls.get(own));
   }
+  const src = candidates[0];
   const pins = cluster(markers);
   const routeLines = routes ? routesFor(mapId, state.sessions, state.tracks) : [];
   const path = (r) => r.points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
   el.className = `map ${[...hidden].map((h) => `hide-${h}`).join(' ')}`;
-  el.innerHTML = `<img src="${src}" alt="" draggable="false">
+  el.innerHTML = `<img src="${src}" alt="" draggable="false" referrerpolicy="no-referrer" crossorigin="anonymous">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none">${routeLines.map((r) => `<path d="${path(r)}" class="route" vector-effect="non-scaling-stroke"/>`).join('')}</svg>
     ${pins.map((p, i) => `<a class="pin layer-${p.layer}" style="left:${p.x}%;top:${p.y}%;--c:${LAYERS[p.layer]?.color ?? '#fff'}" data-i="${i}" href="${p.href ?? '#'}" title="${esc(p.label)}${p.n > 1 ? ` (${p.n})` : ''}">${p.n > 1 ? `<b>${p.n}</b>` : ''}</a>`).join('')}
-    <div class="map-legend muted small">${pins.length} pins${routeLines.length ? ` · ${routeLines.length} route segment${routeLines.length === 1 ? '' : 's'}` : ''} · coordinates are the game's map percentages</div>`;
+    <div class="map-legend muted small">${pins.length} pins${routeLines.length ? ` · ${routeLines.length} route segment${routeLines.length === 1 ? '' : 's'}` : ''} · coordinates are the game's map percentages</div>
+    <div class="map-missing" hidden><b>No map image for this zone yet.</b><br>Open the map in game (M), take a screenshot, crop it to just the map, and use <i>Use my own map image</i> above. Pins are still placed correctly.</div>`;
   const img = el.querySelector('img');
-  img.addEventListener('load', () => { el.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; });
-  img.addEventListener('error', () => { el.classList.add('no-image'); });
+  let attempt = 0;
+  img.addEventListener('load', () => { el.classList.remove('no-image'); el.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; });
+  img.addEventListener('error', () => {
+    attempt++;
+    if (attempt < candidates.length) { img.src = candidates[attempt]; return; }
+    el.classList.add('no-image');
+    el.querySelector('.map-missing').hidden = false;
+  });
   const info = document.getElementById('mapInfo');
   el.addEventListener('click', (ev) => {
     const pin = ev.target.closest('.pin');
