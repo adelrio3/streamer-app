@@ -632,7 +632,7 @@ function liveFeed() {
   const age = row?.updated_at ? Date.now() + (m.offset ?? 0) - Date.parse(row.updated_at) : null;
   const live = age != null && age < 90000;
   return `<div class="panel feed-live" id="liveFeed"><div class="row spread"><h3><span class="dot ${live ? 'live' : ''}"></span> Live</h3><span class="muted small">${snap ? `${esc(snap.machine ?? 'gaming PC')}${snap.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}` : 'not connected'}</span></div>
-    <div class="feed">${events.length ? events.map((e) => `<div class="row"><span class="when">${esc(new Date(e.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span><span>${liveLine(e)}</span></div>`).join('') : `<p class="muted small">${snap ? 'Nothing yet this session. Play, and it shows up here as it happens.' : 'Open Chronicler on the gaming PC with addon 0.4.1 to see the game live.'}</p>`}</div>
+    <div class="feed">${events.length ? events.map((e) => `<div class="row"><span class="when">${esc(new Date(e.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span><span>${liveLine(e)}</span></div>`).join('') : `<p class="muted small">${snap ? 'Nothing yet this session. Play, and it shows up here as it happens.' : 'Open Chronicler on the gaming PC with addon 0.4.2 to see the game live.'}</p>`}</div>
   </div>`;
 }
 
@@ -2035,14 +2035,14 @@ pages.live = async () => {
   const here = m.liveEnabled();
   const addon = m.wow.installs?.map((i) => i.addonVersion).filter(Boolean)[0] ?? null;
   const linkStatus = here
-    ? { ok: '<span class="dot live"></span> reading the chat log', 'no-log': 'no chat log yet: log in to WoW with addon 0.4.1 or later (it turns chat logging on)', waiting: 'waiting for the WoW folder', off: 'off' }[m.live.status] ?? esc(m.live.status)
+    ? { ok: '<span class="dot live"></span> reading the chat log', 'no-log': 'no chat log yet: log in to WoW with addon 0.4.2 or later (it turns chat logging on)', waiting: 'waiting for the WoW folder', off: 'off' }[m.live.status] ?? esc(m.live.status)
     : snap ? (age < 60000 ? `<span class="dot live"></span> ${esc(snap.machine ?? 'the gaming PC')} is feeding it` : `last heard from ${esc(snap.machine ?? 'the gaming PC')} ${esc(when(Date.parse(row.updated_at) / 1000))}`) : 'nothing yet: open Chronicler on the gaming PC while you play';
   const counters = state.settings.liveCounters || [];
   const { world } = derived();
   setTimeout(() => wireLive(cfg, token));
   return `${pageHead('Stream', 'Live overlay', 'What happens in the game, on stream as it happens: drops with icons and effects by rarity, a quest tracker, item counters, kills and streaks, deaths, levels. Add the address below to OBS as a Browser source.', `<div class="row"><span class="chip ${here && m.live.status === 'ok' || (!here && age < 60000) ? 'done' : ''}">${linkStatus}</span>${here && m.live.error ? `<span class="chip bad">${esc(m.live.error)}</span>` : ''}</div>`)}
     ${state.schema2 ? '' : schemaNotice()}
-    ${here && (!addon || addon < '0.4.1') ? '<div class="notice">The live link needs addon <b>0.4.1</b> or later: <a href="#/setup">update the addon</a>, then <code>/reload</code> in game.</div>' : ''}
+    ${here && (!addon || addon < '0.4.2') ? '<div class="notice">The live link needs addon <b>0.4.2</b> or later: <a href="#/setup">update the addon</a>, then <code>/reload</code> in game.</div>' : ''}
     <div class="two">
       <div>
         <div class="panel"><h3>This stream session</h3>
@@ -2092,7 +2092,7 @@ function linkCheck(here, m, snap, row) {
   const no = (t) => `<span class="dot"></span> ${t}`;
   if (here) {
     const l = m.live;
-    rows.push(['Chat log file', l.status === 'ok' ? yes(`found in ${esc(l.flavor ?? '')}\\Logs\\WoWChatLog.txt, ${(l.fileSize / 1024).toFixed(0)} KB${l.fileModified ? `, last written ${esc(when(l.fileModified / 1000))}` : ''}`) : l.status === 'no-log' ? no('not found yet: it appears once you log in with addon 0.4.1, which turns chat logging on') : no(esc(l.status))]);
+    rows.push(['Chat log file', l.status === 'ok' ? yes(`found in ${esc(l.flavor ?? '')}\\Logs\\WoWChatLog.txt, ${(l.fileSize / 1024).toFixed(0)} KB${l.fileModified ? `, last written ${esc(when(l.fileModified / 1000))}` : ''}`) : l.status === 'no-log' ? no('not found yet: it appears once you log in with addon 0.4.2, which turns chat logging on') : no(esc(l.status))]);
     rows.push(['Lines read since this tab opened', `${l.lines.toLocaleString()} lines, ${l.decoded.toLocaleString()} from the addon${l.linkSeenAt ? ` · last addon line ${esc(when(l.linkSeenAt / 1000))}` : ''}`]);
     if (l.lastLine) rows.push(['Last line', `<code class="small">${esc(l.lastLine)}</code>`]);
     rows.push(['Cloud', l.error ? no(esc(l.error)) : l.lastPush ? yes(`pushed ${esc(when((l.lastPush + (m.offset ?? 0)) / 1000))}`) : no('nothing pushed yet')]);

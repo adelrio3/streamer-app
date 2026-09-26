@@ -22,6 +22,7 @@ local target = nil -- your own character, as a whisper target
 local sent = 0
 local lastSend = 0
 local lastBeat = 0
+local unflushed = false -- something was sent since the log was last flushed
 
 local function settings()
 	ChroniclerDB = ChroniclerDB or {}
@@ -91,6 +92,21 @@ local function flush()
 	if SendChatMessage then SendChatMessage(PREFIX .. SEP .. msg, "WHISPER", nil, to) end
 	sent = sent + 1
 	lastSend = now
+	unflushed = true
+end
+
+-- The game keeps the chat log in a buffer and writes it to disk only when
+-- the buffer fills (or at logout), so a few short lines would sit there for
+-- a long time. Turning logging off and on again closes and reopens the
+-- file, which writes the buffer out. The API itself prints nothing (the
+-- "Chat logging enabled" lines come from the /chatlog command's Lua code).
+local FLUSH_AFTER = 1.5 -- seconds after the last send
+local function flushLog()
+	if not unflushed or not LoggingChat then return end
+	if GetTime() - lastSend < FLUSH_AFTER then return end
+	LoggingChat(false)
+	LoggingChat(true)
+	unflushed = false
 end
 
 local function heartbeat()
@@ -132,6 +148,7 @@ end
 local function tick()
 	if not enabled() then return end
 	flush()
+	flushLog()
 	if GetTime() - lastBeat > HEARTBEAT then heartbeat() end
 end
 
@@ -169,6 +186,8 @@ ns.commands.live = function(arg)
 		push("T", time())
 		lastSend = -MIN_GAP
 		flush()
+		lastSend = -FLUSH_AFTER
+		flushLog()
 		print(string.format("|cffd4a017Chronicler|r test line whispered to %s. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", whisperTarget() or "you"))
 	else
 		local logging = LoggingChat and LoggingChat() or false

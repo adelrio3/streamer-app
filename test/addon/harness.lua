@@ -58,9 +58,13 @@ local function runTimers()
 end
 local cvars = { nameplateMaxAlpha = "1" }
 -- Chat channels and the chat log (the live link).
-local chat = { logging = false, sent = {}, filters = {} }
+local chat = { logging = false, sent = {}, filters = {}, flushes = 0 }
 local fire -- defined with the frames below
-function LoggingChat(on) if on ~= nil then chat.logging = on end return chat.logging end
+function LoggingChat(on)
+	if on == false and chat.logging then chat.flushes = chat.flushes + 1 end -- closing the file writes the buffer out
+	if on ~= nil then chat.logging = on end
+	return chat.logging
+end
 function GetNormalizedRealmName() return "Whitemane" end
 -- Like the game: say, yell and channels from an addon fail without a hardware event.
 function SendChatMessage(msg, kind, _, target)
@@ -608,6 +612,7 @@ end
 local before = #chat.sent
 SlashCmdList.CHRONICLER("live test")
 assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test sends a test line")
+assert(chat.logging and chat.flushes > 0, "the chat log is flushed to disk after sending (logging toggled off and on) and left on")
 
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}
