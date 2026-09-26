@@ -32,7 +32,7 @@ function journal(sex = 'male', storylines = [storyline]) {
   return { character, result: journalEntries({ character, sessions, world, codex, storylines, moment }) };
 }
 
-test('journal: one short session entry, in his voice, with the things that mattered', () => {
+test('journal: one short session entry, in his own words, with the things that mattered', () => {
   const { character, result } = journal();
   assert.equal(character.name, 'Aldric');
   assert.equal(result.title, 'The journal of Aldric');
@@ -53,8 +53,8 @@ test('journal: one short session entry, in his voice, with the things that matte
   assert.ok(death, 'Hogger is named');
   assert.match(death, /killed|fell to|got the better of/, 'in a death sentence');
   assert.match(en.text, /reached level 2|level 2 came|enough for level 2/i);
-  assert.match(en.text, /\b(he|him|his)\b/, 'uses he/him');
-  assert.doesNotMatch(en.text, /\bthey\b|\btheir\b|\bthem\b/i, 'never "they" for him');
+  assert.match(en.text, /\b(I|me|my)\b/, 'first person: his own account');
+  assert.doesNotMatch(en.text, /\b(he|him|his|they|their|them)\b/i, 'never about him from outside');
   assert.doesNotMatch(en.text, /!/, 'no exclamation marks');
   assert.doesNotMatch(en.text, /\$[NCRG]/, 'no raw tokens');
   assert.match(sentences.at(-1), /Mother Fang was still out there|could wait|still waiting|still had|left .* to see to/, 'closes looking ahead');
@@ -96,13 +96,12 @@ test('journal: a finished storyline gets its own entry after the session', () =>
   assert.deepEqual(partial.entries.map((e) => e.kind), ['session']);
 });
 
-test('journal: she/her for a woman, the name alone when the sex is unknown', () => {
-  const her = journal('female').result.entries[0].text;
-  assert.match(her, /\b(she|her)\b/i);
-  assert.doesNotMatch(her, /\b(he|him|his|they|them|their)\b/i);
-  const named = journal(null).result.entries[0].text;
-  assert.doesNotMatch(named, /\b(he|him|his|she|her|they|them|their)\b/i, 'no pronouns at all');
-  assert.ok((named.match(/Aldric/g) || []).length >= 2, 'the name stands in');
+test('journal: first person whatever the sex, the NPC lines still addressed to her', () => {
+  const her = journal('female').result.entries.map((e) => e.text).join(' ');
+  assert.match(her, /\b(I|me|my)\b/);
+  assert.doesNotMatch(her, /\b(he|him|his|she|they|them|their)\b/i);
+  const unknown = journal(null).result.entries[0].text;
+  assert.match(unknown, /\b(I|me|my)\b/, 'the sex does not matter to a first-person account');
 });
 
 test('journal: quests carry over between days, kills fold into a count, a finished zone is noted', () => {
@@ -132,16 +131,16 @@ test('journal: quests carry over between days, kills fold into a count, a finish
   const [d1, d2] = result.entries;
   assert.equal(d1.title, 'Day 1, Elwynn Forest');
   assert.equal(d2.title, 'Day 2, Elwynn Forest');
-  assert.match(d1.text, /three Kobold Vermin/, 'kills fold into one count');
-  assert.equal((d1.text.match(/three Kobold Vermin/g) || []).length, 1);
+  assert.match(d1.text, /three Kobold Vermin/i, 'kills fold into one count');
+  assert.equal((d1.text.match(/three Kobold Vermin/gi) || []).length, 1);
   assert.match(d1.text, /a rare Ornate Blade/, 'a quality-3 find is worth a line');
   assert.match(d1.text, /The Forgotten Heirloom and Wolves Across the Border/, 'the quests still to do close the entry');
   assert.match(d2.text, /The Forgotten Heirloom and Wolves Across the Border/, 'and are still open the next day');
   assert.match(d2.text, /Innkeeper Farley|silver/, 'a small thing is mentioned when nothing bigger happened');
   assert.ok(!(/Innkeeper Farley/.test(d2.text) && /silver/.test(d2.text)), 'but only one of them');
   assert.doesNotMatch(d1.text + d2.text, /Wolf\b|Aldric|mystery_event|150/);
-  assert.doesNotMatch(d1.text + d2.text, /\b(he|him|his|they|them|their)\b/i);
-  assert.match(d1.text + d2.text, /\b(she|her)\b/i);
+  assert.doesNotMatch(d1.text + d2.text, /\b(he|him|his|she|they|them|their)\b/i);
+  assert.match(d1.text + d2.text, /\b(I|me|my)\b/);
 
   // Five quests found and all done in a zone: a zone entry, dated by the last turn-in.
   const zoneEvents = [ev(200000, { e: 'session_start', z: 'Westfall', sz: 'Sentinel Hill' }), ev(200001, { e: 'explore', z: 'Westfall', area: 'Sentinel Hill' })];

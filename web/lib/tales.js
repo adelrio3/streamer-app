@@ -1,11 +1,16 @@
-// Tales: a finished storyline told as a storybook story for the Lore page,
-// the way a story is read to a child. Warm, simple sentences, a little
-// wonder. Every fact comes from the database and what was logged: the place,
-// who asked, what they said, what had to be done, who did it and what they
-// were given for it. Nothing about the game leaks in: no quests, levels or
-// logs, only people, places and errands.
+// Tales: a finished storyline told as a story for the Lore page. Third
+// person, past tense, the voice of a storyteller for teens: direct, a little
+// dry, stakes stated plainly, no "once upon a time". Every fact comes from
+// the database and what was logged: the place, who asked, what they said,
+// what had to be done, who did it and what they were given for it. Nothing
+// about the game leaks in: no quests, levels or logs, only people, places
+// and errands. The Journal on a character's page is the first-person side.
+//
+// Chapters that only differ by class (the letters and tablets a village
+// sends its newcomers to five different teachers) are rolled into one event:
+// nobody lives all five, and the story is the same one.
 
-import { givers, enders, objectives } from './questdb.js';
+import { givers, enders, objectives, CLASS_BITS } from './questdb.js';
 import { storylines } from './story.js';
 
 // ---------------------------------------------------------------------------
@@ -22,7 +27,7 @@ export function tales({ db, codex, world = null, characters = [], ctx = {} }) {
   const inChain = new Set();
   for (const s of storylines(db, ctx)) {
     for (const r of s.quests) inChain.add(r.q.id);
-    const chapters = s.quests.map((r) => chapterOf(r.q, r.state, cq));
+    const chapters = rollUp(s.quests.map((r) => chapterOf(r.q, r.state, cq)));
     const tale = makeTale({ id: `s${s.id}`, kind: 'storyline', title: s.name, zones: s.zones, level: s.minLevel, chapters, heroBook, ctx });
     if (tale) out.push(tale);
   }
@@ -44,6 +49,34 @@ function chapterOf(q, state, cq) {
   return { q, state: s };
 }
 
+const ANY_CLASS = Object.values(CLASS_BITS).reduce((a, b) => a | b, 0);
+const RANK = { done: 3, active: 2, ready: 1 };
+
+// Class-only variants of one event, told once. A run of chapters that are
+// each for some classes only, handed out by the same person after the same
+// prerequisites, becomes one chapter: the one that was done (or the first)
+// stands for it, with the others kept as `variants`.
+export function rollUp(chapters) {
+  const sig = (ch) => (ch.q.cl && ch.q.cl !== ANY_CLASS ? `${JSON.stringify(ch.q.s ?? null)}|${JSON.stringify(ch.q.pre ?? null)}|${JSON.stringify(ch.q.preAll ?? null)}` : null);
+  const out = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 2) {
+      const best = run.slice().sort((a, b) => (RANK[b.state] || 0) - (RANK[a.state] || 0))[0];
+      out.push({ q: best.q, state: best.state, variants: run.map((ch) => ({ q: ch.q, state: ch.state })) });
+    } else out.push(...run);
+    run = [];
+  };
+  for (const ch of chapters) {
+    const k = sig(ch);
+    if (k && run.length && sig(run[0]) === k) { run.push(ch); continue; }
+    flush();
+    if (k) run.push(ch); else out.push(ch);
+  }
+  flush();
+  return out;
+}
+
 function makeTale({ id, kind, title, zones, level, chapters, heroBook, ctx }) {
   const cq = heroBook.cq;
   const done = chapters.filter((ch) => ch.state === 'done').length;
@@ -55,7 +88,7 @@ function makeTale({ id, kind, title, zones, level, chapters, heroBook, ctx }) {
   const heroes = [];
   let startedAt = null;
   let finishedAt = null;
-  for (const ch of chapters) {
+  for (const ch of chapters.flatMap((x) => x.variants || [x])) {
     const c = cq.get(`q${ch.q.id}`);
     if (!c) continue;
     for (const m of [...(c.accepted || []), ...(c.offered || [])]) if (m?.t != null && (startedAt == null || m.t < startedAt)) startedAt = m.t;
@@ -94,23 +127,46 @@ function heroLookup(codex, characters) {
 // Telling one
 
 // tale: from tales(). hero: { name, race, class, sex }. pretend: tell every
-// chapter as if it were done, from the database alone where nothing was logged.
-export function tellTale(tale, { db, codex, world = null, hero = tale.heroes?.[0] || null, pretend = false } = {}) {
+// chapter as if it were done, from the database alone where nothing was
+// logged. defaultSex: the pronouns when the hero's sex is not known (the
+// account's own, male unless set otherwise); the tale never says "they".
+export function tellTale(tale, { db, codex, world = null, hero = tale.heroes?.[0] || null, pretend = false, defaultSex = 'male' } = {}) {
   const cq = codexQuests(codex);
-  const who = person(hero);
-  const told = pretend ? tale.chapters : tale.chapters.filter((ch) => ch.state === 'done');
+  const who = person(hero, defaultSex);
+  const chapters = tale.chapters.some((ch) => ch.variants) ? tale.chapters : rollUp(tale.chapters);
+  const told = pretend ? chapters : chapters.filter((ch) => ch.state === 'done');
   const parts = [];
   let prev = null;
   told.forEach((ch, i) => {
-    const facts = chapterFacts(db, ch.q, cq.get(`q${ch.q.id}`), world, who);
+    const q = ch.variants ? variantFor(ch, who) : ch.q;
+    const facts = chapterFacts(db, q, cq.get(`q${q.id}`), world, who);
+    if (ch.variants) facts.rolled = rolledFacts(ch);
     const paragraphs = tellChapter(facts, who, { first: i === 0, prev, index: i, count: told.length });
-    parts.push({ heading: cleanTitle(ch.q.n), paragraphs });
+    parts.push({ heading: ch.variants ? facts.rolled.heading : cleanTitle(q.n), paragraphs });
     prev = facts;
   });
-  const finished = pretend || (told.length === tale.chapters.length);
-  const ending = finished ? `${closingLine(prev, who)} The end.` : `${closingLine(prev, who)} That is as far as the tale goes, for now.`;
+  const finished = pretend || (told.length === chapters.length);
+  const ending = finished ? closingLine(prev, who) : `${closingLine(prev, who)} That is as far as it goes, for now.`;
   const dedication = hero?.name ? `As lived by ${hero.name}` : pretend ? 'As it might be lived' : 'As lived by a traveler';
   return { title: tale.title, dedication, parts, ending };
+}
+
+// The variant of a rolled-up chapter that stands for it: the one that was
+// done, else the hero's own class, else the first.
+function variantFor(ch, who) {
+  const done = ch.variants.find((v) => v.state === 'done');
+  if (done) return done.q;
+  const bit = CLASS_BITS[String(who.class || '').toUpperCase()] || 0;
+  return ch.variants.find((v) => bit && v.q.cl & bit)?.q ?? ch.q;
+}
+
+// What the rolled-up variants have in common: the thing handed over (the
+// last word of every title, "Letter" or "Tablet") and how many roads it led to.
+function rolledFacts(ch) {
+  const lastWords = ch.variants.map((v) => cleanTitle(v.q.n).split(' ').at(-1).toLowerCase());
+  const same = lastWords.every((w) => w === lastWords[0]) ? lastWords[0] : null;
+  const thing = same && /^(letter|tablet|parchment|note|scroll|rune|sigil|summons|message|missive)$/.test(same) ? same : 'message';
+  return { thing, count: ch.variants.length, heading: `The ${thing.charAt(0).toUpperCase()}${thing.slice(1)}` };
 }
 
 export function taleText(story) {
@@ -212,10 +268,9 @@ function fillNames(t, who) {
 // The words
 
 const FOOD = /\b(apple|apples|meat|egg|eggs|fruit|berry|berries|mushroom|wine|cheese|bread|pie|stew|ale|honey|fish|milk|grape|grapes|melon|cake|nut|nuts|spice|spices|herb|herbs|harvest|kimchi|ribs|chops|beer|mead|brew)\b/i;
-const FOE = /\b(kill|slay|hunt|destroy|defeat|rid|cull|thin|kobold|gnoll|wolf|wolves|defias|murloc|bandit|raider|scout|troll|spider|boar|thief|thieves)\b/i;
 
-// Zones as a storybook would name them: a small flourish for the places
-// the stories most often begin, and the plain name everywhere else.
+// Zones as a storyteller names them: a flourish for the places the stories
+// most often begin, and the plain name everywhere else.
 const ZONE_FLOURISH = {
   'Durotar': 'the red dust of Durotar', 'Elwynn Forest': 'the green woods of Elwynn', 'Dun Morogh': 'the snows of Dun Morogh', 'Teldrassil': 'the great tree Teldrassil',
   'Mulgore': 'the wide grass of Mulgore', 'Tirisfal Glades': 'the grey glades of Tirisfal', 'Westfall': 'the golden fields of Westfall', 'The Barrens': 'the dry plains of the Barrens',
@@ -223,80 +278,102 @@ const ZONE_FLOURISH = {
   'Duskwood': 'the gloom of Duskwood', 'Stonetalon Mountains': 'the high stone of Stonetalon', 'Ashenvale': 'the old forest of Ashenvale', 'Stranglethorn Vale': 'the steaming jungle of Stranglethorn',
 };
 
-// Who the hero is, with pronouns. No sex: the name stands in for every pronoun.
-function person(hero) {
+// Who the hero is, with pronouns: the hero's own sex, else the account's.
+function person(hero, defaultSex = 'male') {
   const name = hero?.name || null;
-  const sex = hero?.sex || null;
-  const they = sex === 'male' ? 'he' : sex === 'female' ? 'she' : name || 'the traveler';
-  const them = sex === 'male' ? 'him' : sex === 'female' ? 'her' : name || 'the traveler';
-  const their = sex === 'male' ? 'his' : sex === 'female' ? 'her' : name ? `${name}'s` : "the traveler's";
-  return { name, race: hero?.race || null, class: hero?.class || null, sex, level: hero?.level || null, they, them, their, cap: (s) => s.charAt(0).toUpperCase() + s.slice(1) };
+  const sex = hero?.sex === 'female' || hero?.sex === 'male' ? hero.sex : defaultSex === 'female' ? 'female' : 'male';
+  const f = sex === 'female';
+  return { name, race: hero?.race || null, class: hero?.class || null, sex, level: hero?.level || null, they: f ? 'she' : 'he', them: f ? 'her' : 'him', their: f ? 'her' : 'his', cap: (s) => s.charAt(0).toUpperCase() + s.slice(1) };
+}
+
+function heroRef(who) {
+  return who.name || 'the adventurer';
 }
 
 function tellChapter(f, who, { first, prev, index }) {
   const v = (n) => (f.id + index) % n; // deterministic variety per chapter
-  const paras = [];
   const place = f.zone ? (ZONE_FLOURISH[f.zone] || f.zone) : null;
+  if (f.rolled) return rolledChapter(f, who, { first, prev, v, place }).filter(Boolean).map(tidy);
+  const paras = [];
   const asker = f.giver || 'the one who asked';
 
-  // 1. The place and the one who needed help.
+  // 1. The place, the one with the problem, and what the problem was.
   let opening;
   if (first) {
-    const lived = f.giverKind === 'object' ? 'stood' : 'lived';
-    const start = place ? `${['Once, in ', 'Once upon a time, in ', 'Once, long ago, in '][v(3)]}${place}` : ['Once', 'Once upon a time', 'Once, long ago'][v(3)];
-    opening = f.giver ? joinShort(`${start}, there ${lived} ${describeGiver(f)} named ${f.giver}`, `${f.giver} ${wantLine(f)}`) : `${start}, someone ${wantLine(f)}.`;
+    const where = place ? `${['It started in ', 'This one begins in ', 'The trouble began in '][v(3)]}${place}` : ['It started small', 'This one begins with a favour', 'The trouble began quietly'][v(3)];
+    if (f.giver) opening = `${where}, with ${describeGiver(f)} named ${f.giver}. ${f.giver} ${wantLine(f)}.`;
+    else opening = `${where}. Someone ${wantLine(f)}.`;
   } else {
     const sameGiver = prev?.giver && prev.giver === f.giver;
-    const link = ['But that was not the end of it.', 'And that was not all.', 'There was more to do.', 'But the story goes on.'][v(4)];
+    const link = ['That should have been the end of it. It was not.', 'It did not stop there.', 'One thing led to another.', 'There was a catch.', 'The next job came quickly.', 'Word gets around in a small place.'][v(6)];
     const moved = Boolean(f.zone && prev?.zone && prev.zone !== f.zone);
-    if (sameGiver) opening = `${link} ${f.giver} ${['was not done with', 'had another worry for', 'soon had more to ask of'][v(3)]} ${who.them}. Now ${f.giver} ${wantLine(f)}.`;
+    if (sameGiver) opening = `${link} ${f.giver} ${['was not done with', 'had another problem for', 'had more to ask of'][v(3)]} ${who.them}: now ${f.giver} ${wantLine(f)}.`;
     else if (f.giver) opening = `${link} ${moved ? `Over in ${place}, ` : ''}${moved ? describeGiver(f) : who.cap(describeGiver(f))} named ${f.giver} ${wantLine(f)}.`;
     else opening = `${link} Someone ${wantLine(f)}.`;
   }
-  if (f.said) opening += ` "${f.said}," ${[`said ${asker}`, `sighed ${asker}`, `${asker} told ${who.them}`][v(3)]}.`;
+  if (f.said) opening += ` "${f.said}," ${[`${asker} said`, `${asker} put it`, `${asker} told ${who.them}`][v(3)]}.`;
   paras.push(opening);
 
-  // 2. The hero comes by.
+  // 2. Enter the hero.
   if (first) {
-    const heard = ['heard about it', 'came by that way', 'was passing through', 'happened to be near'][v(4)];
-    paras.push(who.name ? `${describeHero(who)} called ${who.name} ${heard}.` : `A traveler ${heard}.`);
+    const came = ['was passing through and heard about it', 'happened to be in the area', 'turned up at the right moment', 'was new to the place and looking for work'][v(4)];
+    paras.push(who.name ? `${describeHero(who)} named ${who.name} ${came}.` : `${describeHero(who)} ${came}.`);
   }
 
-  // 3. What had to be done, and 4. the return.
+  // 3. What it took, and 4. the return.
   paras.push(taskLine(f, who, v));
   paras.push(returnLine(f, who, v));
   return paras.filter(Boolean).map(tidy);
 }
 
+// A rolled-up chapter: the message every newcomer is handed, whoever
+// their teacher turns out to be. Told once, not once per class.
+function rolledChapter(f, who, { first, prev, v, place }) {
+  const thing = f.rolled.thing;
+  const teacher = f.errand || 'the one who taught newcomers';
+  const giver = f.giver || 'someone';
+  const out = [];
+  if (first) {
+    out.push(`${place ? `In ${place}, ` : ''}${describeGiver(f)} named ${giver} kept a ${thing} for every newcomer who came through. Each was sealed for a different teacher, and each said much the same thing: come and be taught.`);
+    out.push(`${describeHero(who)}${who.name ? ` named ${who.name}` : ''} got ${who.their}s.`);
+  } else {
+    const sameGiver = prev?.giver && prev.giver === f.giver;
+    out.push(`${sameGiver ? `${giver} also had a ${thing} for ${who.them}` : `${who.cap(describeGiver(f))} named ${giver} handed ${who.them} a ${thing}`}, the kind every newcomer got, ${['sealed for whichever teacher would take them', 'each one meant for a different teacher', 'one for each path a newcomer might walk'][v(3)]}. It said to go and be taught.`);
+  }
+  out.push(`${who.cap(who.they)} ${['went and found', 'tracked down', 'sought out'][v(3)]} ${teacher}${f.said ? `, who ${['had plenty to say', `was expecting ${who.them}`, 'did not waste words'][v(3)]}. "${f.said}."` : `, and ${['listened', 'learned what there was to learn', 'came away knowing more than before'][v(3)]}.`}`);
+  return out;
+}
+
 function describeGiver(f) {
   if (f.giverKind === 'object') return 'a curious thing';
   const t = f.giver || '';
-  if (/^(Marshal|Deputy|Captain|Guard|Sentinel|Sergeant|Lieutenant|Commander|Watcher|Grunt|Warden)\b/.test(t)) return 'a watchful soldier';
-  if (/^(Brother|Sister|Priestess|Priest|Father|Apothecary|Magistrate|Elder|Innkeeper|Chief|Lady|Lord|Chieftain|Foreman|Overseer|Master|Mother)\b/.test(t)) return 'a busy someone';
+  if (/^(Marshal|Deputy|Captain|Guard|Sentinel|Sergeant|Lieutenant|Commander|Watcher|Grunt|Warden)\b/.test(t)) return 'a soldier';
+  if (/^(Brother|Sister|Priestess|Priest|Father|Apothecary|Magistrate|Elder|Innkeeper|Chief|Lady|Lord|Chieftain|Foreman|Overseer|Master|Mother)\b/.test(t)) return 'someone with a title and a problem';
   return 'someone';
 }
 
 // "a young troll hunter".
 function describeHero(who) {
   const age = !who.level || who.level <= 20 ? 'young' : who.level >= 50 ? 'seasoned' : '';
-  const bits = [age, who.race ? lower(who.race) : '', who.class ? lower(who.class) : ''].filter(Boolean).join(' ');
-  return bits ? `${who.cap(article(bits))} ${bits}` : 'A traveler';
+  const what = [who.race ? lower(who.race) : '', who.class ? lower(who.class) : ''].filter(Boolean).join(' ') || 'adventurer';
+  const bits = [age, what].filter(Boolean).join(' ');
+  return `${who.cap(article(bits))} ${bits}`;
 }
 
 // What the one who asked wanted, from the first thing to do.
 function wantLine(f) {
   const t = f.tasks[0];
   if (t?.kind === 'item') {
-    if (t.count == null) return `needed ${bare(t.name)}, and needed it badly`;
+    if (t.count == null) return `needed ${bare(t.name)}, and was not picky about how`;
     const thing = plural(t, t.count);
-    return FOOD.test(t.name) ? `loved ${thing} more than anything` : `needed ${thing}, and needed them badly`;
+    return FOOD.test(t.name) ? `wanted ${thing}, and would not stop talking about it` : `needed ${thing}, and needed them soon`;
   }
-  if (t?.kind === 'kill') return t.count == null && f.tasks.length === 1 ? `feared ${t.name}, who was out there somewhere` : `feared the ${plural(t, t.count ?? 2)} more than anything`;
-  if (t?.kind === 'object') return `wondered what the ${plural(t, t.count ?? 2)} held`;
-  if (f.explore) return `wondered what lay inside ${withThe(f.explore)}`;
-  if (f.parcel) return `had ${withThe(f.parcel)} to send to ${f.errand}`;
-  if (f.errand) return `had word to send to ${f.errand}`;
-  return 'needed a hand with something';
+  if (t?.kind === 'kill') return t.count == null && f.tasks.length === 1 ? `wanted ${t.name} dead, and had good reason` : `had had enough of the ${plural(t, t.count ?? 2)}`;
+  if (t?.kind === 'object') return `wanted to know what the ${plural(t, t.count ?? 2)} were hiding`;
+  if (f.explore) return `wanted eyes on ${withThe(f.explore)}, and had none to spare`;
+  if (f.parcel) return `needed ${withThe(f.parcel)} carried to ${f.errand}`;
+  if (f.errand) return `needed word carried to ${f.errand}`;
+  return 'needed a hand, and nobody else was offering';
 }
 
 function taskLine(f, who, v) {
@@ -304,25 +381,25 @@ function taskLine(f, who, v) {
   if (f.tasks.length) {
     const named = (t) => (t.count != null ? `${words(t.count)} ${plural(t, t.count)}` : t.kind === 'kill' ? t.name : withThe(t.name));
     const bit = (t) => {
-      if (t.kind === 'kill') return t.count != null ? `${named(t)} had to be dealt with` : `${t.name} had to be found and dealt with`;
-      if (t.kind === 'item') return `${named(t)} had to be gathered${t === f.tasks[0] && f.hint ? `, found ${f.hint}` : ''}`;
-      return `${named(t)} had to be opened and looked into`;
+      if (t.kind === 'kill') return t.count != null ? `${named(t)} had to go` : `${t.name} had to be found and finished`;
+      if (t.kind === 'item') return t.count == null ? `${named(t)} had to be brought back` : `${named(t)} had to be gathered${t === f.tasks[0] && f.hint ? `, found ${f.hint}` : ''}`;
+      return `${named(t)} had to be cracked open`;
     };
     let s;
-    if (f.tasks.length <= 2) s = `${['So ', 'Well then. ', 'That was that. '][v(3)]}${f.tasks.map(bit).join(', and ')}.`;
+    if (f.tasks.length <= 2) s = `${['The job: ', 'Simple enough on paper. ', 'The deal was this: '][v(3)]}${f.tasks.map(bit).join(', and ')}.`;
     else {
       const list = f.tasks.slice(0, 4).map(named);
       const more = f.tasks.length > 4 ? ', and more besides' : '';
-      s = `${['It was quite a list', 'There was a list', 'The list was long'][v(3)]}: ${list.slice(0, -1).join(', ')} and ${list.at(-1)}${more}.`;
+      s = `${['It was a list', 'The list was not short', 'There was a list, and it was long'][v(3)]}: ${list.slice(0, -1).join(', ')} and ${list.at(-1)}${more}.`;
     }
     const t = f.tasks[0];
-    if (t.hunted) s += ` ${cap(who.they)} ${t.kind === 'kill' ? `hunted ${words(t.hunted)} of them in all` : `found ${words(t.hunted)} in all`}, ${['and that was plenty', 'which took a while', 'one after another'][v(3)]}.`;
-    else s += ` ${cap(who.they)} ${['set off at once', 'went to see about it', `rolled up ${who.their} sleeves`][v(3)]}.`;
+    if (t.hunted) s += ` ${cap(who.they)} ${t.kind === 'kill' ? `hunted ${words(t.hunted)} of them in all` : `found ${words(t.hunted)} in all`}, ${['more than was asked', 'which took longer than it sounds', 'one at a time'][v(3)]}.`;
+    else s += ` ${cap(who.they)} ${['got on with it', 'went to see about it', 'did not argue'][v(3)]}.`;
     return s;
   }
-  if (f.explore) return `So ${who.they} went to see ${withThe(f.explore)} with ${who.their} own eyes, ${['every dark corner of it', 'all the way to the back', 'as far as it went'][v(3)]}.`;
-  if (f.errand) return `So ${who.they} carried ${f.parcel ? withThe(f.parcel) : 'the word'} to ${f.errand}, ${[`as fast as ${who.their} feet would go`, 'without stopping to rest', 'over hill and path'][v(3)]}.`;
-  return `So ${who.they} did what was asked, ${['and did it well', 'and did not dawdle', `the best ${who.they} could`][v(3)]}.`;
+  if (f.explore) return `So ${who.they} went into ${withThe(f.explore)} to see for ${who.them}self, ${['every dark corner of it', 'all the way to the back', 'as far as it went'][v(3)]}.`;
+  if (f.errand) return `So ${who.they} carried ${f.parcel ? withThe(f.parcel) : 'the word'} to ${f.errand}, ${['without stopping', 'and did not read it on the way', 'over hill and road'][v(3)]}.`;
+  return `So ${who.they} did what was asked, ${['and did it properly', 'and did not drag it out', `as well as ${who.they} could`][v(3)]}.`;
 }
 
 function returnLine(f, who, v) {
@@ -331,22 +408,23 @@ function returnLine(f, who, v) {
   const to = f.ender || f.giver || 'the one who had asked';
   let back;
   if (f.errand && !f.tasks.length) back = ''; // the errand already brought them there
-  else if (f.ender && f.ender !== f.giver) back = `${cap(who.they)} ${t?.kind === 'item' ? ['carried them to', 'brought them to', 'took them along to'][v(3)] : ['brought the news to', 'went on to', 'made ' + who.their + ' way to'][v(3)]} ${f.ender}.`;
-  else back = `${['When it was done', 'At last', 'Then'][v(3)]} ${who.they} went back to ${to}.`;
-  const thanks = f.thanks ? `"${f.thanks}," ${['said', 'smiled'][v(2)]} ${to}.` : `${cap(to)} was ${['glad of it', 'very glad', 'pleased indeed'][v(3)]}.`;
-  const coin = f.money ? ` ${cap(who.they)} ${[`was given ${coins(f.money)} for ${who.their} trouble`, `went away with ${coins(f.money)} in ${who.their} pocket`][v(2)]}.` : '';
+  else if (f.ender && f.ender !== f.giver) back = `${cap(who.they)} ${t?.kind === 'item' ? ['carried them to', 'brought them to', 'took the lot to'][v(3)] : ['brought the news to', 'went on to', `made ${who.their} way to`][v(3)]} ${f.ender}.`;
+  else back = `${['When it was done', 'Afterwards', 'Then'][v(3)]} ${who.they} went back to ${to}.`;
+  const thanks = f.thanks ? `"${f.thanks}," ${['said', 'was all'][v(2)]} ${to}${v(2) ? ' had to say' : ''}.` : `${cap(to)} ${['was satisfied', 'did not complain', 'called it a job well done'][v(3)]}.`;
+  const coin = f.money ? ` ${cap(who.they)} ${[`got ${coins(f.money)} for ${who.their} trouble`, `walked away with ${coins(f.money)} in ${who.their} pocket`][v(2)]}.` : '';
   return `${back} ${thanks}${coin}`;
 }
 
 function closingLine(f, who) {
-  if (!f) return 'And so it was.';
+  if (!f) return 'And that was that.';
   const t = f.tasks[0];
-  if (t?.kind === 'kill') return f.zone ? `And ${f.zone} was a little safer after that.` : 'And the roads were a little safer after that.';
-  if (t?.kind === 'item') return f.giver && t.count != null ? `And ${f.giver} had all the ${plural(t, 2)} anyone could want.` : 'And nothing was wanting after that.';
-  if (t?.kind === 'object') return 'And what was hidden was hidden no longer.';
-  if (f.explore) return `And ${withThe(f.explore)} kept no more secrets from ${who.them}.`;
-  if (f.errand) return 'And the news reached where it needed to go.';
-  return `And ${who.name || 'the traveler'} walked on, a little taller than before.`;
+  if (f.rolled) return `${who.cap(who.they)} had a teacher now, and a long way still to go.`;
+  if (t?.kind === 'kill') return f.zone ? `${f.zone} was a little safer for it. Not much, but a little.` : 'The roads were a little safer for it.';
+  if (t?.kind === 'item') return f.giver && t.count != null ? `${f.giver} had all the ${plural(t, 2)} anyone could want, and ${heroRef(who)} had somewhere else to be.` : 'Nothing was wanting after that.';
+  if (t?.kind === 'object') return 'What was hidden was hidden no longer.';
+  if (f.explore) return `${who.cap(withThe(f.explore))} kept no more secrets from ${who.them}.`;
+  if (f.errand) return 'The word got where it needed to go.';
+  return `${who.cap(heroRef(who))} moved on, a little more sure of ${who.them}self.`;
 }
 
 // ---------------------------------------------------------------------------

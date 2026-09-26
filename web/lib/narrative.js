@@ -1,8 +1,9 @@
 // The Journal: short entries in the character's own world, built from nothing
 // but the events the addon logged. One entry per play session (2–5 sentences),
 // one when a storyline's last chapter is turned in, one when a zone's quests
-// are all done. Third person, past tense, the character's name and pronouns
-// (from character.info.sex); never anything from outside the world.
+// are all done. First person, past tense: the character's own account, in
+// their own words (the tales on the Lore page are the third-person telling);
+// never anything from outside the world.
 //
 // journalEntries({ character, sessions, world, codex, storylines, moment })
 //   → { entries: [{ id, kind, t, title, text, footage, session }] }, oldest first
@@ -61,12 +62,10 @@ function isTheirs(s, character) {
   return s.char?.name === character.name && (realm == null || (s.char?.realm ?? null) === realm);
 }
 
-// he/him/his, she/her/her, or the name every time (never "they").
-function pronouns(name, sex) {
-  const s = sex === 2 ? 'male' : sex === 3 ? 'female' : sex;
-  if (s === 'male') return { subj: 'he', obj: 'him', poss: 'his', named: false };
-  if (s === 'female') return { subj: 'she', obj: 'her', poss: 'her', named: false };
-  return { subj: name, obj: name, poss: possessive(name), named: true };
+// The journal is written by the character: I, me, my. The sex is still
+// kept for the NPC lines quoted in it ($G male;female tokens).
+function pronouns() {
+  return { subj: 'I', obj: 'me', poss: 'my', named: false };
 }
 
 function questInfoFrom(codex) {
@@ -87,7 +86,6 @@ function sessionEntry(s, ctx, open) {
   const first = events.find((e) => e.z) ?? events[0];
   if (!first.z && !first.sz) return null;
   const facts = gather(events, ctx);
-  const N = ctx.name;
   const { who } = ctx;
 
   const opened = new Map(); // quests taken this session (title by qid/title)
@@ -102,10 +100,10 @@ function sessionEntry(s, ctx, open) {
   const tod = timeOfDay(s.started || first.t);
   const place = placeOf(first);
   sentences.push(say(ctx, 'open', [
-    `${N} began the ${tod} in ${place}.`,
-    `${cap(placeIn(first))} was where the ${tod} found ${N}.`,
-    `The ${tod} started for ${N} in ${place}.`,
-    `${N} was in ${place} when the ${tod} began.`,
+    `I began the ${tod} in ${place}.`,
+    `${cap(placeIn(first))} was where the ${tod} found me.`,
+    `The ${tod} started for me in ${place}.`,
+    `I was in ${place} when the ${tod} began.`,
   ]));
 
   const picked = facts.highlights.sort((a, b) => b.score - a.score || a.t - b.t).slice(0, MAX_HIGHLIGHTS).sort((a, b) => a.t - b.t);
@@ -126,7 +124,6 @@ function sessionEntry(s, ctx, open) {
 
 // What happened in one session, each thing scored by how much it mattered.
 function gather(events, ctx) {
-  const N = ctx.name;
   const { who } = ctx;
   const highlights = [];
   const minor = [];
@@ -344,7 +341,6 @@ function storylineEntry(line, sessions, ctx) {
   const first = accepts[0] ?? turnins[0];
   const from = first.e.t;
   const until = last.e.t;
-  const N = ctx.name;
   const { who } = ctx;
   const q0 = quests[0];
   const giver = ctx.questInfo.get(q0.id)?.giver ?? ctx.questInfo.get(q0.n)?.giver ?? all.find(({ e }) => e.e === 'quest_detail' && (e.qid === q0.id || e.title === q0.n) && e.npc)?.e.npc ?? null;
@@ -360,12 +356,12 @@ function storylineEntry(line, sessions, ctx) {
 
   const sentences = [];
   sentences.push(say(ctx, 'sbegin', giver ? [
-    `${line.name} began for ${N} in ${start}, with ${giver}.`,
-    `${giver}, in ${start}, was where ${line.name} started for ${N}.`,
-    `${N} first took up ${line.name} from ${giver} in ${start}.`,
+    `${line.name} began for me in ${start}, with ${giver}.`,
+    `${giver}, in ${start}, was where ${line.name} started for me.`,
+    `I first took up ${line.name} from ${giver} in ${start}.`,
   ] : [
-    `${line.name} began for ${N} in ${start}.`,
-    `${N} first took up ${line.name} in ${start}.`,
+    `${line.name} began for me in ${start}.`,
+    `I first took up ${line.name} in ${start}.`,
   ]));
   if (zones.length > 1) sentences.push(say(ctx, 'sled', [`From there it led through ${listOf(zones.slice(1))}.`, `The trail ran on to ${listOf(zones.slice(1))}.`]));
   else if (quests.length > 1) sentences.push(say(ctx, 'sled', [`${cap(SMALL[quests.length] ?? String(quests.length))} chapters kept ${who.obj} in ${zones[0] ?? start}.`, `All ${quests.length} chapters stayed within ${zones[0] ?? start}.`]));

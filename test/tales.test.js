@@ -1,4 +1,4 @@
-// Tales: finished storylines told as storybook stories for the Lore page.
+// Tales: finished storylines told as stories for the Lore page (third person, teen tone).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { storylines } from '../web/lib/story.js';
 import { buildCodex } from '../web/lib/codex.js';
 import { buildWorld } from '../web/lib/world.js';
 import { buildCharacters } from '../web/lib/journey.js';
-import { tales, tellTale, taleText } from '../web/lib/tales.js';
+import { tales, tellTale, taleText, rollUp } from '../web/lib/tales.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const json = (name) => JSON.parse(fs.readFileSync(path.join(here, '..', 'web', 'data', 'classic', name), 'utf8'));
@@ -27,7 +27,7 @@ const GAME_WORDS = /\b(quest|quests|NPC|NPCs|level|levels|XP|loot|looted|databas
 const flat = (story) => taleText(story);
 const sentences = (story) => story.parts.flatMap((p) => p.paragraphs).flatMap((p) => p.replace(/"[^"]*"/g, 'quote').split(/(?<=[.?])\s+/));
 
-test("Galgar's Cactus Apple Surprise, told as a storybook tale", () => {
+test("Galgar's Cactus Apple Surprise, told as a tale", () => {
   const q = db.quests.get(4402);
   const tale = { id: 'q4402', kind: 'quest', title: q.n, zones: ['Durotar'], level: q.l, chapters: [{ q, state: 'ready' }], done: 0, total: 1, complete: false, heroes: [], startedAt: null, finishedAt: null };
   const story = tellTale(tale, { db, codex: { quests: [], characters: [] }, world: null, hero: { name: 'Zug', race: 'Troll', class: 'Hunter', sex: 'male' }, pretend: true });
@@ -36,10 +36,9 @@ test("Galgar's Cactus Apple Surprise, told as a storybook tale", () => {
   const text = flat(story);
   for (const word of ['Galgar', 'Durotar', 'Cactus Apple', 'Zug', 'troll', 'hunter']) assert.ok(text.includes(word), `mentions ${word}`);
   assert.ok(/\b(ten|10)\b/i.test(text), 'ten apples');
-  assert.ok(story.parts[0].paragraphs[0].startsWith('Once'), 'opens like a storybook');
+  assert.ok(!/once upon|long ago/i.test(text), 'no nursery opening');
   assert.ok(/\bhe\b/.test(text) && !/\bthey\b/i.test(text), 'he, never they');
-  assert.ok(story.ending.endsWith('The end.'));
-  assert.ok(text.trimEnd().endsWith('The end.'));
+  assert.ok(story.ending && !/The end\.$/.test(story.ending), 'a closing line, not "The end."');
   assert.ok(!GAME_WORDS.test(text), `no game words: ${text.match(GAME_WORDS)?.[0]}`);
   assert.ok(!text.includes('!'), 'no exclamation marks');
   for (const s of sentences(story)) assert.ok(s.split(/\s+/).length < 24, `short sentence: ${s}`);
@@ -53,13 +52,15 @@ test('the Fargodeep Mine chain as a storyline, one part per chapter', () => {
   assert.ok(story.parts.length >= 2);
   assert.deepEqual(story.parts.map((p) => p.heading), s.quests.map((r) => r.q.n), 'chapter titles in order');
   const later = story.parts.slice(1).map((p) => p.paragraphs[0]).join(' ');
-  assert.ok(/not the end of it|not all|more to do|story goes on/.test(later), 'a linking sentence between chapters');
+  assert.ok(/end of it|did not stop there|led to another|a catch/.test(later), 'a linking sentence between chapters');
   assert.equal(story.dedication, 'As it might be lived', 'no hero: as it might be lived');
   const text = flat(story);
   assert.ok(text.includes('Fargodeep Mine') && text.includes('Marshal Dughan'));
-  assert.ok(!/\b(he|she|they)\b/.test(text), 'no pronouns without a hero');
+  assert.ok(/\bhe\b/.test(text) && !/\b(she|they)\b/.test(text), 'no hero: the account owner\'s voice, male by default');
+  const hers = flat(tellTale(tale, { db, codex: { quests: [], characters: [] }, pretend: true, defaultSex: 'female' }));
+  assert.ok(/\bshe\b/.test(hers) && !/\b(he|they)\b/.test(hers), 'or female when the account says so');
   assert.ok(!GAME_WORDS.test(text), `no game words: ${text.match(GAME_WORDS)?.[0]}`);
-  assert.ok(story.ending.endsWith('The end.'));
+  assert.ok(story.ending);
   for (const p of story.parts) assert.ok(p.paragraphs.length >= 2 && p.paragraphs.length <= 4, `${p.heading}: ${p.paragraphs.length} paragraphs`);
 });
 
@@ -92,6 +93,30 @@ test('tales from the fixture: what Aldric has started, complete ones first', () 
   assert.equal(done.done, done.total);
   const whole = tellTale(done, { db, codex: full, world });
   assert.equal(whole.parts.length, kobold.chapters.length);
-  assert.ok(whole.ending.endsWith('The end.'));
+  assert.ok(!/for now/.test(whole.ending), 'told to the end');
   assert.ok(!GAME_WORDS.test(taleText(whole)), `no game words: ${taleText(whole).match(GAME_WORDS)?.[0]}`);
+});
+
+test('class-only chapters roll into one event: the letters to five teachers are one message', () => {
+  const s = storylines(db, {}).find((x) => x.quests.some((r) => r.q.id === 788));
+  const chapters = rollUp(s.quests);
+  const letters = chapters.find((ch) => ch.variants);
+  assert.ok(letters, 'a rolled-up chapter');
+  assert.ok(letters.variants.length >= 5 && letters.variants.every((v) => v.q.cl), 'every variant is for some classes only');
+  assert.ok(chapters.length < s.quests.length - 3);
+  assert.ok(chapters.some((ch) => ch.q.id === 4402) && chapters.some((ch) => ch.q.id === 789), 'the shared chapters stay');
+  const tale = { id: `s${s.id}`, kind: 'storyline', title: s.name, zones: s.zones, level: s.minLevel, chapters: s.quests, done: 0, total: s.total, complete: false, heroes: [] };
+  const story = tellTale(tale, { db, codex: { quests: [], characters: [] }, hero: { name: 'Vesch', race: 'Troll', class: 'Hunter', sex: 'male' }, pretend: true });
+  assert.equal(story.parts.length, chapters.length, 'one part per rolled chapter');
+  const text = flat(story);
+  assert.ok(text.includes("Jen'shan"), 'the hunter is sent to the hunter teacher');
+  assert.ok(!text.includes('Rwag') && !text.includes('Shikrik'), 'not to the rogue or shaman ones');
+  assert.ok(!/Simple Parchment|Etched Tablet|Rune-Inscribed/.test(text), 'the variant titles are not chapter headings');
+  assert.ok(text.includes('every newcomer'), 'told as the thing every newcomer got');
+  assert.ok(!/\bthey\b/i.test(text));
+  // In the fixture, Aldric's Kobold Camp chain counts the letters as one chapter.
+  const kobold = tales({ db, codex, world, characters }).find((t) => t.chapters.some((ch) => ch.q.id === 7));
+  assert.ok(kobold.chapters.some((ch) => ch.variants), 'rolled up in tales() too');
+  assert.equal(kobold.total, kobold.chapters.length, 'the total counts the letters once');
+  assert.ok(kobold.chapters.length <= 13, `${kobold.chapters.length} chapters, the six letters as one`);
 });

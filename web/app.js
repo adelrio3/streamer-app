@@ -2209,8 +2209,8 @@ function schemaNotice() {
   return `<div class="notice">Your database needs the version 2 update for items, routes and screenshots. Copy the setup file again from <a href="https://github.com/adelrio3/streamer-app/blob/claude/wow-lore-youtube-concept-311j74/supabase/schema.sql" target="_blank" rel="noopener">supabase/schema.sql</a> (the two-squares <b>Copy raw file</b> button), paste it into <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> and click <b>Run</b>. Then reload this page.</div>`;
 }
 
-// Lore: the heart of it. Every storyline finished becomes a tale told like
-// a storybook; the ones still being lived wait on the shelf. Texts (books,
+// Lore: the heart of it. Every storyline finished becomes a tale told in
+// the third person; the ones still being lived wait on the shelf. Texts (books,
 // plaques, what was said) sit behind the last tab.
 pages.lore = async (kind, params) => {
   if (kind === 'tale') return talePage(params);
@@ -2232,7 +2232,13 @@ pages.lore = async (kind, params) => {
       <small class="muted">${t.total > 1 ? `${t.done} of ${t.total} chapters` : 'a single chapter'}${t.heroes.length ? ` · ${t.heroes.map((h) => esc(h.name)).join(', ')}` : ''}</small>
     </a>`;
   const pick = [...storylines(db, {}).slice(0, 400)].sort((a, b) => a.name.localeCompare(b.name));
-  setTimeout(() => document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; }));
+  setTimeout(() => {
+    document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
+    document.getElementById('taleVoice')?.addEventListener('change', async (ev) => {
+      state.settings = { ...state.settings, taleVoice: ev.target.value === 'female' ? 'female' : 'male' };
+      try { await state.store.saveSettings(state.settings); toast(`The tales now say ${ev.target.value === 'female' ? 'she' : 'he'} when the hero is not known.`); } catch (err) { toast(err.message); }
+    });
+  });
   return `<div class="lore-hero">
       <div class="lore-chest">❖</div>
       <p class="kicker">Chronicle</p>
@@ -2243,8 +2249,12 @@ pages.lore = async (kind, params) => {
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
     ${living.length ? `<h2 class="lore-h">Still being lived</h2><div class="shelf">${living.map(cover).join('')}</div>` : ''}
     ${!all.length ? '<p class="muted">The shelf is empty. Finish a storyline and its tale appears here.</p>' : ''}
+    <p class="muted small lore-pretend">The tales speak of <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select> when the hero's sex is not on record (the Journal is always in the character's own words).</p>
     <p class="muted small lore-pretend">Hear a tale as if it were already done: <select id="pretendSel"><option value="">choose a storyline…</option>${pick.map((st) => `<option value="${st.id}">${esc(st.name)} (${esc(st.startZone ?? '')})</option>`).join('')}</select> <span class="muted">or any single quest by id: <a href="#/lore/tale?id=q4402&pretend=1">Galgar's Cactus Apple Surprise</a></span></p>`;
 };
+
+// The account's own voice for the tales: he or she when a hero's sex is not known.
+const taleVoice = () => (state.settings.taleVoice === 'female' ? 'female' : 'male');
 
 async function talePage(params) {
   const db = await questDB();
@@ -2265,7 +2275,7 @@ async function talePage(params) {
   }
   if (!tale) return `${crumb('#/lore', 'Lore')}<p>No such tale.</p>`;
   const hero = tale.heroes[0] || (pretend ? { name: characters[0]?.name ?? 'a traveler', race: characters[0]?.info.race, class: characters[0]?.info.class, sex: characters[0]?.info.sex ?? null } : null);
-  const story = tellTale(tale, { db, codex: c, world, hero, pretend: pretend || !tale.complete });
+  const story = tellTale(tale, { db, codex: c, world, hero, pretend: pretend || !tale.complete, defaultSex: taleVoice() });
   setTimeout(() => document.getElementById('taleDl')?.addEventListener('click', () => download(`${tale.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.md`, 'text/markdown', taleText(story))));
   return `${crumb('#/lore', 'Lore')}
     <article class="storybook">
