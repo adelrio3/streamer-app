@@ -174,7 +174,11 @@ function summarize(zoneId, rows) {
   const countable = rows.filter((r) => !r.q.rep && r.state !== 'other' && r.state !== 'excluded');
   const done = countable.filter((r) => r.state === 'done').length;
   rows.sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) || (a.q.l || 0) - (b.q.l || 0) || a.q.n.localeCompare(b.q.n));
-  return { zoneId, rows, counts, total: countable.length, done, repeatable: rows.filter((r) => r.q.rep).length };
+  // The zone's level band: the middle 80% of its quest levels.
+  const levels = rows.map((r) => r.q.l || 0).filter(Boolean).sort((a, b) => a - b);
+  const minLevel = levels.length ? levels[Math.floor(levels.length * 0.1)] : null;
+  const maxLevel = levels.length ? levels[Math.min(levels.length - 1, Math.floor(levels.length * 0.9))] : null;
+  return { zoneId, rows, counts, total: countable.length, done, repeatable: rows.filter((r) => r.q.rep).length, minLevel, maxLevel };
 }
 
 // Quest givers you have not talked to yet, as map pins (percent
@@ -309,6 +313,30 @@ export function completionTree(db, ctx = {}, discovery = () => null) {
   }).filter((s) => s.total || s.counts.done).sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
   const all = [...groups.values()].filter((g) => g.zones.length);
   return { groups: all, sorts, done: all.reduce((n, g) => n + g.done, 0), total: all.reduce((n, g) => n + g.total, 0) };
+}
+
+// How many creatures and people Classic holds in all, and the people by
+// what they do, so the journal counts against the whole game. Cached.
+export function npcTotals(db) {
+  if (db._totals) return db._totals;
+  const t = { creatures: 0, people: 0, roles: { quest: 0, vendor: 0, trainer: 0, taxi: 0, innkeeper: 0, banker: 0, talker: 0, other: 0 } };
+  for (const n of Object.values(db.npcs)) {
+    const person = Boolean(n.fl || n.qs || n.qe || n.f);
+    if (!person) { t.creatures++; continue; }
+    t.people++;
+    const fl = n.fl || 0;
+    let any = false;
+    if (fl & 2 || n.qs?.length || n.qe?.length) { t.roles.quest++; any = true; }
+    if (fl & 4) { t.roles.vendor++; any = true; }
+    if (fl & 16) { t.roles.trainer++; any = true; }
+    if (fl & 8) { t.roles.taxi++; any = true; }
+    if (fl & 128) { t.roles.innkeeper++; any = true; }
+    if (fl & 256) { t.roles.banker++; any = true; }
+    if (fl & 1 && !any) { t.roles.talker++; any = true; }
+    if (!any) t.roles.other++;
+  }
+  db._totals = t;
+  return t;
 }
 
 // Everyone in the database by zone: creatures you fight and people you deal

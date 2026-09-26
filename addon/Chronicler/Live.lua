@@ -117,10 +117,19 @@ local function padTick()
 	padded = padded + n
 end
 
+-- Race and class tokens (Orc, NightElf, Scourge...; WARRIOR...): the overlay
+-- picks its colours by race.
+local function who()
+	local _, race = UnitRace("player")
+	local _, class = UnitClass("player")
+	return race or "-", class or "-"
+end
+
 local function heartbeat()
 	local zone, sub, _, x, y = ns.where()
+	local race, class = who()
 	push("H", UnitLevel("player"), UnitXP and UnitXP("player") or 0, UnitXPMax and UnitXPMax("player") or 0, zone, sub,
-		x and ns.round(x * 100) or "-", y and ns.round(y * 100) or "-", GetMoney and GetMoney() or 0)
+		x and ns.round(x * 100) or "-", y and ns.round(y * 100) or "-", GetMoney and GetMoney() or 0, race, class)
 	lastBeat = GetTime()
 end
 
@@ -165,7 +174,8 @@ ns.on("PLAYER_LOGIN", function()
 	if LoggingChat then LoggingChat(true) end
 	if ChatFrame_AddMessageEventFilter then ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", filter) end
 	local name, realm = UnitName("player"), GetRealmName and GetRealmName() or ""
-	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"))
+	local race, class = who()
+	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"), race, class)
 	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.5, tick) end
 end)
 

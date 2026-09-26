@@ -2,12 +2,24 @@
    corners and animates with transforms and opacity only. */
 
 :root {
-  --gold: #f2cc6b; --gold-2: #fff0b8; --ink: #fff; --ink-2: rgba(255, 255, 255, .78);
-  --panel: rgba(12, 9, 5, .72); --line: rgba(242, 204, 107, .35);
+  --gold: #f2cc6b; --gold-2: #fff0b8; --gold-rgb: 242, 204, 107; --ink: #fff; --ink-2: rgba(255, 255, 255, .78);
+  --panel-rgb: 12, 9, 5; --panel-solid: #0c0905; --panel: rgba(var(--panel-rgb), .72); --line: rgba(var(--gold-rgb), .35);
   --q0: #9d9d9d; --q1: #ffffff; --q2: #1eff00; --q3: #0070dd; --q4: #a335ee; --q5: #ff8000; --q6: #e6cc80;
   --serif: 'Cormorant Garamond', Georgia, serif; --sans: 'Inter', system-ui, sans-serif;
   --scale: 1;
 }
+/* Race themes: the overlay follows the character that is playing
+   (html[data-race], from the addon's race token; ?theme=Orc pins one).
+   Each sets the accent, its glow, and the panel's near-black. */
+html[data-race="Human"] { --gold: #e9c467; --gold-2: #fff2c4; --gold-rgb: 233, 196, 103; --panel-rgb: 10, 16, 38; --panel-solid: #0a1026; --line: rgba(110, 150, 240, .45); }
+html[data-race="Dwarf"] { --gold: #e69a4c; --gold-2: #ffdcae; --gold-rgb: 230, 154, 76; --panel-rgb: 30, 19, 12; --panel-solid: #1e130c; --line: rgba(230, 154, 76, .45); }
+html[data-race="NightElf"] { --gold: #b8a7ff; --gold-2: #ece7ff; --gold-rgb: 184, 167, 255; --panel-rgb: 12, 9, 30; --panel-solid: #0c091e; --line: rgba(160, 140, 255, .45); }
+html[data-race="Gnome"] { --gold: #ff86c6; --gold-2: #ffd6ea; --gold-rgb: 255, 134, 198; --panel-rgb: 22, 10, 26; --panel-solid: #160a1a; --line: rgba(255, 134, 198, .45); }
+html[data-race="Orc"] { --gold: #ff6f4d; --gold-2: #ffcdbb; --gold-rgb: 255, 111, 77; --panel-rgb: 28, 8, 6; --panel-solid: #1c0806; --line: rgba(255, 111, 77, .45); }
+html[data-race="Scourge"] { --gold: #8dff7b; --gold-2: #ddffd6; --gold-rgb: 141, 255, 123; --panel-rgb: 6, 14, 8; --panel-solid: #060e08; --line: rgba(141, 255, 123, .4); }
+html[data-race="Tauren"] { --gold: #e3a457; --gold-2: #ffe5bd; --gold-rgb: 227, 164, 87; --panel-rgb: 26, 14, 6; --panel-solid: #1a0e06; --line: rgba(227, 164, 87, .45); }
+html[data-race="Troll"] { --gold: #52d9c8; --gold-2: #cffff8; --gold-rgb: 82, 217, 200; --panel-rgb: 6, 18, 20; --panel-solid: #061214; --line: rgba(82, 217, 200, .45); }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
 body { font-family: var(--sans); color: var(--ink); zoom: var(--scale); text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 12px rgba(0, 0, 0, .6); }
@@ -42,13 +54,13 @@ body.single #tracker.pos-fill { width: auto; }
 body.single #callouts { top: 50%; transform: translate(-50%, -50%); }
 body.single .callout .ctitle { font-size: 64px; }
 
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(255, 255, 255, .04); }
+.panel { position: relative; isolation: isolate; background-color: var(--panel); background-image: var(--tex, none); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(255, 255, 255, .04); }
 .label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
 
 /* Drop toasts */
 .toast {
   position: relative; display: flex; align-items: center; gap: 12px; min-width: 300px; max-width: 460px; padding: 10px 16px 10px 10px;
-  background: linear-gradient(90deg, rgba(12, 9, 5, .9), rgba(12, 9, 5, .72)); border: 1px solid color-mix(in srgb, var(--q) 55%, transparent); border-left: 4px solid var(--q); border-radius: 12px;
+  isolation: isolate; background-color: rgba(var(--panel-rgb), .8); background-image: var(--tex, none), linear-gradient(90deg, rgba(var(--panel-rgb), .5), transparent); border: 1px solid color-mix(in srgb, var(--q) 55%, transparent); border-left: 4px solid var(--q); border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 24px color-mix(in srgb, var(--q) 35%, transparent);
   opacity: 0; transform: translateX(60px) scale(.9); transition: transform .45s cubic-bezier(.2, 1.2, .3, 1), opacity .3s;
 }
@@ -94,11 +106,11 @@ body.single .callout .ctitle { font-size: 64px; }
 .obj .oline { display: flex; justify-content: space-between; gap: 10px; }
 .obj .on { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .obj .bar { height: 5px; margin-top: 4px; background: rgba(255, 255, 255, .12); border-radius: 3px; overflow: hidden; }
-.obj .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--gold-2)); border-radius: 3px; transition: width .6s cubic-bezier(.2, .8, .2, 1); box-shadow: 0 0 10px rgba(242, 204, 107, .6); }
+.obj .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--gold-2)); border-radius: 3px; transition: width .6s cubic-bezier(.2, .8, .2, 1); box-shadow: 0 0 10px rgba(var(--gold-rgb), .6); }
 .obj.full .bar > div { background: linear-gradient(90deg, #79c07a, #b8f0a8); }
 .obj.bump { animation: bump .6s cubic-bezier(.2, 1.4, .4, 1); }
 @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.04) translateX(4px); } 100% { transform: none; } }
-.quest.done::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 20%, rgba(242, 204, 107, .45) 50%, transparent 80%); background-size: 250% 100%; animation: sweep 1.2s ease-out 1; pointer-events: none; }
+.quest.done::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 20%, rgba(var(--gold-rgb), .45) 50%, transparent 80%); background-size: 250% 100%; animation: sweep 1.2s ease-out 1; pointer-events: none; }
 
 /* Counters */
 .counter { display: flex; align-items: center; gap: 10px; min-width: 220px; }
@@ -130,7 +142,7 @@ body.single .callout .ctitle { font-size: 64px; }
 .callout { text-align: center; opacity: 0; transform: scale(.7); transition: transform .5s cubic-bezier(.2, 1.4, .4, 1), opacity .3s; }
 .callout.in { opacity: 1; transform: none; }
 .callout.out { opacity: 0; transform: translateY(-30px) scale(1.05); transition: all .45s ease-in; }
-.callout .ctitle { font-family: var(--serif); font-weight: 700; font-size: 72px; line-height: 1; letter-spacing: .02em; color: var(--gold-2); text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(242, 204, 107, .6), 0 0 80px rgba(242, 204, 107, .3); }
+.callout .ctitle { font-family: var(--serif); font-weight: 700; font-size: 72px; line-height: 1; letter-spacing: .02em; color: var(--gold-2); text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(var(--gold-rgb), .6), 0 0 80px rgba(var(--gold-rgb), .3); }
 .callout .csub { margin-top: 6px; font-size: 18px; font-weight: 600; color: var(--ink-2); letter-spacing: .08em; text-transform: uppercase; }
 .callout.death .ctitle { color: #ff5a5a; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(255, 60, 60, .7); }
 .callout.rare .ctitle { color: #ff6fb5; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(255, 111, 181, .7); }
@@ -148,13 +160,111 @@ body.single .callout .ctitle { font-size: 64px; }
 
 /* Chroma key mode: nothing translucent, nothing soft. */
 body.keyed { text-shadow: none; }
-body.keyed .panel, body.keyed .toast, body.keyed .counter { background: #0c0905; backdrop-filter: none; box-shadow: none; }
+body.keyed .panel, body.keyed .toast, body.keyed .counter { background-color: var(--panel-solid); backdrop-filter: none; box-shadow: none; }
 body.keyed .toast { border-left-width: 4px; animation: none; }
 body.keyed .toast::after, body.keyed .rays, body.keyed #flash { display: none; }
 body.keyed .ticon { box-shadow: none; }
 body.keyed .obj .bar, body.keyed #timer .xp, body.keyed #kills .sbar { background: #2a2418; }
 body.keyed .obj .bar > div, body.keyed .cnum.bump, body.keyed .callout .ctitle, body.keyed .callout.death .ctitle, body.keyed .callout.rare .ctitle, body.keyed .callout.streak .ctitle { box-shadow: none; text-shadow: none; }
-body.keyed .callout .ctitle { -webkit-text-stroke: 1.5px #0c0905; paint-order: stroke fill; }
-body.keyed .callout .csub { text-shadow: none; -webkit-text-stroke: 1px #0c0905; paint-order: stroke fill; }
+body.keyed .callout .ctitle { -webkit-text-stroke: 1.5px var(--panel-solid); paint-order: stroke fill; }
+body.keyed .callout .csub { text-shadow: none; -webkit-text-stroke: 1px var(--panel-solid); paint-order: stroke fill; }
 body.keyed .toast.q4, body.keyed .toast.q5 { animation: none; }
 body.keyed .quest.done::after { display: none; }
+
+
+/* Race textures and motion. --tex is the panel's own surface; ::before is
+   a moving layer under the text (z-index -1 inside the panel's own stacking
+   context). Every layer sits on an opaque base under a chroma key, so
+   nothing tints toward the key colour. */
+.panel::before, .toast::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; background: var(--anim, none); }
+@media (prefers-reduced-motion: reduce) { .panel::before, .toast::before { animation: none !important; } }
+
+/* Human: heraldic weave, a double gold frame, and a slow sheen like light
+   crossing a banner. */
+html[data-race="Human"] .panel, html[data-race="Human"] .toast {
+  --tex: repeating-linear-gradient(45deg, rgba(255, 255, 255, .035) 0 2px, transparent 2px 9px), repeating-linear-gradient(-45deg, rgba(255, 255, 255, .03) 0 2px, transparent 2px 9px), linear-gradient(180deg, rgba(var(--gold-rgb), .16), transparent 45%);
+  outline: 1px solid rgba(var(--gold-rgb), .35); outline-offset: -5px;
+}
+html[data-race="Human"] .panel::before, html[data-race="Human"] .toast::before { --anim: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .13) 50%, transparent 65%); background-size: 260% 100%; animation: sheen 7s ease-in-out infinite; }
+@keyframes sheen { 0%, 55% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+html[data-race="Human"] .callout .ctitle { letter-spacing: .06em; }
+
+/* Dwarf: hammered iron with rivets at the corners, and a forge glow that
+   breathes along the bottom edge. */
+html[data-race="Dwarf"] .panel, html[data-race="Dwarf"] .toast {
+  --tex: radial-gradient(circle at 7px 7px, rgba(var(--gold-rgb), .95) 1.6px, rgba(0, 0, 0, .5) 2.2px, transparent 3.2px), radial-gradient(circle at calc(100% - 7px) 7px, rgba(var(--gold-rgb), .95) 1.6px, rgba(0, 0, 0, .5) 2.2px, transparent 3.2px), radial-gradient(circle at 7px calc(100% - 7px), rgba(var(--gold-rgb), .95) 1.6px, rgba(0, 0, 0, .5) 2.2px, transparent 3.2px), radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), rgba(var(--gold-rgb), .95) 1.6px, rgba(0, 0, 0, .5) 2.2px, transparent 3.2px), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .6 0 0 0 0 .45 0 0 0 0 .3 0 0 0 .22 0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>"), linear-gradient(180deg, rgba(255, 255, 255, .06), transparent 30%, rgba(0, 0, 0, .25));
+  border-width: 2px; border-color: rgba(var(--gold-rgb), .55);
+}
+html[data-race="Dwarf"] .panel::before, html[data-race="Dwarf"] .toast::before { --anim: radial-gradient(ellipse at 50% 115%, rgba(255, 120, 40, .45), transparent 55%); animation: forge 2.6s ease-in-out infinite; }
+@keyframes forge { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+html[data-race="Dwarf"] .callout .ctitle { letter-spacing: .04em; -webkit-text-stroke: 1px rgba(80, 40, 10, .8); paint-order: stroke fill; }
+
+/* Night elf: a starfield under vine filigree, a moon in the corner, and a
+   glow that breathes like moonlight. */
+html[data-race="NightElf"] .panel, html[data-race="NightElf"] .toast {
+  --tex: radial-gradient(circle at 100% 0, rgba(var(--gold-rgb), .35), transparent 38%), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><g fill='white'><circle cx='12' cy='20' r='.9' opacity='.8'/><circle cx='58' cy='9' r='.7' opacity='.6'/><circle cx='97' cy='41' r='1' opacity='.9'/><circle cx='140' cy='18' r='.6' opacity='.6'/><circle cx='31' cy='77' r='.8' opacity='.7'/><circle cx='118' cy='96' r='.7' opacity='.6'/><circle cx='74' cy='128' r='1' opacity='.8'/><circle cx='150' cy='140' r='.8' opacity='.7'/><circle cx='20' cy='146' r='.6' opacity='.5'/></g><path d='M0 150 C40 120 60 160 100 130 S150 110 160 90' fill='none' stroke='rgb(184,167,255)' stroke-opacity='.25' stroke-width='1'/><path d='M0 40 C30 10 60 60 90 30 S140 5 160 30' fill='none' stroke='rgb(184,167,255)' stroke-opacity='.18' stroke-width='1'/></svg>"), linear-gradient(180deg, rgba(var(--gold-rgb), .08), transparent 60%);
+  border-color: rgba(var(--gold-rgb), .5); box-shadow: 0 8px 30px rgba(0, 0, 0, .45), 0 0 26px rgba(var(--gold-rgb), .25);
+}
+html[data-race="NightElf"] .panel::before, html[data-race="NightElf"] .toast::before { --anim: radial-gradient(circle at 85% 12%, rgba(255, 255, 255, .22), transparent 30%); animation: moon 5s ease-in-out infinite; }
+@keyframes moon { 0%, 100% { opacity: .5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+html[data-race="NightElf"] .callout .ctitle { font-style: italic; letter-spacing: .05em; }
+
+/* Gnome: circuit grid and gear rings, a scan line sweeping down, and neon
+   that flickers. */
+html[data-race="Gnome"] .panel, html[data-race="Gnome"] .toast {
+  --tex: repeating-linear-gradient(0deg, rgba(95, 245, 224, .14) 0 1px, transparent 1px 12px), repeating-linear-gradient(90deg, rgba(95, 245, 224, .14) 0 1px, transparent 1px 12px), repeating-radial-gradient(circle at 100% 100%, rgba(var(--gold-rgb), .35) 0 1.5px, transparent 1.5px 9px), radial-gradient(circle at 100% 100%, rgba(var(--gold-rgb), .35), transparent 34%);
+  border-color: rgba(var(--gold-rgb), .7); box-shadow: 0 8px 30px rgba(0, 0, 0, .45), 0 0 18px rgba(var(--gold-rgb), .4), inset 0 0 0 1px rgba(95, 245, 224, .25);
+}
+html[data-race="Gnome"] .panel::before, html[data-race="Gnome"] .toast::before { --anim: linear-gradient(180deg, transparent 0, rgba(95, 245, 224, .22) 50%, transparent 100%); background-size: 100% 28px; background-repeat: no-repeat; animation: scan 3.2s linear infinite; }
+@keyframes scan { 0% { background-position: 0 -30px; } 100% { background-position: 0 calc(100% + 30px); } }
+html[data-race="Gnome"] .label, html[data-race="Gnome"] .callout .ctitle { animation: neon 4s steps(1) infinite; }
+@keyframes neon { 0%, 92%, 96%, 100% { opacity: 1; } 93%, 97% { opacity: .55; } 94% { opacity: .85; } }
+html[data-race="Gnome"] .callout .ctitle { font-family: var(--sans); font-weight: 900; letter-spacing: .1em; }
+
+/* Orc: scarred hide with ash grain, notched corners like cut iron, and an
+   ember glow that pulses underneath. */
+html[data-race="Orc"] .panel, html[data-race="Orc"] .toast {
+  --tex: repeating-linear-gradient(-32deg, rgba(0, 0, 0, .28) 0 3px, transparent 3px 15px), repeating-linear-gradient(28deg, rgba(0, 0, 0, .18) 0 2px, transparent 2px 23px), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .2 0 0 0 0 .12 0 0 0 .3 0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>"), linear-gradient(180deg, rgba(0, 0, 0, .2), transparent 40%);
+  border-color: rgba(var(--gold-rgb), .6); border-radius: 6px;
+}
+html[data-race="Orc"] .panel { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+html[data-race="Orc"] .panel::before, html[data-race="Orc"] .toast::before { --anim: radial-gradient(ellipse at 20% 120%, rgba(255, 60, 20, .5), transparent 50%), radial-gradient(ellipse at 90% 110%, rgba(255, 120, 40, .35), transparent 45%); animation: ember 1.8s ease-in-out infinite; }
+@keyframes ember { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+html[data-race="Orc"] .callout .ctitle { font-family: var(--sans); font-weight: 900; letter-spacing: .12em; text-transform: uppercase; -webkit-text-stroke: 1.5px rgba(40, 8, 4, .9); paint-order: stroke fill; }
+html[data-race="Orc"] .callout.in .ctitle { animation: slam .5s cubic-bezier(.2, 1.6, .3, 1); }
+@keyframes slam { 0% { transform: scale(1.6) rotate(-3deg); } 100% { transform: none; } }
+
+/* Undead: cracked bone, plague fog rolling through, and drips off the
+   bottom edge. */
+html[data-race="Scourge"] .panel, html[data-race="Scourge"] .toast {
+  --tex: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='120'><g fill='none' stroke='rgb(141,255,123)' stroke-opacity='.28' stroke-width='1'><path d='M10 0 L22 30 L14 52 L30 80 L24 120'/><path d='M120 0 L112 26 L130 44 L118 70 L140 96 L128 120'/><path d='M60 60 L90 66 L104 54'/><path d='M150 20 L180 34'/></g></svg>"), radial-gradient(4px 9px at 14px 100%, rgba(var(--gold-rgb), .85), transparent), linear-gradient(0deg, rgba(var(--gold-rgb), .22), transparent 30%);
+  background-size: auto, 30px 100%, auto; background-repeat: repeat, repeat-x, no-repeat;
+  border-color: rgba(var(--gold-rgb), .45); border-bottom-width: 3px;
+}
+html[data-race="Scourge"] .panel::before, html[data-race="Scourge"] .toast::before { --anim: radial-gradient(ellipse 60% 50% at 30% 70%, rgba(var(--gold-rgb), .28), transparent), radial-gradient(ellipse 50% 40% at 80% 30%, rgba(var(--gold-rgb), .2), transparent); background-size: 200% 200%; animation: fog 9s ease-in-out infinite alternate; }
+@keyframes fog { 0% { background-position: 0% 0%; opacity: .6; } 100% { background-position: 100% 100%; opacity: 1; } }
+html[data-race="Scourge"] .callout .ctitle { letter-spacing: .08em; text-shadow: 0 2px 4px rgba(0, 0, 0, .9), 0 0 30px rgba(var(--gold-rgb), .7), 0 8px 24px rgba(var(--gold-rgb), .4); }
+
+/* Tauren: worn leather with stitched edges, sun rays from the corner. */
+html[data-race="Tauren"] .panel, html[data-race="Tauren"] .toast {
+  --tex: repeating-conic-gradient(from 180deg at 100% 0, rgba(var(--gold-rgb), .13) 0 5deg, transparent 5deg 13deg), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .75 0 0 0 0 .5 0 0 0 0 .25 0 0 0 .22 0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>"), linear-gradient(180deg, rgba(255, 220, 160, .07), transparent 50%, rgba(0, 0, 0, .2));
+  border-color: rgba(var(--gold-rgb), .55); outline: 2px dashed rgba(var(--gold-rgb), .55); outline-offset: -6px;
+}
+html[data-race="Tauren"] .panel::before, html[data-race="Tauren"] .toast::before { --anim: radial-gradient(circle at 100% 0, rgba(255, 230, 170, .35), transparent 45%); animation: sun 4s ease-in-out infinite; }
+@keyframes sun { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+html[data-race="Tauren"] .callout .ctitle { letter-spacing: .07em; }
+
+/* Troll: bone-dashed edges, a zigzag band along the top, jungle speckle,
+   and fireflies that wink. */
+html[data-race="Troll"] .panel, html[data-race="Troll"] .toast {
+  --tex: linear-gradient(135deg, rgba(var(--gold-rgb), .55) 25%, transparent 25%), linear-gradient(225deg, rgba(var(--gold-rgb), .55) 25%, transparent 25%), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .3 0 0 0 0 .8 0 0 0 0 .5 0 0 0 .16 0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>"), linear-gradient(180deg, rgba(0, 0, 0, .15), transparent 40%);
+  background-size: 12px 6px, 12px 6px, auto, auto; background-position: 0 0, 6px 0, 0 0, 0 0; background-repeat: repeat-x, repeat-x, repeat, no-repeat;
+  border: 2px dashed rgba(233, 255, 251, .55);
+}
+html[data-race="Troll"] .panel::before, html[data-race="Troll"] .toast::before { --anim: radial-gradient(2px 2px at 18% 70%, #b9ff6a, transparent), radial-gradient(2px 2px at 72% 30%, #52d9c8, transparent), radial-gradient(2px 2px at 88% 78%, #b9ff6a, transparent), radial-gradient(2px 2px at 40% 20%, #52d9c8, transparent); animation: fireflies 3.4s ease-in-out infinite; }
+@keyframes fireflies { 0%, 100% { opacity: .15; transform: translate(0, 0); } 30% { opacity: 1; } 60% { opacity: .3; transform: translate(4px, -5px); } 80% { opacity: .9; } }
+html[data-race="Troll"] .callout .ctitle { letter-spacing: .1em; text-transform: uppercase; font-family: var(--sans); font-weight: 900; }
+
+/* Under a chroma key a texture still sits on the solid panel colour, but
+   sheens over the panel edge (outline glow, ring shadows) go. */
+body.keyed .panel, body.keyed .toast { box-shadow: none !important; }

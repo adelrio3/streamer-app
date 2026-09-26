@@ -69,8 +69,8 @@ export function decodeLine(line) {
     case 'E': return { kind: 'explore', area: str(f[1]) };
     case 'A': return { kind: 'mark', markKind: str(f[1]), note: str(f[2]) };
     case 'P': return { kind: 'screenshot', reason: str(f[1]) };
-    case 'H': return { kind: 'heartbeat', level: num(f[1]), xp: num(f[2]), xpMax: num(f[3]), zone: str(f[4]), sub: str(f[5]), x: num(f[6]), y: num(f[7]), money: num(f[8]) };
-    case 'B': return { kind: 'begin', version: str(f[1]), name: str(f[2]), realm: str(f[3]), level: num(f[4]) };
+    case 'H': return { kind: 'heartbeat', level: num(f[1]), xp: num(f[2]), xpMax: num(f[3]), zone: str(f[4]), sub: str(f[5]), x: num(f[6]), y: num(f[7]), money: num(f[8]), race: str(f[9]), cls: str(f[10]) };
+    case 'B': return { kind: 'begin', version: str(f[1]), name: str(f[2]), realm: str(f[3]), level: num(f[4]), race: str(f[5]), cls: str(f[6]) };
     case 'T': return { kind: 'test', sentAt: num(f[1]) };
     default: return null;
   }
@@ -143,7 +143,7 @@ export class LiveState {
     this.rares = [];
     this.xp = 0;
     this.money = 0;
-    this.character = { level: null, xp: null, xpMax: null, zone: null, sub: null, name: null, realm: null, x: null, y: null, gold: null };
+    this.character = { level: null, xp: null, xpMax: null, zone: null, sub: null, name: null, realm: null, x: null, y: null, gold: null, race: null, cls: null };
     this.lastEventAt = 0;
     this.begunAt = 0;
     this.lastTestAt = 0;
@@ -155,9 +155,9 @@ export class LiveState {
     this.lastEventAt = Math.max(this.lastEventAt, e.at);
     const c = this.character;
     switch (e.kind) {
-      case 'begin': c.name = e.name; c.realm = e.realm; c.level = e.level; this.begunAt = e.at; break;
+      case 'begin': c.name = e.name; c.realm = e.realm; c.level = e.level; if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; this.begunAt = e.at; break;
       case 'test': this.lastTestAt = e.at; break;
-      case 'heartbeat': Object.assign(c, { level: e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); return true;
+      case 'heartbeat': Object.assign(c, { level: e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; return true;
       case 'loot': {
         if (!e.id) return false;
         const d = this.drops.get(e.id) || { id: e.id, name: e.name, q: e.q, n: 0, times: 0, sources: {} };

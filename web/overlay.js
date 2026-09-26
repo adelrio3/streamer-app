@@ -22,6 +22,15 @@ document.documentElement.style.setProperty('--scale', String(Number(params.get('
 const widget = params.get('widget');
 if (widget) { show.clear(); show.add(widget); document.body.classList.add('single'); }
 // A chroma key background (?bg=00ff00) for feeds that cannot carry transparency.
+// Colours follow the character's race (the addon sends its token); ?theme=Orc pins one.
+const RACES = ['Human', 'Dwarf', 'NightElf', 'Gnome', 'Orc', 'Scourge', 'Tauren', 'Troll'];
+const pinnedTheme = RACES.find((r) => r.toLowerCase() === String(params.get('theme') || '').toLowerCase()) || null;
+function applyRace(race) {
+  const r = pinnedTheme || RACES.find((x) => x.toLowerCase() === String(race || '').toLowerCase()) || null;
+  if (r) document.documentElement.dataset.race = r; else delete document.documentElement.dataset.race;
+}
+applyRace(null);
+const accent = () => getComputedStyle(document.documentElement).getPropertyValue('--gold').trim() || '#f2cc6b';
 const bg = params.get('bg');
 const keyed = /^[0-9a-f]{6}$/i.test(bg || '');
 // Keyed: everything solid, since anything translucent would tint towards the key colour.
@@ -51,13 +60,34 @@ function size() { fx.width = innerWidth; fx.height = innerHeight; }
 size();
 addEventListener('resize', size);
 
-function burst({ x, y, color, n = 30, speed = 5, life = 900, gravity = 0.05, sizeMin = 1.5, sizeMax = 4, spread = Math.PI * 2, from = -Math.PI / 2 }) {
+function burst({ x, y, color, n = 30, speed = 5, life = 900, gravity = 0.05, sizeMin = 1.5, sizeMax = 4, spread = Math.PI * 2, from = -Math.PI / 2, shape = 'dot', colors = null, sway = 0 }) {
   for (let i = 0; i < n; i++) {
     const a = from + (Math.random() - 0.5) * spread;
     const v = speed * (0.4 + Math.random());
-    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, age: 0, life: life * (0.6 + Math.random() * 0.7), color, size: sizeMin + Math.random() * (sizeMax - sizeMin), gravity, spin: Math.random() * 6 });
+    const c = colors ? colors[Math.floor(Math.random() * colors.length)] : color;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, age: 0, life: life * (0.6 + Math.random() * 0.7), color: c, size: sizeMin + Math.random() * (sizeMax - sizeMin), gravity, spin: Math.random() * 6, shape, sway, phase: Math.random() * Math.PI * 2 });
   }
   if (!running) { running = true; last = performance.now(); requestAnimationFrame(step); }
+}
+
+// Each race has its own kind of particle: embers rise from a dwarf's forge,
+// wisps drift for a night elf, sparks jump for a gnome, flies blink for a
+// troll. Spawned around drop toasts and behind callouts.
+const RACE_FX = {
+  Human: { shape: 'mote', colors: ['#e9c467', '#fff7dc', '#8fb0ff'], gravity: -0.012, speed: 2.2, life: 1800, sizeMin: 1.2, sizeMax: 3, sway: 0.6 },
+  Dwarf: { shape: 'ember', colors: ['#ff9a3c', '#ffd27a', '#ff5a2a'], gravity: -0.07, speed: 3.5, life: 1500, sizeMin: 1.5, sizeMax: 3.5, spread: Math.PI * 0.9 },
+  NightElf: { shape: 'wisp', colors: ['#b8a7ff', '#e8dfff', '#7fe0ff'], gravity: -0.02, speed: 1.6, life: 2400, sizeMin: 5, sizeMax: 11, sway: 1.2 },
+  Gnome: { shape: 'spark', colors: ['#ff86c6', '#5ff5e0', '#ffffff'], gravity: 0.03, speed: 7, life: 700, sizeMin: 2, sizeMax: 5 },
+  Orc: { shape: 'ember', colors: ['#ff6f4d', '#ffb347', '#8a8a8a'], gravity: -0.05, speed: 3, life: 1600, sizeMin: 1.5, sizeMax: 4, spread: Math.PI * 1.1 },
+  Scourge: { shape: 'wisp', colors: ['#8dff7b', '#3d9f35', '#c9ffc0'], gravity: -0.012, speed: 1.2, life: 2600, sizeMin: 6, sizeMax: 14, sway: 0.8 },
+  Tauren: { shape: 'mote', colors: ['#e3a457', '#fff0c8', '#c9773a'], gravity: -0.006, speed: 1.6, life: 2200, sizeMin: 1.5, sizeMax: 3.5, sway: 0.4 },
+  Troll: { shape: 'fly', colors: ['#52d9c8', '#e9fffb', '#b9ff6a'], gravity: -0.004, speed: 1.4, life: 2600, sizeMin: 1.5, sizeMax: 3, sway: 1.6 },
+};
+function raceFx(x, y, n = 30, scale = 1) {
+  const spec = RACE_FX[document.documentElement.dataset.race];
+  if (!spec) return false;
+  burst({ x, y, n, ...spec, speed: spec.speed * scale, spread: spec.spread ?? Math.PI * 2 });
+  return true;
 }
 function storm(color, n = 160) {
   for (let i = 0; i < n; i++) {
@@ -84,14 +114,40 @@ function step(now) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.vx *= 0.985;
+    if (p.sway) p.x += Math.sin(p.age / 260 + p.phase) * p.sway * dt;
     const t = 1 - p.age / p.life;
-    ctx.globalAlpha = keyed ? 1 : Math.min(1, t * 1.4);
+    let alpha = Math.min(1, t * 1.4);
+    if (p.shape === 'fly') alpha *= 0.35 + 0.65 * Math.max(0, Math.sin(p.age / 140 + p.phase));
+    if (p.shape === 'ember') alpha *= 0.7 + 0.3 * Math.sin(p.age / 40 + p.phase);
+    if (p.shape === 'wisp') alpha *= 0.55;
+    ctx.globalAlpha = keyed ? 1 : alpha;
     ctx.fillStyle = p.color;
-    ctx.shadowBlur = keyed ? 0 : 8;
+    ctx.strokeStyle = p.color;
+    ctx.shadowBlur = keyed ? 0 : (p.shape === 'wisp' ? 18 : 8);
     ctx.shadowColor = p.color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * (0.5 + t * 0.5), 0, Math.PI * 2);
-    ctx.fill();
+    const r = p.size * (0.5 + t * 0.5);
+    if (p.shape === 'ember') {
+      const ang = Math.atan2(p.vy, p.vx);
+      ctx.ellipse(p.x, p.y, r * 1.8, r * 0.7, ang, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.shape === 'spark') {
+      ctx.lineWidth = Math.max(1, r * 0.6);
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx * 2.5, p.y - p.vy * 2.5);
+      ctx.stroke();
+    } else if (p.shape === 'wisp' && !keyed) {
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      g.addColorStop(0, p.color); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.shape === 'fly' && keyed && alpha < 0.5) {
+      // Keyed: a fly is either lit or not (no half-tones over the key colour).
+    } else {
+      ctx.arc(p.x, p.y, p.shape === 'wisp' ? r * 0.35 : r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     alive.push(p);
   }
   ctx.globalAlpha = 1;
@@ -156,6 +212,9 @@ function toast(e) {
     if (q === 3) burst({ x, y, color, n: 50, speed: 6, life: 1000 });
     if (q === 4) burst({ x, y, color, n: 90, speed: 8, life: 1300 });
     if (q >= 5) burst({ x, y, color, n: 140, speed: 10, life: 1600, sizeMax: 6 });
+    // The race's own particles drift out of the card, more for better drops.
+    raceFx(r.left + r.width / 2, y, 10 + q * 8, 1);
+    if (q >= 3) setTimeout(() => raceFx(r.left + r.width / 2, y, 8 + q * 4, 0.7), 500);
   });
   icons();
   const life = q >= 5 ? 11000 : q >= 4 ? 8500 : q >= 3 ? 6500 : 4500;
@@ -185,6 +244,8 @@ function fullScreenFx(q) {
 const queue = [];
 let showing = false;
 function callout(kind, title, sub, hold = 2600) {
+  raceFx(innerWidth / 2, innerHeight * 0.3, 40, 1.4);
+  setTimeout(() => raceFx(innerWidth / 2, innerHeight * 0.3, 24, 0.8), 400);
   if (!show.has('callouts')) return;
   queue.push({ kind, title, sub, hold });
   pump();
@@ -344,11 +405,11 @@ let lastSnapLocal = Date.now();
 function onEvent(e) {
   switch (e.kind) {
     case 'loot': toast(e); fullScreenFx(Math.max(0, Math.min(6, e.q ?? 1))); break;
-    case 'level': callout('level', `LEVEL ${e.level}`, 'ding', 3600); flash('#f2cc6b'); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#f2cc6b', n: 120, speed: 9, life: 1500, sizeMax: 5 }); break;
+    case 'level': callout('level', `LEVEL ${e.level}`, 'ding', 3600); flash(accent()); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 120, speed: 9, life: 1500, sizeMax: 5 }); break;
     case 'death': callout('death', 'YOU DIED', e.killer ? `killed by ${e.killer}` : '', 3400); flash('#ff2a2a'); shake(true); break;
     case 'rare': callout('rare', e.name || 'Rare', `rare spotted${e.level ? ` · level ${e.level}` : ''}`, 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.28, color: '#ff6fb5', n: 70, speed: 7, life: 1200 }); break;
     case 'quest':
-      if (e.action === 'turnin') { callout('quest', 'QUEST COMPLETE', e.title || '', 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#f2cc6b', n: 80, speed: 7, life: 1300 }); }
+      if (e.action === 'turnin') { callout('quest', 'QUEST COMPLETE', e.title || '', 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 80, speed: 7, life: 1300 }); }
       else if (e.action === 'accept') callout('quest', 'NEW QUEST', e.title || '', 2400);
       break;
     case 'zone': if (e.zone) callout('zone', e.zone, e.sub || 'entering', 2600); break;
@@ -362,6 +423,7 @@ function onEvent(e) {
 function handle(snap) {
   lastSnap = snap;
   lastSnapLocal = Date.now();
+  applyRace(snap.character?.race);
   const now = snap.at || Date.now();
   if (lastSeq === null) lastSeq = snap.seq || 0;
   const fresh = (snap.events || []).filter((e) => e.seq > lastSeq).sort((a, b) => a.seq - b.seq);
@@ -414,7 +476,7 @@ async function poll(cfg) {
 // Demo: a script of fake events, so the overlay can be laid out without playing.
 function runDemo() {
   const live = new LiveState(Date.now() - 754000);
-  live.apply({ at: Date.now() - 754000, kind: 'begin', name: 'Aldric', realm: 'Mankrik', level: 11 });
+  live.apply({ at: Date.now() - 754000, kind: 'begin', name: 'Aldric', realm: 'Mankrik', level: 11, race: pinnedTheme || 'Human', cls: 'PALADIN' });
   live.apply({ at: Date.now() - 700000, kind: 'heartbeat', level: 11, xp: 1450, xpMax: 2800, zone: 'Elwynn Forest', sub: 'Goldshire', x: 42, y: 65, money: 12345 });
   live.apply({ at: Date.now() - 600000, kind: 'quest', action: 'accept', qid: 176, title: 'Wanted: "Hogger"' });
   live.apply({ at: Date.now() - 500000, kind: 'quest', action: 'accept', qid: 62, title: 'The Fargodeep Mine' });
