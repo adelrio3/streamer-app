@@ -4,11 +4,11 @@ ChroniclerDB = {
 		{
 			["build"] = 11507,
 			["ctx"] = "CHAT_MSG_SKILL",
-			["first"] = 1790000064,
-			["key"] = "test/addon/harness.lua:541: boom",
-			["last"] = 1790000064,
+			["first"] = 1790000077,
+			["key"] = "test/addon/harness.lua:562: boom",
+			["last"] = 1790000077,
 			["level"] = 10,
-			["msg"] = "test/addon/harness.lua:541: boom",
+			["msg"] = "test/addon/harness.lua:562: boom",
 			["n"] = 2,
 			["session"] = "Mankrik-Aldric-1790000000",
 			["sub"] = "Goldshire",
@@ -69,7 +69,7 @@ ChroniclerDB = {
 		[2488] = {
 			["bind"] = 1,
 			["classId"] = 2,
-			["first"] = 1790000028,
+			["first"] = 1790000041,
 			["icon"] = 135274,
 			["id"] = 2488,
 			["ilvl"] = 7,
@@ -97,7 +97,7 @@ ChroniclerDB = {
 		[2589] = {
 			["bind"] = 0,
 			["classId"] = 7,
-			["first"] = 1790000028,
+			["first"] = 1790000041,
 			["icon"] = 132889,
 			["id"] = 2589,
 			["ilvl"] = 5,
@@ -120,6 +120,7 @@ ChroniclerDB = {
 	},
 	["objects"] = {
 		[171938] = "Cactus Apple",
+		[201] = "Solid Chest",
 	},
 	["schema"] = 2,
 	["sessions"] = {
@@ -904,6 +905,65 @@ ChroniclerDB = {
 					["z"] = "Elwynn Forest",
 				}, -- [44]
 				{
+					["e"] = "loot_window",
+					["items"] = {
+						{
+							["id"] = 2589,
+							["n"] = 1,
+							["name"] = "Linen Cloth",
+						}, -- [1]
+					},
+					["lvl"] = 2,
+					["m"] = 1429,
+					["sources"] = {
+						{
+							["id"] = 200,
+							["kind"] = "GameObject",
+						}, -- [1]
+					},
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000041.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [45]
+				{
+					["e"] = "object",
+					["lvl"] = 2,
+					["m"] = 1429,
+					["name"] = "Solid Chest",
+					["objId"] = 201,
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000041.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [46]
+				{
+					["e"] = "loot_window",
+					["items"] = {
+						{
+							["id"] = 2589,
+							["n"] = 1,
+							["name"] = "Linen Cloth",
+						}, -- [1]
+					},
+					["lvl"] = 2,
+					["m"] = 1429,
+					["sources"] = {
+						{
+							["id"] = 201,
+							["kind"] = "GameObject",
+							["name"] = "Solid Chest",
+						}, -- [1]
+					},
+					["sz"] = "Northshire Valley",
+					["t"] = 1790000041.1,
+					["x"] = 46,
+					["y"] = 42,
+					["z"] = "Elwynn Forest",
+				}, -- [47]
+				{
 					["e"] = "npc",
 					["faction"] = "Alliance",
 					["full"] = true,
@@ -917,7 +977,7 @@ ChroniclerDB = {
 					["react"] = 5,
 					["src"] = "talk",
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000028.1,
+					["t"] = 1790000041.1,
 					["tip"] = {
 						"Brother Danil", -- [1]
 						"<General Supplies>", -- [2]
@@ -927,7 +987,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [45]
+				}, -- [48]
 				{
 					["e"] = "vendor",
 					["items"] = {
@@ -961,11 +1021,11 @@ ChroniclerDB = {
 					["npcKind"] = "Creature",
 					["repair"] = true,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000028.1,
+					["t"] = 1790000041.1,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [46]
+				}, -- [49]
 				{
 					["ctx"] = "merchant",
 					["delta"] = -25,
@@ -973,12 +1033,12 @@ ChroniclerDB = {
 					["lvl"] = 2,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000028.1,
+					["t"] = 1790000041.1,
 					["total"] = 1025,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [47]
+				}, -- [50]
 				{
 					["e"] = "trainer",
 					["greeting"] = "The Light calls to you.",
@@ -1004,11 +1064,11 @@ ChroniclerDB = {
 						}, -- [2]
 					},
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000030.1,
+					["t"] = 1790000043.1,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [48]
+				}, -- [51]
 				{
 					["e"] = "taxi_map",
 					["lvl"] = 2,
@@ -1033,44 +1093,44 @@ ChroniclerDB = {
 					["npcId"] = 152,
 					["npcKind"] = "Creature",
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000030.1,
+					["t"] = 1790000043.1,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [49]
+				}, -- [52]
 				{
 					["cost"] = 50,
 					["e"] = "flight",
 					["lvl"] = 2,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000030.1,
+					["t"] = 1790000043.1,
 					["to"] = "Sentinel Hill",
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [50]
+				}, -- [53]
 				{
 					["e"] = "flight_end",
 					["lvl"] = 2,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000034.1,
+					["t"] = 1790000047.1,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [51]
+				}, -- [54]
 				{
 					["e"] = "bind",
 					["lvl"] = 2,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000034.1,
+					["t"] = 1790000047.1,
 					["where"] = "Lion's Pride Inn",
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [52]
+				}, -- [55]
 				{
 					["e"] = "equip",
 					["id"] = 2488,
@@ -1080,17 +1140,17 @@ ChroniclerDB = {
 					["name"] = "Gladius",
 					["slot"] = 16,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000034.1,
+					["t"] = 1790000047.1,
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [53]
+				}, -- [56]
 				{
 					["e"] = "talents",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000034.1,
+					["t"] = 1790000047.1,
 					["tabs"] = {
 						{
 							["name"] = "Holy",
@@ -1110,7 +1170,7 @@ ChroniclerDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [54]
+				}, -- [57]
 				{
 					["ch"] = "say",
 					["e"] = "chat",
@@ -1118,65 +1178,65 @@ ChroniclerDB = {
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Northshire Valley",
-					["t"] = 1790000034.1,
+					["t"] = 1790000047.1,
 					["text"] = "anyone for Hogger?",
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [55]
+				}, -- [58]
 				{
 					["e"] = "zone",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [56]
+				}, -- [59]
 				{
 					["area"] = "Goldshire",
 					["e"] = "explore",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [57]
+				}, -- [60]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["reason"] = "discovery",
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [58]
+				}, -- [61]
 				{
 					["e"] = "sync",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [59]
+				}, -- [62]
 				{
 					["e"] = "mark",
 					["kind"] = "lore",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [60]
+				}, -- [63]
 				{
 					["e"] = "mark",
 					["kind"] = "shot",
@@ -1184,11 +1244,11 @@ ChroniclerDB = {
 					["m"] = 1429,
 					["note"] = "sunset over the lake",
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [61]
+				}, -- [64]
 				{
 					["e"] = "mark",
 					["kind"] = "mark",
@@ -1196,22 +1256,22 @@ ChroniclerDB = {
 					["m"] = 1429,
 					["note"] = "wolf pathing weird",
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [62]
+				}, -- [65]
 				{
 					["e"] = "quest_abandon",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["title"] = "Kobold Camp Cleanup",
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [63]
+				}, -- [66]
 				{
 					["e"] = "npc",
 					["lvl"] = 10,
@@ -1222,9 +1282,9 @@ ChroniclerDB = {
 					["react"] = 2,
 					["src"] = "combat",
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [64]
+				}, -- [67]
 				{
 					["by"] = "Melee",
 					["e"] = "death",
@@ -1233,36 +1293,36 @@ ChroniclerDB = {
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [65]
+				}, -- [68]
 				{
 					["e"] = "screenshot",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["reason"] = "death",
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [66]
+				}, -- [69]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 3.",
 					["z"] = "Elwynn Forest",
-				}, -- [67]
+				}, -- [70]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 4.",
 					["z"] = "Elwynn Forest",
-				}, -- [68]
+				}, -- [71]
 				{
 					["e"] = "bags",
 					["items"] = {
@@ -1275,9 +1335,9 @@ ChroniclerDB = {
 					["m"] = 1429,
 					["money"] = 1025,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [69]
+				}, -- [72]
 				{
 					["e"] = "reputation",
 					["factions"] = {
@@ -1292,9 +1352,9 @@ ChroniclerDB = {
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [70]
+				}, -- [73]
 				{
 					["e"] = "skills",
 					["lvl"] = 10,
@@ -1307,17 +1367,17 @@ ChroniclerDB = {
 						}, -- [1]
 					},
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [71]
+				}, -- [74]
 				{
 					["e"] = "session_end",
 					["lvl"] = 10,
 					["m"] = 1429,
 					["sz"] = "Goldshire",
-					["t"] = 1790000064.1,
+					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [72]
+				}, -- [75]
 			},
 			["id"] = "Mankrik-Aldric-1790000000",
 			["schema"] = 2,
@@ -1326,9 +1386,9 @@ ChroniclerDB = {
 				"1790000014.10,1429,48.00,42.00,1.57,7.0,0,1170,60,42", -- [1]
 				"1790000018.10,1429,47.00,42.00,1.57,7.0,0,1170,60,42", -- [2]
 				"1790000020.10,1429,46.00,42.00,1.57,14.0,129,1170,60,42", -- [3]
-				"1790000030.10,1429,46.00,42.00,1.57,7.0,0,1170,60,42", -- [4]
-				"1790000032.10,1429,46.00,42.00,1.57,7.0,2,1170,60,42", -- [5]
-				"1790000034.10,1429,46.00,42.00,1.57,7.0,0,1170,60,42", -- [6]
+				"1790000043.10,1429,46.00,42.00,1.57,7.0,0,1170,60,42", -- [4]
+				"1790000045.10,1429,46.00,42.00,1.57,7.0,2,1170,60,42", -- [5]
+				"1790000047.10,1429,46.00,42.00,1.57,7.0,0,1170,60,42", -- [6]
 			},
 		}, -- [1]
 	},

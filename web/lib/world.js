@@ -89,10 +89,10 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
           spot(n, s, e, 'kill');
           break;
         }
-        case 'object': { // the addon learned an object's name (cactus, chest, herb)
+        case 'object': { // the addon learned an object's name for sure (cactus, chest, herb)
           if (e.objId && e.name) {
             const n = npc(null, e.name, `o${e.objId}`);
-            n.object = true; n.objectId = e.objId; n.name = e.name; n.unnamed = false;
+            n.object = true; n.objectId = e.objId; n.votes ??= new Map(); n.votes.set(e.name, (n.votes.get(e.name) || 0) + 1000);
           }
           break;
         }
@@ -101,7 +101,9 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
             const n = src.kind === 'GameObject'
               ? npc(null, src.name ?? `Object ${src.id}`, src.id ? `o${src.id}` : undefined)
               : npc(src.id && src.kind === 'Creature' ? src.id : null, src.name ?? null);
-            if (src.kind === 'GameObject') { n.objectId = src.id ?? null; if (src.name) { n.name = src.name; n.unnamed = false; } else if (n.unnamed == null) n.unnamed = true; }
+            // Object names are votes: older addons named a chest after whatever
+            // tooltip was last on screen, so the names are settled at the end.
+            if (src.kind === 'GameObject') { n.objectId = src.id ?? null; n.votes ??= new Map(); if (src.name && !looksLikePlayer(src.name)) n.votes.set(src.name, (n.votes.get(src.name) || 0) + 1); }
             if (!n) continue;
             if (src.kind === 'GameObject') n.object = true;
             n.loots++;
@@ -207,6 +209,15 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
     }
   }
 
+  // Settle object names: the most voted name that is not a creature's.
+  const creatureNames = new Set([...npcs.values()].filter((n) => !n.object && n.name).map((n) => n.name));
+  for (const n of npcs.values()) {
+    if (!n.object) continue;
+    const best = [...(n.votes || new Map()).entries()].filter(([name]) => !creatureNames.has(name)).sort((a, b) => b[1] - a[1])[0];
+    n.name = best ? best[0] : (n.objectId ? `Object ${n.objectId}` : n.name);
+    n.unnamed = !best;
+    delete n.votes;
+  }
   const npcList = [...npcs.values()].map((n) => ({
     ...n,
     ...classify(n),
@@ -246,6 +257,11 @@ export function buildWorld(sessions, catalogRows = [], moment = (s, e) => ({ ses
 export const ROLE_NAMES = { quest: 'Quest giver', vendor: 'Vendor', trainer: 'Trainer', taxi: 'Flight master', innkeeper: 'Innkeeper', banker: 'Banker', talker: 'Speaks', other: 'Other' };
 
 // Is this something you can fight (bestiary) or someone you deal with (people)?
+// "Emogan-Mankrik": a player's tooltip, never an object's name.
+function looksLikePlayer(name) {
+  return /^[^\s-]+-[A-Z][^-]*$/.test(String(name));
+}
+
 function classify(n) {
   const roles = [];
   if (n.quests.size) roles.push('quest');

@@ -51,7 +51,7 @@ test('items: full catalog info and every source', () => {
   const cloth = world.byItem.get(2589);
   assert.equal(cloth.quality, 1);
   assert.equal(cloth.info.sell, 13);
-  assert.deepEqual(cloth.droppedBy.map((d) => [d.name, d.times, d.rate]), [['Defias Thug', 1, 1]]);
+  assert.deepEqual(cloth.droppedBy.map((d) => [d.name, d.times, d.rate]), [['Defias Thug', 1, 1], ['Object 200', 1, 1], ['Solid Chest', 1, 1]], 'a corpse, an unnamed object and a chest');
   assert.equal(cloth.looted, 2);
   assert.deepEqual(cloth.costOf.map((c) => [c.name, c.value]), [['Gladius', 3]], 'used as currency');
   const gladius = world.byItem.get(2488);
@@ -115,4 +115,23 @@ test('search finds quests, NPCs, items by tooltip text, vendors', () => {
   assert.equal(search(index, 'spider')[0].title, 'Mother Fang');
   assert.ok(search(index, 'aldric').some((h) => h.type === 'Character'));
   assert.deepEqual(search(index, ''), []);
+});
+
+test('objects keep the name they were opened under, not the last tooltip on screen', () => {
+  // Older addons named a cactus after whatever tooltip was last shown: a scorpid, a player, the apple itself.
+  const win = (t, name) => ({ e: 'loot_window', t, z: 'Durotar', items: [{ id: 11583, name: 'Cactus Apple', n: 1 }], sources: [{ kind: 'GameObject', id: 171938, name }] });
+  const sessions = [{ id: 'old', char: { name: 'Aldric', realm: 'Mankrik' }, events: [
+    { e: 'npc', t: 1, name: 'Scorpid Worker', npcId: 3124, npcKind: 'Creature', z: 'Durotar' },
+    win(2, null), win(3, null), win(4, 'Scorpid Worker'), win(5, 'Emogan-Mankrik'), win(6, 'Cactus Apple'), win(7, 'Scorpid Worker'), win(8, null),
+  ] }];
+  const world = buildWorld(sessions, [], (s, e) => ({ session: s.id, t: e.t, footage: null }));
+  assert.deepEqual(world.objects.map((o) => [o.key, o.name, o.loots, o.unnamed]), [['o171938', 'Cactus Apple', 7, false]], 'one cactus, named after the majority vote, players and creatures excluded');
+  assert.ok(world.creatures.some((c) => c.name === 'Scorpid Worker') || world.people.some((c) => c.name === 'Scorpid Worker'), 'the scorpid stays an NPC');
+  assert.ok(!world.npcs.some((n) => n.name === 'Emogan-Mankrik'));
+  // The new addon's own record settles it even against many wrong votes.
+  const fixed = buildWorld([{ id: 'new', char: { name: 'Aldric', realm: 'Mankrik' }, events: [win(1, 'Wrong'), win(2, 'Wrong'), { e: 'object', t: 3, objId: 171938, name: 'Cactus Apple' }] }], [], (s, e) => ({ session: s.id, t: e.t, footage: null }));
+  assert.equal(fixed.objects[0].name, 'Cactus Apple');
+  // Never named: flagged, still one entry.
+  const none = buildWorld([{ id: 'x', char: {}, events: [win(1, null), win(2, null)] }], [], (s, e) => ({ session: s.id, t: e.t, footage: null }));
+  assert.deepEqual([none.objects[0].name, none.objects[0].unnamed], ['Object 171938', true]);
 });

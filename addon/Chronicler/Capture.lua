@@ -158,13 +158,29 @@ local function hookTooltip(tip)
 	end
 end
 
--- Remembers the last tooltip title, to name herbs, ore and chests you loot.
-local lastTip = { title = nil, at = 0 }
--- Opening a chest, herb, ore or a cactus is a cast at the object by name.
+-- Remembers the last tooltip of a world object (a chest, a herb, a cactus),
+-- to name what you loot from it. Tooltips of units, items and spells are
+-- not objects and must not name one.
+local lastTip = { title = nil, at = 0, object = false }
+-- Opening a chest, herb, ore or a cactus is a cast at the object by name:
+-- "Opening", "Herb Gathering", "Mining", "Pick Lock" and their kin.
+local OPENING = {
+	[3365] = true, [6478] = true, [6477] = true, [6247] = true, [22810] = true, [21651] = true, [6289] = true, [1804] = true,
+	[2366] = true, [2368] = true, [3570] = true, [11993] = true, [28695] = true, [50300] = true,
+	[2575] = true, [2576] = true, [3564] = true, [10248] = true, [29354] = true, [50310] = true,
+	[7620] = true, [7731] = true, [7732] = true, [18248] = true, [33095] = true, [51294] = true,
+}
+local OPENING_NAMES = { Opening = true, ["Herb Gathering"] = true, Mining = true, ["Pick Lock"] = true, Fishing = true, Skinning = true }
 local lastCast = { target = nil, at = 0 }
-on("UNIT_SPELLCAST_SENT", function(unit, target)
+on("UNIT_SPELLCAST_SENT", function(unit, target, _, spellID)
 	if unit ~= "player" or type(target) ~= "string" or target == "" then return end
-	if UnitExists and UnitExists("target") and UnitName("target") == target then return end
+	local opening = OPENING[spellID]
+	if not opening then
+		local name = GetSpellInfo and GetSpellInfo(spellID)
+		if not name and C_Spell and C_Spell.GetSpellName then name = C_Spell.GetSpellName(spellID) end
+		opening = name and OPENING_NAMES[name]
+	end
+	if not opening then return end
 	lastCast.target = target
 	lastCast.at = GetTime()
 end)
@@ -186,7 +202,11 @@ local function hookTitle(tip)
 	if tip and tip.HookScript then
 		tip:HookScript("OnShow", function()
 			local line = _G[(tip:GetName() or "") .. "TextLeft1"]
+			local unit = tip.GetUnit and select(2, tip:GetUnit())
+			local item = tip.GetItem and select(2, tip:GetItem())
+			local spell = tip.GetSpell and tip:GetSpell()
 			lastTip.title = line and line:GetText()
+			lastTip.object = not (unit or item or spell)
 			lastTip.at = GetTime()
 		end)
 	end
@@ -335,7 +355,7 @@ on("LOOT_OPENED", function()
 		if not name and kind == "GameObject" then
 			local now = GetTime()
 			if now - lastCast.at < 12 then name = lastCast.target end
-			if not name and now - lastTip.at < 12 then name = lastTip.title end
+			if not name and lastTip.object and now - lastTip.at < 8 then name = lastTip.title end
 			name = objectName(id, name)
 		end
 		src[#src + 1] = { kind = kind, id = id, name = name, level = npc and npc.level, rank = npc and npc.rank }

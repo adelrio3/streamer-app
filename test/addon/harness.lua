@@ -116,8 +116,9 @@ function CreateFrame(kind, name)
 				self.lines = i
 			end
 		end
-		function f:SetHyperlink(link) fill(self, link) end
-		function f:SetUnit(unit) fill(self, "unit:" .. unit) end
+		function f:SetHyperlink(link) self.unit = nil; fill(self, link) end
+		function f:SetUnit(unit) self.unit = unit; fill(self, "unit:" .. unit) end
+		function f:GetUnit() if self.unit then return UnitName(self.unit), self.unit end end
 		function f:NumLines() return self.lines end
 		function f:GetItem() return nil, self.itemLink end
 	end
@@ -473,6 +474,26 @@ do
 	local named
 	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "object" and e.objId == 171938 then named = e end end
 	assert(named and named.name == "Cactus Apple", "an object event records the name once")
+end
+
+-- A unit's tooltip never names an object (that is how a cactus got called
+-- "Scorpid Worker"); an object's own tooltip does.
+GameTooltip:SetUnit("mouseover")
+for _, fn in ipairs(GameTooltip.hooks.OnShow or {}) do fn(GameTooltip) end
+frameTick(13) -- long after the cactus cast
+loot = { { name = "Linen Cloth", n = 1, link = "|cffffffff|Hitem:2589::::|h[Linen Cloth]|h|r", src = "GameObject-0-4372-0-17-200-00041" } }
+fire("LOOT_OPENED")
+TOOLTIPS["object:chest"] = { { "Solid Chest" } }
+GameTooltip:SetHyperlink("object:chest")
+for _, fn in ipairs(GameTooltip.hooks.OnShow or {}) do fn(GameTooltip) end
+loot = { { name = "Linen Cloth", n = 1, link = "|cffffffff|Hitem:2589::::|h[Linen Cloth]|h|r", src = "GameObject-0-4372-0-17-201-00042" } }
+fire("LOOT_OPENED")
+do
+	local wins = {}
+	for _, e in ipairs(ChroniclerDB.sessions[1].events) do if e.e == "loot_window" then wins[#wins + 1] = e end end
+	local a, b = wins[#wins - 1], wins[#wins]
+	assert(a.sources[1].id == 200 and a.sources[1].name == nil, "a unit tooltip does not name an object: " .. tostring(a.sources[1].name))
+	assert(b.sources[1].id == 201 and b.sources[1].name == "Solid Chest", "an object tooltip names it: " .. tostring(b.sources[1].name))
 end
 
 -- A vendor, with a limited item and one costing an item.

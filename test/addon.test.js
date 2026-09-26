@@ -102,12 +102,14 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
   // Loot window with its source; opened twice, recorded once. Then a cactus,
   // an object you only interact with, named from the opening cast.
   const lw = of('loot_window');
-  assert.equal(lw.length, 2);
+  assert.equal(lw.length, 4);
   assert.deepEqual(lw[0].items.map((i) => [i.id, i.n]), [[2589, 2], [159, 1]]);
   assert.equal(lw[0].money, '12 Copper');
   assert.equal(lw[0].sources[0].name, 'Defias Thug');
   assert.deepEqual(lw[1].sources[0], { kind: 'GameObject', id: 171938, name: 'Cactus Apple' });
-  assert.deepEqual(of('object').map((e) => [e.objId, e.name]), [[171938, 'Cactus Apple']]);
+  assert.deepEqual(lw[2].sources[0], { kind: 'GameObject', id: 200 }, 'a unit tooltip on screen does not name an object');
+  assert.deepEqual(lw[3].sources[0], { kind: 'GameObject', id: 201, name: 'Solid Chest' }, 'an object tooltip does');
+  assert.deepEqual(of('object').map((e) => [e.objId, e.name]), [[171938, 'Cactus Apple'], [201, 'Solid Chest']]);
   assert.equal(db.objects[171938], 'Cactus Apple');
 
   // Vendor stock, trainer, flights, hearthstone, money with context.
