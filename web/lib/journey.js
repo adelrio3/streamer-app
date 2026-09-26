@@ -26,6 +26,7 @@ export function buildCharacters(sessions, moment, timelines = new Map(), recordi
       chars.set(key, c);
     }
     c.info = { ...c.info, ...s.char };
+    c.info.sex = s.char?.sex === 2 ? 'male' : s.char?.sex === 3 ? 'female' : c.info.sex ?? null;
     c.sessions.push(s.id);
     if (s.events.length > 1) c.playSeconds += s.events.at(-1).t - s.events[0].t;
     for (const e of s.events) {

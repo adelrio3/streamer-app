@@ -1,79 +1,55 @@
-// The Journal: one character's journey told as a story, chapter by chapter,
-// from nothing but the events the addon logged. Third person, past tense,
-// the character's name (never a guessed pronoun: "they" when one is needed).
-// Chapters split when the character enters a new zone or comes back after a
-// long break; paragraphs group a handful of events into prose.
+// The Journal: short entries in the character's own world, built from nothing
+// but the events the addon logged. One entry per play session (2–5 sentences),
+// one when a storyline's last chapter is turned in, one when a zone's quests
+// are all done. Third person, past tense, the character's name and pronouns
+// (from character.info.sex); never anything from outside the world.
 //
-// narrate({ character, sessions, world, codex, moment }) → { title, chapters }
+// journalEntries({ character, sessions, world, codex, storylines, moment })
+//   → { entries: [{ id, kind, t, title, text, footage, session }] }, oldest first
 // narrativeText(result) → Markdown for export.
 
 import { charKey } from './journey.js';
-import { money as moneyText, RANKS, SLOT_NAMES } from './describe.js';
+import { RANKS } from './describe.js';
 
-const LONG_GAP = 6 * 3600; // a new session this long after the last one is a new day
 const LOOT_WINDOW = 20; // loot this soon after a kill came from it
-const SHOP_WINDOW = 60; // a purchase, lesson or flight this soon after the counter belongs to it
-const FOLD_WINDOW = 15 * 60; // kills of the same creature this far apart are one hunt
-const QUOTE_MAX = 120;
-const PARAGRAPH_MAX = 5;
-const PARAGRAPH_GAP = 10 * 60;
+const QUOTE_MAX = 90;
+const MAX_WORDS = 28;
+const MAX_HIGHLIGHTS = 3;
+const ZONE_MIN_QUESTS = 5;
+const QUALITY_ADJ = { 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact' };
+const SMALL = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
 
-const KILL_VERBS = ['felled', 'cut down', 'dealt with', 'saw off', 'hunted down', 'put down', 'made short work of', 'got the better of'];
-const LOOT_JOINS = [', coming away with', ' and picked up', ', which left them with', ' and pocketed'];
-const QUALITY_ADJ = { 2: 'fine', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact' };
-const SPEECH_VERBS = { say: ['called out', 'said'], yell: ['yelled', 'bellowed'], whisper: ['whispered', 'murmured'], emote: ['made a show of it', 'gestured'] };
-
-// Openers for sentences built from clauses: how many clauses each takes and
-// whether the character is named (paragraphs always open with the name).
-const OPENERS = [
-  { shape: 'name', n: 1, named: true, make: (N, [a]) => `${N} ${a}.` },
-  { shape: 'then', n: 1, named: false, make: (N, [a]) => `Then they ${a}.` },
-  { shape: 'pair', n: 2, named: true, make: (N, [a, b]) => `${N} ${a}, then ${b}.` },
-  { shape: 'along', n: 1, named: false, make: (N, [a]) => `Along the way they ${a}.` },
-  { shape: 'and', n: 2, named: true, make: (N, [a, b]) => `${N} ${a} and ${b}.` },
-  { shape: 'before', n: 1, named: false, make: (N, [a]) => `Before long they ${a}.` },
-  { shape: 'after', n: 1, named: true, make: (N, [a]) => `After that ${N} ${a}.` },
-];
-
-export function narrate({ character, sessions = [], world = null, codex = null, moment = (s, e) => ({ t: e.t, footage: null }) } = {}) {
+export function journalEntries({ character, sessions = [], world = null, codex = null, storylines = [], moment = (s, e) => ({ t: e.t, footage: null }) } = {}) {
   const name = character?.name ?? character?.info?.name ?? 'The hero';
   const mine = sessions.filter((s) => isTheirs(s, character)).sort((a, b) => (a.started || 0) - (b.started || 0));
   const ctx = {
     name, character, world, codex, moment,
-    counters: {}, lastShape: null, openerIdx: 0,
-    questNpc: new Map(), // qid or title -> { giver, turnIn, text }
+    who: pronouns(name, character?.info?.sex ?? character?.sex),
+    counters: {}, lastFirst: null, // rotation state and the previous sentence's first word
+    questInfo: questInfoFrom(codex),
+    firstDay: mine[0]?.started ?? mine[0]?.events?.[0]?.t ?? null,
   };
-  if (codex?.quests) {
-    for (const q of codex.quests) {
-      const info = { giver: q.giver?.name ?? null, turnIn: q.turnInNpc?.name ?? null, text: q.reward ?? null };
-      if (q.qid != null) ctx.questNpc.set(q.qid, info);
-      if (q.title) ctx.questNpc.set(q.title, info);
-    }
-  }
+  const entries = [];
+  const open = new Map(); // quests still in the log, carried from one session to the next
 
-  const timeline = [];
-  for (const s of mine) for (const e of s.events || []) if (e && e.e && Number.isFinite(e.t)) timeline.push({ s, e });
-  timeline.sort((a, b) => a.e.t - b.e.t);
-
-  const chapters = splitChapters(timeline, ctx);
-  for (const ch of chapters) {
-    ch.beats = beatsFor(ch, ctx);
-    ch.paragraphs = paragraphsFor(ch, ctx);
-    ch.facts = factsFor(ch);
+  for (const s of mine) {
+    const entry = sessionEntry(s, ctx, open);
+    if (entry) entries.push(entry);
   }
-  const out = chapters.filter((ch) => ch.paragraphs.length).map((ch) => ({
-    id: ch.id, title: ch.title, zone: ch.zone, started: ch.started, ended: ch.ended, paragraphs: ch.paragraphs, facts: ch.facts,
-  }));
-  return { title: `The journal of ${name}`, character: name, chapters: out };
+  for (const line of storylines || []) {
+    const entry = storylineEntry(line, mine, ctx);
+    if (entry) entries.push(entry);
+  }
+  for (const entry of zoneEntries(mine, ctx)) entries.push(entry);
+
+  entries.sort((a, b) => a.t - b.t);
+  return { title: `The journal of ${name}`, character: name, entries };
 }
 
-// The whole journal as Markdown: a heading, a heading per chapter, the prose.
+// The whole journal as Markdown: a heading, then a heading and text per entry.
 export function narrativeText(result) {
   const lines = [`# ${result?.title ?? 'Journal'}`, ''];
-  for (const ch of result?.chapters ?? []) {
-    lines.push(`## ${ch.title}`, '');
-    for (const p of ch.paragraphs) lines.push(p.text, '');
-  }
+  for (const en of result?.entries ?? []) lines.push(`## ${en.title}`, '', en.text, '');
   return lines.join('\n').trimEnd() + '\n';
 }
 
@@ -85,488 +61,479 @@ function isTheirs(s, character) {
   return s.char?.name === character.name && (realm == null || (s.char?.realm ?? null) === realm);
 }
 
-// --- chapters ---------------------------------------------------------------
+// he/him/his, she/her/her, or the name every time (never "they").
+function pronouns(name, sex) {
+  const s = sex === 2 ? 'male' : sex === 3 ? 'female' : sex;
+  if (s === 'male') return { subj: 'he', obj: 'him', poss: 'his', named: false };
+  if (s === 'female') return { subj: 'she', obj: 'her', poss: 'her', named: false };
+  return { subj: name, obj: name, poss: possessive(name), named: true };
+}
 
-function splitChapters(timeline, ctx) {
-  const chapters = [];
-  let cur = null;
-  let lastT = null;
-  for (const item of timeline) {
-    const { e } = item;
-    const gap = lastT != null && e.t - lastT > LONG_GAP;
-    const moved = (e.e === 'zone' || e.e === 'session_start') && e.z && cur && cur.zone && e.z !== cur.zone;
-    if (!cur || gap || moved) {
-      cur = { id: null, zone: e.z ?? null, reason: !cur ? 'start' : gap ? 'gap' : 'zone', items: [], started: e.t, ended: e.t };
-      chapters.push(cur);
-    }
-    if (!cur.zone && e.z) cur.zone = e.z;
-    cur.items.push(item);
-    cur.ended = e.t;
-    lastT = e.t;
+function questInfoFrom(codex) {
+  const info = new Map(); // qid or title -> { giver, turnIn, text, title, zone }
+  for (const q of codex?.quests ?? []) {
+    const v = { giver: q.giver?.name ?? null, turnIn: q.turnInNpc?.name ?? null, text: q.reward ?? null, title: q.title ?? null, zone: q.zone ?? null };
+    if (q.qid != null) info.set(q.qid, v);
+    if (q.title) info.set(q.title, v);
   }
-  const seen = new Set();
-  chapters.forEach((ch, i) => {
-    const zone = ch.zone ?? 'Somewhere';
-    const prev = chapters[i - 1];
-    if (i === 0) ch.title = `${zone}, the first day`;
-    else if (ch.reason === 'gap' && prev?.zone === ch.zone) ch.title = `Another day in ${zone}`;
-    else if (seen.has(zone)) ch.title = `Back to ${zone}`;
-    else ch.title = `On to ${zone}`;
-    seen.add(zone);
-    ch.id = `ch${i + 1}-${slug(zone)}`;
-    ch.index = i;
-  });
-  return chapters;
+  return info;
 }
 
-function slug(s) {
-  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
+// --- one entry per session ---------------------------------------------------
+
+function sessionEntry(s, ctx, open) {
+  const events = (s.events || []).filter((e) => e && e.e && Number.isFinite(e.t));
+  if (!events.length) return null;
+  const first = events.find((e) => e.z) ?? events[0];
+  if (!first.z && !first.sz) return null;
+  const facts = gather(events, ctx);
+  const N = ctx.name;
+  const { who } = ctx;
+
+  const opened = new Map(); // quests taken this session (title by qid/title)
+  for (const e of events) {
+    const key = e.qid ?? e.title;
+    if (key == null) continue;
+    if (e.e === 'quest_accept') { const title = e.title ?? ctx.questInfo.get(e.qid)?.title ?? null; if (title) { open.set(key, title); opened.set(key, title); } }
+    if (e.e === 'quest_turnin' || e.e === 'quest_abandon') { open.delete(key); opened.delete(key); }
+  }
+
+  const sentences = [];
+  const tod = timeOfDay(s.started || first.t);
+  const place = placeOf(first);
+  sentences.push(say(ctx, 'open', [
+    `${N} began the ${tod} in ${place}.`,
+    `${cap(placeIn(first))} was where the ${tod} found ${N}.`,
+    `The ${tod} started for ${N} in ${place}.`,
+    `${N} was in ${place} when the ${tod} began.`,
+  ]));
+
+  const picked = facts.highlights.sort((a, b) => b.score - a.score || a.t - b.t).slice(0, MAX_HIGHLIGHTS).sort((a, b) => a.t - b.t);
+  const small = picked.length ? null : facts.minor[0] ?? null;
+  for (const h of picked) sentences.push(h.say(ctx));
+  if (small) sentences.push(small.say(ctx));
+
+  const left = [...open.values()];
+  sentences.push(closing(left, facts, s, ctx));
+
+  const m = ctx.moment(s, first) || {};
+  return {
+    id: `s-${s.id}`, kind: 'session', t: first.t, session: s.id, footage: m.footage ?? null,
+    title: `Day ${dayNumber(s.started || first.t, ctx.firstDay)}, ${first.z || first.sz}`,
+    text: sentences.join(' '),
+  };
 }
 
-// --- beats: one narratable thing each, folded and attached -------------------
+// What happened in one session, each thing scored by how much it mattered.
+function gather(events, ctx) {
+  const N = ctx.name;
+  const { who } = ctx;
+  const highlights = [];
+  const minor = [];
+  const kills = new Map(); // name -> { name, n, t, rare, rank }
+  const turnins = []; // { t, title, npc }
+  let lastKill = null;
 
-function beatsFor(ch, ctx) {
-  const items = ch.items;
-  const beats = [];
-  const consumed = new Set();
-  const once = new Set(); // "vendor:Brother Danil" and the like, mentioned once per chapter
-  const lootTimes = new Map(); // item id -> [t] of `loot` events, so loot windows do not repeat them
-  for (const { e } of items) if (e.e === 'loot' && e.id != null) lootTimes.set(e.id, [...(lootTimes.get(e.id) || []), e.t]);
-  const detail = new Map(); // qid/title -> latest quest_detail seen in this chapter
+  const complete = new Map(); // qid/title -> quest_complete event
+  const detail = new Map();
+  for (const e of events) {
+    const key = e.qid ?? e.title;
+    if (e.e === 'quest_complete' && key != null) complete.set(key, e);
+    if (e.e === 'quest_detail' && key != null) detail.set(key, e);
+  }
 
-  const last = () => beats[beats.length - 1] ?? null;
-  const push = (b) => { beats.push(b); return b; };
-  const ahead = (i, seconds, pred) => {
-    for (let j = i + 1; j < items.length; j++) {
-      const { e } = items[j];
-      if (e.t - items[i].e.t > seconds) break;
-      if (!consumed.has(j) && pred(e)) return j;
-    }
-    return -1;
-  };
-  const isFirstChapterEvent = (i) => i === 0;
-  // The kill this loot came from: the latest hunt of that creature (any creature when
-  // unnamed) within the window, looking past a close-call fight beat in between.
-  const killBefore = (t, name) => {
-    for (let k = beats.length - 1; k >= 0 && k >= beats.length - 3; k--) {
-      const b = beats[k];
-      if (b.kind === 'kill' && (!name || b.name === name) && t - b.lastT <= LOOT_WINDOW) return b;
-      if (b.kind !== 'fight' && b.kind !== 'kill') return null;
-    }
-    return null;
-  };
-
-  for (let i = 0; i < items.length; i++) {
-    if (consumed.has(i)) continue;
-    const { s, e } = items[i];
-    const base = { t: e.t, e, s, kind: e.e };
+  for (const e of events) {
     switch (e.e) {
-      case 'session_start': {
-        const first = ch.index === 0 && isFirstChapterEvent(i);
-        if (first) push({ ...base, sentence: `${ctx.name}'s story begins in ${placeOf(e)}.`, shape: 'begin' });
-        else if (isFirstChapterEvent(i)) push({ ...base, sentence: `${ctx.name} was back, starting out in ${placeOf(e)}.`, shape: 'back' });
-        else push({ ...base, clause: `picked things up again in ${placeOf(e)}` });
-        break;
-      }
-      case 'zone': {
-        if (isFirstChapterEvent(i) && e.z) { push({ ...base, clause: `${pick(ctx, 'cross', ['crossed into', 'arrived in', 'made their way into'])} ${e.z}` }); break; }
-        if (!e.sz) break;
-        if (ahead(i, LOOT_WINDOW, (x) => x.e === 'explore' && x.area === e.sz) >= 0) break; // the discovery says it better
-        push({ ...base, clause: `${pick(ctx, 'move', ['headed over to', 'made for', 'wandered into'])} ${e.sz}` });
-        break;
-      }
-      case 'explore':
-        if (!e.area) break;
-        push({ ...base, clause: pick(ctx, 'explore', [`discovered ${e.area}`, `found their way to ${e.area}`, `set foot in ${e.area} for the first time`]) });
-        break;
-      case 'quest_detail': {
-        if (e.qid != null) detail.set(e.qid, e);
-        if (e.title) detail.set(e.title, e);
-        const qid = e.qid ?? e.title;
-        if (qid == null) break;
-        if (ahead(i, 120, (x) => x.e === 'quest_accept' && (x.qid ?? x.title) === qid) >= 0) break;
-        if (ahead(i, 120, (x) => x.e === 'quest_turnin' && (x.qid ?? x.title) === qid) >= 0) break;
-        if (!e.title) break;
-        push({ ...base, clause: e.npc ? `heard ${e.npc} out about ${e.title} and left it for another day` : `heard about ${e.title} and left it for another day` });
-        break;
-      }
-      case 'quest_accept': {
-        const title = e.title ?? questTitle(ctx, e.qid) ?? (e.qid != null ? `quest ${e.qid}` : null);
-        if (!title) break;
-        const giver = detail.get(e.qid ?? e.title)?.npc ?? ctx.questNpc.get(e.qid ?? e.title)?.giver ?? null;
-        const clause = giver
-          ? pick(ctx, 'accept', [`took ${poss(giver)} word for it and signed on for ${title}`, `agreed to help ${giver} with ${title}`, `took on ${title} for ${giver}`, `picked up ${title} from ${giver}`])
-          : pick(ctx, 'accept0', [`took on ${title}`, `signed up for ${title}`]);
-        push({ ...base, clause });
-        break;
-      }
-      case 'quest_progress': {
-        const qid = e.qid ?? e.title;
-        if (!e.title || ahead(i, 30, (x) => x.e === 'quest_turnin' && (x.qid ?? x.title) === qid) >= 0) break;
-        push({ ...base, clause: e.npc ? `checked in with ${e.npc} about ${e.title}, but the job was not done yet` : `checked on ${e.title}, but the job was not done yet` });
-        break;
-      }
-      case 'quest_complete':
-        break; // the turn-in tells it, with this event's words
-      case 'quest_turnin': {
-        const title = e.title ?? questTitle(ctx, e.qid) ?? (e.qid != null ? `quest ${e.qid}` : null);
-        if (!title) break;
-        const qid = e.qid ?? e.title;
-        // The completion dialog just before carries who took it and what they said.
-        let complete = null;
-        for (let j = i - 1; j >= 0 && e.t - items[j].e.t <= 120; j--) {
-          const x = items[j].e;
-          if (x.e === 'quest_complete' && (x.qid ?? x.title) === qid) { complete = x; break; }
-        }
-        const npc = complete?.npc ?? ctx.questNpc.get(qid)?.turnIn ?? null;
-        const text = complete?.text ?? ctx.questNpc.get(qid)?.text ?? null;
-        const b = push({ ...base, kind: 'quest_turnin', title, npc, xp: e.xp ?? null, money: e.money ?? null, items: [], quote: null });
-        if (text) b.quote = { text: cleanQuote(text, ctx), npc };
-        break;
-      }
-      case 'quest_abandon':
-        if (e.title) push({ ...base, clause: pick(ctx, 'abandon', [`gave up on ${e.title}`, `dropped ${e.title}`, `let ${e.title} go`]) });
-        break;
       case 'kill': {
         if (!e.name) break;
-        const b = last();
-        if (b && b.kind === 'kill' && b.name === e.name && e.t - b.lastT <= FOLD_WINDOW) { b.count++; b.lastT = e.t; break; }
-        push({ ...base, name: e.name, npcId: e.npcId ?? null, count: 1, lastT: e.t, items: [], rare: isRare(e, ctx), rank: e.rank ?? null });
+        const k = kills.get(e.name) || { name: e.name, n: 0, t: e.t, rare: isRare(e, ctx), rank: e.rank ?? null };
+        k.n++;
+        kills.set(e.name, k);
+        lastKill = { name: e.name, t: e.t };
         break;
       }
-      case 'loot': {
-        if (!e.name && e.id == null) break;
-        const item = itemPhrase(e, ctx);
-        const b = last();
-        const src = e.src || 'loot';
-        const k = src === 'loot' ? killBefore(e.t, null) : null;
-        if (k) { k.items.push(item); break; }
-        if (b && b.kind === 'quest_turnin' && src !== 'bought' && e.t - b.t <= LOOT_WINDOW) { b.items.push(item); break; }
-        if (b && b.kind === 'vendor' && src === 'bought' && e.t - b.t <= SHOP_WINDOW) { b.items.push(item); break; }
-        if (b && b.kind === 'loot' && b.src === src && e.t - b.lastT <= LOOT_WINDOW) { b.items.push(item); b.lastT = e.t; break; }
-        push({ ...base, src, items: [item], lastT: e.t });
+      case 'quest_turnin': {
+        const key = e.qid ?? e.title;
+        const title = e.title ?? ctx.questInfo.get(e.qid)?.title ?? null;
+        if (!title) break;
+        turnins.push({ t: e.t, title, npc: complete.get(key)?.npc ?? ctx.questInfo.get(key)?.turnIn ?? null });
         break;
       }
-      case 'loot_window': {
-        // Only what no `loot` event already told: mostly chests, herbs and ore.
-        const fresh = (e.items || []).filter((it) => !(lootTimes.get(it.id) || []).some((t) => Math.abs(t - e.t) <= LOOT_WINDOW));
-        if (!fresh.length) break;
-        const phrases = fresh.map((it) => itemPhrase({ id: it.id, name: it.name, n: it.n }, ctx));
-        const src = (e.sources || [])[0] || {};
-        const k = src.kind === 'Creature' ? killBefore(e.t, src.name ?? null) : null;
-        if (k) { k.items.push(...phrases); break; }
-        if (src.kind === 'GameObject' && src.name && fresh.length === 1 && fresh[0].name === src.name) push({ ...base, clause: `${pick(ctx, 'gather', ['gathered', 'picked'])} ${phrases[0]}` });
-        else if (src.kind === 'GameObject' && src.name) push({ ...base, clause: `opened ${article(src.name)} ${src.name} and found ${list(phrases)}` });
-        else push({ ...base, clause: `found ${list(phrases)} lying about` });
-        break;
-      }
-      case 'money':
-        break; // summed per chapter at the end
-      case 'vendor': {
-        if (!e.npc || once.has(`vendor:${e.npc}`)) break;
-        once.add(`vendor:${e.npc}`);
-        push({ ...base, npc: e.npc, items: [] });
-        break;
-      }
-      case 'trainer': {
-        if (!e.npc || once.has(`trainer:${e.npc}`)) break;
-        once.add(`trainer:${e.npc}`);
-        const learned = [];
-        for (let j = ahead(i, SHOP_WINDOW, (x) => x.e === 'learn' && x.what); j >= 0; j = ahead(j, SHOP_WINDOW, (x) => x.e === 'learn' && x.what)) { learned.push(items[j].e.what); consumed.add(j); }
-        push({ ...base, clause: learned.length ? `learned ${list(learned)} from ${e.npc}` : `dropped in on ${e.npc} for a lesson` });
-        break;
-      }
-      case 'learn': {
-        if (!e.what) break;
-        const b = last();
-        if (b && b.kind === 'learn' && e.t - b.t <= SHOP_WINDOW) { b.what.push(e.what); break; }
-        push({ ...base, what: [e.what] });
-        break;
-      }
-      case 'taxi':
-      case 'taxi_map': {
-        if (!e.npc || once.has(`taxi:${e.npc}`)) break;
-        once.add(`taxi:${e.npc}`);
-        const j = ahead(i, SHOP_WINDOW, (x) => x.e === 'flight' && x.to);
-        if (j >= 0) {
-          consumed.add(j);
-          const f = items[j].e;
-          push({ ...base, clause: f.cost ? `paid ${e.npc} ${moneyText(f.cost)} for a flight to ${f.to}` : `took a flight from ${e.npc} to ${f.to}` });
-        } else push({ ...base, clause: `checked the flight paths with ${e.npc}` });
-        break;
-      }
-      case 'flight':
-        if (e.to) push({ ...base, clause: `took a flight to ${e.to}` });
-        break;
-      case 'bind':
-        if (e.where) push({ ...base, clause: pick(ctx, 'bind', [`set their hearthstone at ${e.where}`, `made ${e.where} home for now`]) });
-        break;
-      case 'equip': {
-        if (!e.id || !e.name) break;
-        const slot = SLOT_NAMES[e.slot] ? SLOT_NAMES[e.slot].toLowerCase() : null;
-        const clause = e.was
-          ? `swapped ${article(e.was)} ${e.was} for ${article(e.name)} ${e.name}`
-          : pick(ctx, 'equip', [`put on ${article(e.name)} ${e.name}${slot ? ` (${slot})` : ''}`, `strapped on ${article(e.name)} ${e.name}`]);
-        push({ ...base, clause });
-        break;
-      }
-      case 'skill': {
-        const m = /skill in (.+?) has increased to (\d+)/i.exec(e.text || '');
-        if (!m) break;
-        const b = last();
-        if (b && b.kind === 'skill' && b.skill === m[1]) { b.rank = Number(m[2]); break; }
-        push({ ...base, skill: m[1], rank: Number(m[2]) });
+      case 'death': {
+        const killer = e.killer ?? null;
+        const near = e.sz ? ` at ${e.sz}` : '';
+        highlights.push({ t: e.t, score: 100, say: (c) => say(c, 'death', killer ? [
+          `${killer} killed ${who.obj}${near}, a hard lesson.`,
+          `Then ${killer} got the better of ${who.obj}${near}.`,
+          `${cap(who.subj)} fell to ${killer}${near}.`,
+          `${cap(near ? e.sz : 'The road')} was where ${killer} killed ${who.obj}.`,
+        ] : [
+          `${cap(who.subj)} died${near}, a hard lesson.`,
+          `Death found ${who.obj}${near}.`,
+        ]) });
         break;
       }
       case 'level':
-        if (e.level != null) push({ ...base, level: e.level });
+        if (e.level == null) break;
+        highlights.push({ t: e.t, score: 70, say: (c) => say(c, 'level', [
+          `${cap(who.subj)} reached level ${e.level} along the way.`,
+          `That was enough for level ${e.level}.`,
+          `By the time ${who.subj} was done, ${who.subj} had reached level ${e.level}.`,
+          `Level ${e.level} came somewhere in there.`,
+        ]) });
         break;
-      case 'death':
-        push({ ...base, killer: e.killer ?? null, by: e.by && e.by !== 'Melee' ? e.by : null });
+      case 'loot': {
+        const q = e.q ?? ctx.world?.byItem?.get(e.id)?.quality ?? null;
+        if (!e.name || !QUALITY_ADJ[q] || (e.src && e.src !== 'loot')) break;
+        const item = `${article(QUALITY_ADJ[q])} ${QUALITY_ADJ[q]} ${e.name}`;
+        const from = lastKill && e.t - lastKill.t <= LOOT_WINDOW ? lastKill.name : null;
+        highlights.push({ t: e.t, score: 60 + q * 2, say: (c) => say(c, 'find', from ? [
+          `${article(from, true)} ${from} left ${item} behind.`,
+          `${cap(who.subj)} came away from ${article(from)} ${from} with ${item}.`,
+          `Out of ${article(from)} ${from} came ${item}.`,
+        ] : [
+          `${cap(who.subj)} came away with ${item}.`,
+          `${cap(item)} turned up along the way.`,
+        ]) });
+        break;
+      }
+      case 'equip':
+        if (!e.id || !e.name) break;
+        highlights.push({ t: e.t, score: 50, say: (c) => say(c, 'equip', e.was ? [
+          `${cap(who.poss)} ${e.was} gave way to ${article(e.name)} ${e.name}.`,
+          `${cap(who.subj)} swapped the ${e.was} for ${article(e.name)} ${e.name}.`,
+        ] : [
+          `${cap(who.subj)} strapped on ${article(e.name)} ${e.name}.`,
+          `${article(e.name, true)} ${e.name} went into ${who.poss} kit.`,
+          `Later ${who.subj} put on ${article(e.name)} ${e.name}.`,
+        ]) });
+        break;
+      case 'explore':
+        if (!e.area) break;
+        highlights.push({ t: e.t, score: 45, say: (c) => say(c, 'explore', [
+          `${e.area} was new ground.`,
+          `${cap(who.subj)} set foot in ${e.area} for the first time.`,
+          `By the time ${who.subj} reached ${e.area}, it was somewhere ${who.subj} had never been.`,
+          `Later the road brought ${who.obj} to ${e.area}.`,
+        ]) });
         break;
       case 'npc': {
-        if (!e.name || !isRare(e, ctx) || once.has(`rare:${e.name}`)) break;
-        once.add(`rare:${e.name}`);
-        push({ ...base, kind: 'rare', name: e.name, desc: rareDesc(e, ctx) });
+        if (!e.name || !isRare(e, ctx) || highlights.some((h) => h.rare === e.name)) break;
+        const desc = rareDesc(e, ctx);
+        highlights.push({ t: e.t, score: 40, rare: e.name, say: (c) => say(c, 'rare', [
+          `${e.name}, ${desc}, was lurking${e.sz ? ` in ${e.sz}` : ' nearby'}.`,
+          `${cap(who.subj)} caught sight of ${e.name}, ${desc}.`,
+          `Somewhere${e.sz ? ` in ${e.sz}` : ' close by'} ${e.name} was about, ${desc}.`,
+        ]) });
         break;
       }
       case 'fight': {
-        if (!e.close) break;
-        const who = [...new Set((e.enemies || []).map((x) => x.name).filter(Boolean))];
-        if (!who.length) break;
-        push({ ...base, enemies: who, minHp: e.minHp ?? null });
+        if (!e.close || e.kills) break; // a close call that ended in a kill is told by the kills
+        const enemy = (e.enemies || []).map((x) => x.name).find(Boolean);
+        if (!enemy) break;
+        highlights.push({ t: e.t, score: 35, say: (c) => say(c, 'close', [
+          `${article(enemy, true)} ${enemy} came close to finishing ${who.obj}.`,
+          `It was a near thing with ${article(enemy)} ${enemy}.`,
+        ]) });
         break;
       }
-      case 'gossip': {
-        if (!e.npc || !e.text) break;
-        push({ ...base, kind: 'quote', speaker: e.npc, text: cleanQuote(e.text, ctx), verb: pick(ctx, 'gossip', ['greeted them with', 'had a word for them:', 'offered']) , style: 'gossip' });
-        break;
-      }
-      case 'speech': {
-        if (!e.speaker || !e.text) break;
-        push({ ...base, kind: 'quote', speaker: e.speaker, text: cleanQuote(e.text, ctx), verb: pick(ctx, `speech:${e.kind}`, SPEECH_VERBS[e.kind] || ['said', 'remarked']), style: 'speech' });
-        break;
-      }
-      case 'book':
-        push({ ...base, clause: pick(ctx, 'book', [`stopped to read ${e.title ?? 'a plaque'}`, `paused over ${e.title ?? 'some writing'}`, `took a moment with ${e.title ?? 'a text'}`]) });
-        break;
       case 'mark':
-        if (e.note) push({ ...base, note: cleanQuote(e.note, ctx), markKind: e.kind });
+        if (!e.note) break;
+        highlights.push({ t: e.t, score: 20, say: (c) => say(c, 'mark', [
+          `${cap(who.subj)} noticed ${lower(cleanQuote(e.note, c))}.`,
+          `One thing stayed with ${who.obj}: ${lower(cleanQuote(e.note, c))}.`,
+        ]) });
         break;
-      case 'duel':
-        if (e.with) push({ ...base, clause: `crossed swords with ${e.with} in a duel` });
+      case 'vendor':
+        if (!e.npc) break;
+        minor.push({ t: e.t, say: (c) => say(c, 'vendor', [`${cap(who.subj)} stopped by ${possessive(e.npc)} wares.`, `${e.npc} had ${who.obj} as a customer.`]) });
+        break;
+      case 'trainer':
+        if (!e.npc) break;
+        minor.push({ t: e.t, say: (c) => say(c, 'trainer', [`${cap(who.subj)} dropped in on ${e.npc} for a lesson.`, `${e.npc} had a lesson for ${who.obj}.`]) });
+        break;
+      case 'flight':
+        if (!e.to) break;
+        minor.push({ t: e.t, say: (c) => say(c, 'flight', [`${cap(who.subj)} took a flight to ${e.to}.`, `A gryphon carried ${who.obj} to ${e.to}.`]) });
+        break;
+      case 'money':
+        if (!Number.isFinite(e.delta) || e.delta <= 0) break;
+        minor.push({ t: e.t, say: (c) => say(c, 'money', [`${cap(who.subj)} came away with ${coin(e.delta)}.`, `${cap(coin(e.delta))} found its way into ${who.poss} purse.`]) });
         break;
       default:
-        break; // stats, bags, talents, chat, screenshots, xp and the rest are not story
+        break; // stats, bags, talents, chat, screenshots, xp and the rest are not for the journal
     }
   }
-  const net = items.reduce((n, { e }) => n + (e.e === 'money' && Number.isFinite(e.delta) ? e.delta : 0), 0);
-  const anyMoney = items.some(({ e }) => e.e === 'money' && Number.isFinite(e.delta));
-  if (anyMoney && beats.length) ch.money = net;
-  return beats;
+
+  if (turnins.length === 1) {
+    const [{ t, title, npc }] = turnins;
+    highlights.push({ t, score: 80, say: (c) => say(c, 'turnin', npc ? [
+      `${cap(who.subj)} handed ${title} in to ${npc}.`,
+      `${npc} took ${title} off ${who.poss} hands.`,
+      `${title} was done, and ${npc} said as much.`,
+      `Later ${who.subj} brought ${title} back to ${npc}.`,
+    ] : [
+      `${cap(who.subj)} saw ${title} through.`,
+      `${title} was done by the end of it.`,
+    ]) });
+  } else if (turnins.length > 1) {
+    const t = turnins.at(-1).t;
+    const n = SMALL[turnins.length] ?? String(turnins.length);
+    const names = listOf(turnins.map((q) => q.title), 3);
+    const npcs = [...new Set(turnins.map((q) => q.npc).filter(Boolean))];
+    const to = npcs.length === 1 ? ` to ${npcs[0]}` : '';
+    highlights.push({ t, score: 85, say: (c) => say(c, 'turnins', [
+      `${cap(n)} quests came off ${who.poss} hands${to}: ${names}.`,
+      `${cap(who.subj)} handed in ${n} quests${to}, ${names} among them.`,
+      `By the end ${names} were done${to ? `, all${to}` : ''}.`,
+    ]) });
+  }
+  const hunted = [...kills.values()].sort((a, b) => b.n - a.n);
+  if (hunted.length) {
+    const t = hunted[0].t;
+    const total = hunted.reduce((n, k) => n + k.n, 0);
+    highlights.push({ t, score: 30 + Math.min(total, 20), say: (c) => say(c, 'kills', [
+      `${cap(who.subj)} felled ${killList(hunted)}.`,
+      `${cap(killList(hunted))} fell to ${who.obj}.`,
+      `Along the way ${who.subj} put down ${killList(hunted)}.`,
+    ]) });
+  }
+  const rares = highlights.filter((h) => h.rare).map((h) => h.rare);
+  return { highlights, minor, hunted, rares, bind: events.findLast?.((e) => e.e === 'bind' && e.where)?.where ?? null, died: events.some((e) => e.e === 'death') };
 }
 
-// --- rendering beats as sentences or clauses --------------------------------
+// The last line looks ahead from the quests still in the log.
+function closing(left, facts, s, ctx) {
+  const { who } = ctx;
+  if (left.length) {
+    const what = left.length === 1 ? left[0] : left.length === 2 ? `${left[0]} and ${left[1]}` : `${left[0]}, ${left[1]} and ${SMALL[left.length - 2] ?? left.length - 2} more`;
+    const many = left.length > 1;
+    return say(ctx, 'close', [
+      `${what} could wait for morning.`,
+      `That left ${what} still to see to.`,
+      `${cap(who.subj)} still had ${what} ahead of ${who.obj}.`,
+      `${what} ${many ? 'were' : 'was'} still waiting.`,
+    ]);
+  }
+  const rare = facts.rares.find((r) => !facts.hunted.some((k) => k.name === r));
+  if (rare) return say(ctx, 'close', [`${rare} was still out there somewhere.`, `Somewhere out there, ${rare} was still waiting.`]);
+  if (facts.bind) return say(ctx, 'close', [`${facts.bind} was home for now.`, `For now, home was ${facts.bind}.`]);
+  const last = [...(s.events || [])].reverse().find((e) => e.z || e.sz);
+  const place = last ? placeOf(last) : null;
+  if (place) return say(ctx, 'close', [`The road went on from ${place}.`, `${cap(place)} was where the ${timeOfDay(last.t)} ended.`]);
+  return say(ctx, 'close', [`Nothing was pressing.`, `There was nothing that could not wait.`]);
+}
 
-function render(b, ctx) {
+// --- one entry per finished storyline ------------------------------------------
+
+function storylineEntry(line, sessions, ctx) {
+  if (!line || !(line.total > 0) || line.done !== line.total) return null;
+  const quests = (line.quests || []).map((x) => x.q).filter(Boolean);
+  if (!quests.length) return null;
+  const ids = new Set(quests.map((q) => q.id));
+  const titles = new Set(quests.map((q) => q.n).filter(Boolean));
+  const mine = (e) => (e.qid != null && ids.has(e.qid)) || (e.qid == null && e.title && titles.has(e.title));
+  const all = [];
+  for (const s of sessions) for (const e of s.events || []) if (e && e.e && Number.isFinite(e.t)) all.push({ s, e });
+  all.sort((a, b) => a.e.t - b.e.t);
+  const accepts = all.filter(({ e }) => e.e === 'quest_accept' && mine(e));
+  const turnins = all.filter(({ e }) => e.e === 'quest_turnin' && mine(e));
+  const finale = quests[quests.length - 1];
+  const last = turnins.findLast?.(({ e }) => e.qid === finale.id || (e.qid == null && e.title === finale.n)) ?? turnins.at(-1);
+  if (!last) return null;
+  const first = accepts[0] ?? turnins[0];
+  const from = first.e.t;
+  const until = last.e.t;
   const N = ctx.name;
-  switch (b.kind) {
-    case 'kill': {
-      const verb = pick(ctx, 'kill', KILL_VERBS);
-      const who = b.rare ? `${b.name}, the ${RANKS[b.rank] ?? 'rare'} one` : b.count > 1 ? `${b.count} ${b.name}` : `${article(b.name)} ${b.name}`;
-      const loot = b.items.length ? `${pick(ctx, 'lootjoin', LOOT_JOINS)} ${list(b.items)}` : '';
-      return { clause: `${verb} ${who}${loot}` };
-    }
-    case 'loot': {
-      const what = list(b.items);
-      if (b.src === 'bought') return { clause: `bought ${what}` };
-      if (b.src === 'received') return { clause: `was handed ${what}` };
-      if (b.src === 'created') return { clause: `made ${what}` };
-      return { clause: pick(ctx, 'loot', [`picked up ${what}`, `came across ${what}`, `pocketed ${what}`]) };
-    }
-    case 'quest_turnin': {
-      const reward = [];
-      if (b.xp) reward.push(`${b.xp} experience`);
-      if (b.money) reward.push(moneyText(b.money));
-      if (b.items.length) reward.push(...b.items);
-      const forWhat = reward.length ? ` for ${list(reward)}` : '';
-      const clause = b.npc
-        ? pick(ctx, 'turnin', [`handed ${b.title} back to ${b.npc}${forWhat}`, `reported back to ${b.npc} with ${b.title} done${forWhat}`, `turned ${b.title} in to ${b.npc}${forWhat}`])
-        : pick(ctx, 'turnin0', [`turned in ${b.title}${forWhat}`, `finished ${b.title}${forWhat}`]);
-      let tail = null;
-      if (b.quote?.text) {
-        const q = b.quote.text;
-        const said = b.quote.npc ? `said ${b.quote.npc}` : 'came the reply';
-        tail = /[!?…]$/.test(q) ? `"${q}" ${said}.` : `"${q.replace(/\.$/, '')}," ${said}.`;
-      }
-      return { clause, tail, quote: Boolean(tail) };
-    }
-    case 'vendor': {
-      const verb = b.items.length ? pick(ctx, 'shop', ['stocked up at', 'did some shopping at']) : pick(ctx, 'browse', ['stopped by', 'looked over the wares at']);
-      return { clause: `${verb} ${poss(b.npc)}${b.items.length ? `, coming away with ${list(b.items)}` : ''}` };
-    }
-    case 'learn': return { clause: `learned ${list(b.what)}` };
-    case 'skill': return { clause: pick(ctx, 'skill', [`pushed their ${b.skill} up to ${b.rank}`, `got a little better at ${b.skill} (${b.rank} now)`]) };
-    case 'level': return { sentence: pick(ctx, 'level', [`${N} hit level ${b.level}.`, `That was enough for level ${b.level}.`, `Level ${b.level} came somewhere in there.`]), shape: 'level' };
-    case 'death': {
-      if (!b.killer) return { sentence: pick(ctx, 'death0', [`${N} died.`, `Then ${N} died, and that was that.`]), shape: 'death' };
-      const by = b.by ? ` with ${b.by}` : '';
-      return { sentence: pick(ctx, 'death', [`${b.killer} killed ${N}${by}, and that was that.`, `${b.killer} got the better of ${N}${by}.`, `${N} fell to ${b.killer}${by}.`]), shape: 'death' };
-    }
-    case 'rare': return { sentence: pick(ctx, 'rare', [`${b.name}, ${b.desc}, was lurking nearby.`, `${N} caught sight of ${b.name}, ${b.desc}.`]), shape: 'rare' };
-    case 'fight': {
-      const who = list(b.enemies);
-      const hp = b.minHp != null ? `${b.minHp}%` : 'very little';
-      return { sentence: pick(ctx, 'close', [`It was a close thing with ${who}: down to ${hp} health before it was over.`, `${who} nearly had them, with only ${hp} health to spare.`]), shape: 'close' };
-    }
-    case 'quote': {
-      if (b.style === 'gossip') return { sentence: `${b.speaker} ${b.verb} "${b.text}"`, shape: 'quote', quote: true };
-      return { sentence: pick(ctx, 'quoteshape', [`${b.speaker} ${b.verb}, "${b.text}"`, `From ${b.speaker}: "${b.text}"`]), shape: 'quote', quote: true };
-    }
-    case 'mark': {
-      const lead = { shot: 'Somewhere here was a shot worth keeping', funny: 'Something funny happened here', lore: 'A lore beat here', redo: 'A moment to redo' }[b.markKind] ?? 'A note from the road';
-      return { sentence: `${lead}: "${b.note}".`, shape: 'mark' };
-    }
-    default:
-      if (b.sentence) return { sentence: b.sentence, shape: b.shape ?? b.kind };
-      return { clause: b.clause };
+  const { who } = ctx;
+  const q0 = quests[0];
+  const giver = ctx.questInfo.get(q0.id)?.giver ?? ctx.questInfo.get(q0.n)?.giver ?? all.find(({ e }) => e.e === 'quest_detail' && (e.qid === q0.id || e.title === q0.n) && e.npc)?.e.npc ?? null;
+  const start = placeOf(first.e);
+  const zones = [];
+  for (const z of [first.e.z, ...turnins.map(({ e }) => e.z), ...(line.zones || [])]) if (z && !zones.includes(z)) zones.push(z);
+  const deaths = all.filter(({ e }) => e.e === 'death' && e.t >= from && e.t <= until).map(({ e }) => e.killer).filter(Boolean);
+  const nDeaths = all.filter(({ e }) => e.e === 'death' && e.t >= from && e.t <= until).length;
+  const taker = all.find(({ e }) => e.e === 'quest_complete' && (e.qid === finale.id || e.title === finale.n) && e.t <= until && until - e.t <= 600)?.e
+    ?? null;
+  const npc = taker?.npc ?? ctx.questInfo.get(finale.id)?.turnIn ?? ctx.questInfo.get(finale.n)?.turnIn ?? null;
+  const reward = taker?.text ?? ctx.questInfo.get(finale.id)?.text ?? ctx.questInfo.get(finale.n)?.text ?? null;
+
+  const sentences = [];
+  sentences.push(say(ctx, 'sbegin', giver ? [
+    `${line.name} began for ${N} in ${start}, with ${giver}.`,
+    `${giver}, in ${start}, was where ${line.name} started for ${N}.`,
+    `${N} first took up ${line.name} from ${giver} in ${start}.`,
+  ] : [
+    `${line.name} began for ${N} in ${start}.`,
+    `${N} first took up ${line.name} in ${start}.`,
+  ]));
+  if (zones.length > 1) sentences.push(say(ctx, 'sled', [`From there it led through ${listOf(zones.slice(1))}.`, `The trail ran on to ${listOf(zones.slice(1))}.`]));
+  else if (quests.length > 1) sentences.push(say(ctx, 'sled', [`${cap(SMALL[quests.length] ?? String(quests.length))} chapters kept ${who.obj} in ${zones[0] ?? start}.`, `All ${quests.length} chapters stayed within ${zones[0] ?? start}.`]));
+  if (nDeaths) {
+    const by = deaths.length ? `, to ${listOf([...new Set(deaths)])}` : '';
+    sentences.push(say(ctx, 'scost', [
+      `It cost ${who.obj} ${nDeaths === 1 ? 'one death' : `${SMALL[nDeaths] ?? nDeaths} deaths`}${by}.`,
+      `${cap(who.subj)} died ${nDeaths === 1 ? 'once' : `${SMALL[nDeaths] ?? nDeaths} times`} along the way${by}.`,
+    ]));
   }
+  sentences.push(say(ctx, 'send', npc ? [
+    `It ended with ${finale.n}, handed in to ${npc}.`,
+    `${npc} took the last chapter, ${finale.n}, off ${who.poss} hands.`,
+    `The last of it was ${finale.n}, and ${npc} closed the matter.`,
+  ] : [
+    `It ended with ${finale.n}.`,
+    `${finale.n} was the last of it.`,
+  ]));
+  if (reward) {
+    const quote = cleanQuote(reward, ctx);
+    if (quote && words(quote) <= MAX_WORDS - 4) sentences.push(say(ctx, 'squote', [`"${trimDot(quote)}," ${npc ? `said ${npc}` : 'came the word'}.`, `${npc ? `${npc}'s` : 'The'} parting words: "${quote}"`]));
+  }
+  const m = ctx.moment(last.s, last.e) || {};
+  return { id: `story-${line.id ?? slug(line.name)}`, kind: 'storyline', t: until, session: last.s.id, footage: m.footage ?? null, title: `The end of ${line.name}`, text: sentences.join(' ') };
 }
 
-// --- paragraphs: 2–6 beats each, prose not a log ----------------------------
+// --- one entry per zone with nothing left in it --------------------------------
 
-function paragraphsFor(ch, ctx) {
-  ctx.lastShape = null; // a chapter opens plainly, with the name
-  ctx.openerIdx = 0;
-  const groups = [];
-  let cur = [];
-  let lastT = null;
-  for (const b of ch.beats) {
-    const breaker = cur.length >= PARAGRAPH_MAX
-      || (cur.length >= 2 && lastT != null && b.t - lastT > PARAGRAPH_GAP)
-      || (cur.length >= 2 && (b.kind === 'death' || b.kind === 'explore' || b.kind === 'session_start'));
-    if (breaker) { groups.push(cur); cur = []; }
-    cur.push(b);
-    lastT = b.t;
-  }
-  if (cur.length) groups.push(cur);
-  // A lone trailing beat reads better tacked onto the paragraph before it.
-  if (groups.length > 1 && groups.at(-1).length === 1) groups[groups.length - 2].push(...groups.pop());
-
-  const out = [];
-  for (const group of groups) {
-    const rendered = [];
-    let quoted = false;
-    for (const b of group) {
-      const r = render(b, ctx);
-      if (r.quote) { if (quoted) continue; quoted = true; } // one quote per paragraph
-      rendered.push({ b, ...r });
+function zoneEntries(sessions, ctx) {
+  const zones = new Map(); // zone -> { found: Map, done: Map, areas: Set, deaths: [], kills: Map, rares: Set, last }
+  for (const s of sessions) {
+    for (const e of s.events || []) {
+      if (!e || !e.z || !Number.isFinite(e.t)) continue;
+      const z = zones.get(e.z) || { name: e.z, found: new Map(), done: new Map(), areas: new Set(), deaths: [], kills: new Map(), rares: new Set(), last: null };
+      zones.set(e.z, z);
+      const key = e.qid ?? e.title;
+      if (['quest_detail', 'quest_accept', 'quest_turnin'].includes(e.e) && key != null) z.found.set(key, e.title ?? key);
+      if (e.e === 'quest_turnin' && key != null) { z.done.set(key, e.title ?? key); z.last = { s, e }; }
+      if (e.e === 'explore' && e.area) z.areas.add(e.area);
+      if (e.e === 'death') z.deaths.push(e.killer ?? null);
+      if (e.e === 'kill' && e.name) z.kills.set(e.name, (z.kills.get(e.name) || 0) + 1);
+      if (e.e === 'npc' && e.name && isRare(e, ctx)) z.rares.add(e.name);
     }
-    if (!rendered.length) continue;
-    const sentences = compose(rendered, ctx);
-    const first = group[0];
-    const m = ctx.moment(first.s, first.e) || {};
-    out.push({
-      text: sentences.join(' '),
-      t: first.t,
-      session: first.s?.id ?? null,
-      footage: m.footage ?? null,
-      kinds: group.map((b) => b.e.e),
-    });
   }
-  if (out.length && ch.money != null) {
-    const d = ch.money;
-    const line = d === 0
-      ? 'The purse ended up exactly where it started.'
-      : pick(ctx, 'money', [`All told, the purse came out ${moneyText(d)} ${d > 0 ? 'heavier' : 'lighter'}.`, `By the end of it ${ctx.name} was ${moneyText(d)} ${d > 0 ? 'richer' : 'poorer'}.`]);
-    out[out.length - 1].text += ` ${line}`;
+  const out = [];
+  for (const z of zones.values()) {
+    if (z.done.size < ZONE_MIN_QUESTS || !z.last) continue;
+    if ([...z.found.keys()].some((k) => !z.done.has(k))) continue;
+    const { who } = ctx;
+    const n = SMALL[z.done.size] ?? String(z.done.size);
+    const sentences = [say(ctx, 'zdone', [
+      `${z.name} had nothing left to ask of ${who.obj}: ${n} quests, all seen through.`,
+      `By the time ${who.subj} was done with ${z.name}, ${n} quests stood finished.`,
+      `${cap(n)} quests, and ${z.name} was done with.`,
+    ])];
+    if (z.areas.size) sentences.push(say(ctx, 'zareas', [`${cap(who.subj)} had walked ${listOf([...z.areas], 3)}.`, `${cap(listOf([...z.areas], 3))} were ground ${who.subj} had covered.`]));
+    const top = [...z.kills.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (z.deaths.length) {
+      const killers = [...new Set(z.deaths.filter(Boolean))];
+      sentences.push(say(ctx, 'zcost', [`The place cost ${who.obj} ${z.deaths.length === 1 ? 'one death' : `${SMALL[z.deaths.length] ?? z.deaths.length} deaths`}${killers.length ? `, to ${listOf(killers, 2)}` : ''}.`, `${killers.length ? listOf(killers, 2) : 'Something there'} had killed ${who.obj} ${z.deaths.length === 1 ? 'once' : `${SMALL[z.deaths.length] ?? z.deaths.length} times`}.`]));
+    } else if (top) {
+      sentences.push(say(ctx, 'zkills', [`${cap(countOf(top[1], top[0]))} had fallen to ${who.obj} there, more than anything else.`, `Mostly it had been ${countOf(top[1], top[0])}.`]));
+    } else if (z.rares.size) {
+      sentences.push(say(ctx, 'zrare', [`${listOf([...z.rares], 2)} had crossed ${who.poss} path there.`]));
+    }
+    const m = ctx.moment(z.last.s, z.last.e) || {};
+    out.push({ id: `zone-${slug(z.name)}`, kind: 'zone', t: z.last.e.t, session: z.last.s.id, footage: m.footage ?? null, title: `${z.name}, finished`, text: sentences.join(' ') });
   }
   return out;
 }
 
-// Turns rendered beats into sentences, never repeating the previous shape.
-function compose(rendered, ctx) {
-  const out = [];
-  let i = 0;
-  let first = true;
-  while (i < rendered.length) {
-    const r = rendered[i];
-    if (r.sentence) { out.push(r.sentence); ctx.lastShape = r.shape; i++; first = false; continue; }
-    const clauses = [r.clause];
-    if (rendered[i + 1]?.clause && !r.tail && !rendered[i + 1].tail) clauses.push(rendered[i + 1].clause);
-    const opener = chooseOpener(ctx, clauses.length, first);
-    const used = clauses.slice(0, opener.n);
-    out.push(opener.make(ctx.name, used));
-    if (r.tail && opener.n === 1) out.push(r.tail);
-    ctx.lastShape = opener.shape;
-    i += opener.n;
-    first = false;
-  }
-  return out;
-}
+// --- sentences ------------------------------------------------------------------
 
-function chooseOpener(ctx, available, named) {
-  for (let k = 0; k < OPENERS.length; k++) {
-    const idx = (ctx.openerIdx + k) % OPENERS.length;
-    const o = OPENERS[idx];
-    if (o.shape === ctx.lastShape || o.n > available || (named && !o.named)) continue;
-    ctx.openerIdx = idx + 1;
-    return o;
-  }
-  return OPENERS[0];
-}
-
-// --- facts ------------------------------------------------------------------
-
-function factsFor(ch) {
-  const f = { kills: 0, quests: 0, drops: 0, deaths: 0, levels: [] };
-  for (const { e } of ch.items) {
-    if (e.e === 'kill') f.kills++;
-    else if (e.e === 'quest_turnin') f.quests++;
-    else if (e.e === 'loot' && (e.src || 'loot') === 'loot') f.drops += e.n || 1;
-    else if (e.e === 'death') f.deaths++;
-    else if (e.e === 'level' && e.level != null) f.levels.push(e.level);
-  }
-  return f;
-}
-
-// --- words ------------------------------------------------------------------
-
-// Rotates through a pool so neighbouring sentences never share a verb.
-function pick(ctx, key, pool) {
+// Picks the next shape from the pool, never opening the way the previous
+// sentence did (across entries too), and never longer than MAX_WORDS.
+function say(ctx, key, pool) {
   const n = ctx.counters[key] = (ctx.counters[key] ?? -1) + 1;
-  return pool[n % pool.length];
+  const fits = (s) => words(s) <= MAX_WORDS;
+  let choice = null;
+  for (let k = 0; k < pool.length; k++) {
+    const s = pool[(n + k) % pool.length];
+    if (firstWord(s) !== ctx.lastFirst && fits(s)) { choice = s; break; }
+  }
+  if (!choice) choice = pool.find((s) => fits(s)) ?? pool.slice().sort((a, b) => words(a) - words(b))[0];
+  ctx.lastFirst = firstWord(choice);
+  return choice;
 }
 
-function itemPhrase(e, ctx) {
-  const name = e.name ?? `item ${e.id}`;
-  const q = e.q ?? ctx.world?.byItem?.get(e.id)?.quality ?? null;
-  const adj = QUALITY_ADJ[q] ?? null;
-  const n = e.n || 1;
-  const noun = adj ? `${adj} ${name}` : name;
-  return n > 1 ? `${n} ${noun}` : `${article(noun)} ${noun}`;
+function words(s) {
+  return String(s).trim().split(/\s+/).filter(Boolean).length;
 }
 
-function article(word) {
-  return /^[aeiou]/i.test(String(word)) ? 'an' : 'a';
+function firstWord(s) {
+  return String(s).trim().split(/\s+/)[0]?.replace(/[^\w']/g, '').toLowerCase() ?? '';
 }
 
-function poss(name) {
+function killList(hunted) {
+  const parts = hunted.slice(0, 2).map((k) => (k.rare ? `${k.name}, the ${RANKS[k.rank] ?? 'rare'} one` : countOf(k.n, k.name)));
+  if (hunted.length > 2) parts.push(`${SMALL[hunted.length - 2] ?? hunted.length - 2} more kinds of creature`);
+  return listOf(parts);
+}
+
+function countOf(n, name) {
+  return n > 1 ? `${SMALL[n] ?? n} ${name}` : `${article(name)} ${name}`;
+}
+
+function listOf(parts, max = Infinity) {
+  const p = parts.length > max ? [...parts.slice(0, max - 1), `${SMALL[parts.length - max + 1] ?? parts.length - max + 1} more`] : parts;
+  if (p.length <= 1) return p[0] ?? '';
+  return `${p.slice(0, -1).join(', ')} and ${p.at(-1)}`;
+}
+
+function article(word, capital = false) {
+  const a = /^[aeiou]/i.test(String(word)) ? 'an' : 'a';
+  return capital ? cap(a) : a;
+}
+
+function possessive(name) {
   return /s$/i.test(name) ? `${name}'` : `${name}'s`;
 }
 
-function list(parts) {
-  if (parts.length <= 1) return parts[0] ?? '';
-  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+function cap(s) {
+  s = String(s);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function lower(s) {
+  s = String(s);
+  return /^[A-Z][a-z]/.test(s) && !/^[A-Z][a-z]+ [A-Z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
+function trimDot(s) {
+  return String(s).replace(/\.$/, '');
 }
 
 function placeOf(e) {
   return e.sz && e.sz !== e.z ? `${e.sz}, ${e.z}` : (e.z || e.sz || 'the world');
 }
 
-function questTitle(ctx, qid) {
-  if (qid == null) return null;
-  return ctx.codex?.quests?.find((q) => q.qid === qid)?.title ?? null;
+function placeIn(e) {
+  return e.sz && e.sz !== e.z ? `${e.sz} in ${e.z}` : (e.z || e.sz || 'the world');
+}
+
+// Money as coin, never as a number of copper.
+function coin(copper) {
+  const c = Math.round(Math.abs(copper ?? 0));
+  if (c >= 10000) return `${SMALL[Math.floor(c / 10000)] ?? Math.floor(c / 10000)} gold`;
+  if (c >= 1000) return 'a good handful of silver';
+  if (c >= 100) return 'a few silver';
+  return 'a little copper';
+}
+
+function timeOfDay(t) {
+  const h = new Date(t * 1000).getHours();
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 22) return 'evening';
+  return 'night';
+}
+
+function dayNumber(t, firstDay) {
+  if (!Number.isFinite(firstDay)) return 1;
+  const day = (x) => Math.floor(new Date(x * 1000).getTime() / 86400000);
+  return day(t) - day(firstDay) + 1;
+}
+
+function slug(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
 }
 
 function isRare(e, ctx) {
@@ -579,20 +546,20 @@ function rareDesc(e, ctx) {
   const n = ctx.world?.byNpc?.get(e.npcId ? `n${e.npcId}` : `s${e.name}`);
   const rank = RANKS[e.rank] ?? (n?.ranks?.map((r) => RANKS[r]).find((r) => r && /rare/.test(r))) ?? 'rare';
   const what = (e.family ?? n?.family ?? e.ctype ?? n?.ctype ?? '').toLowerCase();
-  const level = e.level ?? n?.maxLevel ?? null;
-  return `${article(rank)} ${rank}${what ? ` ${what}` : ''}${level != null && level !== -1 ? ` of level ${level}` : ''}`;
+  return `${article(rank)} ${rank}${what ? ` ${what}` : ''}`;
 }
 
 // NPC text with the game's tokens filled in, whitespace collapsed, trimmed.
 function cleanQuote(text, ctx) {
   const info = ctx.character?.info ?? ctx.character ?? {};
-  const sex = info.sex;
+  const female = (info.sex ?? ctx.character?.sex) === 'female' || info.sex === 3;
   let t = String(text)
     .replace(/\$[Bb]/g, ' ')
     .replace(/\$[Nn]/g, ctx.name)
     .replace(/\$[Cc]/g, String(info.class ?? 'friend').toLowerCase())
     .replace(/\$[Rr]/g, String(info.race ?? 'traveller').toLowerCase())
-    .replace(/\$[Gg]([^:;]*):([^;]*);/g, (_, m, f) => (sex === 3 ? f : m))
+    .replace(/\$[Gg]([^:;]*):([^;]*);/g, (_, m, f) => (female ? f : m))
+    .replace(/!/g, '.')
     .replace(/\s+/g, ' ')
     .trim();
   if (t.length > QUOTE_MAX) t = `${t.slice(0, QUOTE_MAX - 1).replace(/\s+\S*$/, '')}…`;

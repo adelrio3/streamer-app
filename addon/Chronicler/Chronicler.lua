@@ -268,6 +268,7 @@ local function startSession()
 			name = name, realm = realm, guid = playerGUID,
 			race = race, raceToken = raceToken, class = class, classToken = classToken,
 			faction = UnitFactionGroup("player"), level = UnitLevel("player"),
+			sex = UnitSex and UnitSex("player") or nil, -- 2 male, 3 female
 		},
 		build = { version = version, build = build, date = buildDate, interface = interface },
 		events = {},
