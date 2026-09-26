@@ -70,6 +70,7 @@ export function describe(e) {
     case 'movie': return 'Movie';
     case 'sync': return 'Sync flash';
     case 'mark': return `${MARK_NAMES[e.kind] ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`;
+    case 'voice': return e.text ?? '';
     default: return e.e;
   }
 }
@@ -107,6 +108,7 @@ const CATEGORY = {
   equip: 'character', gear: 'character', talents: 'character', stats: 'character', reputation: 'character', skills: 'character',
   bags: 'character', xp: 'character', rep: 'character', played: 'character',
   chat: 'social', group: 'social', duel: 'social', duel_end: 'social',
+  voice: 'voice',
 };
 
 export function category(e) {

@@ -7,8 +7,8 @@ import { CloudStore, measureClock } from '../web/lib/cloud.js';
 import { projectUrl } from '../netlify/functions/config.mjs';
 
 export function fakeClient() {
-  const tables = { sessions: [], recordings: [], clock_samples: [], settings: [], items: [], tracks: [], screenshots: [] };
-  const keys = { sessions: ['user_id', 'id'], recordings: ['user_id', 'name'], settings: ['user_id'], items: ['user_id', 'item_id'], tracks: ['user_id', 'session_id', 'chunk'], screenshots: ['user_id', 'name'] };
+  const tables = { sessions: [], recordings: [], clock_samples: [], settings: [], items: [], tracks: [], screenshots: [], voice: [], live: [] };
+  const keys = { sessions: ['user_id', 'id'], recordings: ['user_id', 'name'], settings: ['user_id'], items: ['user_id', 'item_id'], tracks: ['user_id', 'session_id', 'chunk'], screenshots: ['user_id', 'name'], voice: ['user_id', 'id'], live: ['user_id'] };
   const files = new Map();
   const query = (table) => {
     let rows = () => tables[table];

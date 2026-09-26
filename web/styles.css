@@ -28,7 +28,7 @@
   --teal: #5ce0c2;
   --q0: #9d9d9d; --q1: #ffffff; --q2: #1eff00; --q3: #0070dd; --q4: #a335ee; --q5: #ff8000; --q6: #e6cc80; --q7: #00ccff;
   --cat-quest: #f2cc6b; --cat-lore: #b48cf0; --cat-combat: #e06a5f; --cat-loot: #5cc8a8; --cat-mark: #6aa8e8; --cat-travel: #a0927b;
-  --cat-progress: #8fc15a; --cat-world: #c9a27a; --cat-economy: #e0b95a; --cat-character: #7fb7c9; --cat-social: #d78bb5;
+  --cat-progress: #8fc15a; --cat-world: #c9a27a; --cat-economy: #e0b95a; --cat-character: #7fb7c9; --cat-social: #d78bb5; --cat-voice: #f0a5d0;
   --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --side-w: 236px;
@@ -201,7 +201,7 @@ details > summary { cursor: pointer; color: var(--gold-2); }
 
 .cat { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: 1px; }
 .cat-quest { background: var(--cat-quest); } .cat-lore { background: var(--cat-lore); } .cat-combat { background: var(--cat-combat); }
-.cat-loot { background: var(--cat-loot); } .cat-mark { background: var(--cat-mark); } .cat-travel { background: var(--cat-travel); } .cat-progress { background: var(--cat-progress); }
+.cat-loot { background: var(--cat-loot); } .cat-mark { background: var(--cat-mark); } .cat-travel { background: var(--cat-travel); } .cat-progress { background: var(--cat-progress); } .cat-voice { background: var(--cat-voice); }
 .cat-world { background: var(--cat-world); } .cat-economy { background: var(--cat-economy); } .cat-character { background: var(--cat-character); } .cat-social { background: var(--cat-social); }
 
 .q0 { color: var(--q0); } .q1 { color: var(--q1); } .q2 { color: var(--q2); } .q3 { color: var(--q3); }
@@ -502,3 +502,10 @@ a:focus-visible, button:focus-visible, .pin:focus-visible { outline: 2px solid v
 .range-form label { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: .85rem; color: var(--muted); }
 .range-form input { min-width: 200px; }
 .q-0 { color: var(--q0); } .q-1 { color: var(--q1); } .q-2 { color: var(--q2); } .q-3 { color: var(--q3); } .q-4 { color: var(--q4); } .q-5 { color: var(--q5); }
+
+/* Overlay pack and narration */
+.pack-opts { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.pack-opts label { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.pack-opts select, .pack-opts input[type=text] { width: auto; }
+.pack-opts input[type=text] { min-width: 320px; }
+.note-text { font-family: var(--serif); font-size: 1.1rem; }

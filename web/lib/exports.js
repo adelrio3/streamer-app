@@ -24,8 +24,8 @@ export function toSRT(events, cueSeconds = 3) {
   const cues = [];
   events.forEach((e, i) => {
     const next = events[i + 1];
-    let end = e.offset + cueSeconds;
-    if (next && next.offset > e.offset) end = Math.min(end, next.offset - 0.001);
+    let end = e.until ?? e.offset + cueSeconds;
+    if (e.until == null && next && next.offset > e.offset) end = Math.min(end, next.offset - 0.001);
     if (end <= e.offset) end = e.offset + 0.5;
     cues.push(`${cues.length + 1}\n${timecode(e.offset, { ms: true })} --> ${timecode(end, { ms: true })}\n${e.label}\n`);
   });

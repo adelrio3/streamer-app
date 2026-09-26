@@ -34,12 +34,13 @@ export function sessionsFromSavedVariables(text, opts) {
 // Sessions plus the item catalog: { sessions, items: [{ item_id, data }] }.
 export function readAddonLog(text, { flavor = null, account = null } = {}) {
   const db = parseSavedVariables(text).ChroniclerDB;
-  if (!db) return { sessions: [], items: [] };
+  if (!db) return { sessions: [], items: [], errors: [] };
   const sessions = Object.values(db.sessions || {}).map((raw) => normalizeSession(raw, { flavor, account })).filter(Boolean);
   const items = Object.values(db.items || {})
     .filter((i) => i && Number.isFinite(i.id))
     .map((i) => ({ item_id: i.id, data: normalizeItem(i) }));
-  return { sessions, items };
+  const errors = Object.values(db.errors || {}).filter((e) => e && e.msg).map((e) => ({ ...e, key: e.key ?? String(e.msg).slice(0, 200), n: e.n || 1 }));
+  return { sessions, items, errors };
 }
 
 // Tooltip lines are "left", "left\tright", optionally followed by "|rrggbb".

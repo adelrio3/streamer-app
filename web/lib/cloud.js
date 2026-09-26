@@ -32,7 +32,7 @@ export class CloudStore {
   }
 
   async loadAll() {
-    const [sessions, recordings, clock, settings, items, screenshots] = await Promise.all([
+    const [sessions, recordings, clock, settings, items, screenshots, voice] = await Promise.all([
       all(() => this.client.from('sessions').select('*').order('started', { ascending: true })),
       all(() => this.client.from('recordings').select('*').order('start_ms', { ascending: true })),
       all(() => this.client.from('clock_samples').select('machine,offset_ms,rtt_ms,measured_at').order('measured_at', { ascending: true })),
@@ -40,11 +40,12 @@ export class CloudStore {
       // Tables added in schema version 2 may not exist yet.
       optional(() => all(() => this.client.from('items').select('item_id,data,updated_at'))),
       optional(() => all(() => this.client.from('screenshots').select('*').order('taken_ms', { ascending: true }))),
+      optional(() => all(() => this.client.from('voice').select('*').order('start_ms', { ascending: true }))),
     ]);
     check(settings);
     return {
       sessions: sessions.map(fromRow), recordings, clock, settings: settings.data?.data ?? {},
-      items: items ?? [], screenshots: screenshots ?? [], schema2: items !== null,
+      items: items ?? [], screenshots: screenshots ?? [], schema2: items !== null, voice: voice ?? [], schema3: voice !== null,
     };
   }
 
@@ -108,13 +109,14 @@ export class CloudStore {
   // Rows changed since a time (ISO string), for picking up what the other
   // computer uploaded.
   async changedSince(iso) {
-    const [sessions, recordings, items, screenshots] = await Promise.all([
+    const [sessions, recordings, items, screenshots, voice] = await Promise.all([
       all(() => this.client.from('sessions').select('*').gt('updated_at', iso)),
       all(() => this.client.from('recordings').select('*').gt('updated_at', iso)),
       optional(() => all(() => this.client.from('items').select('item_id,data,updated_at').gt('updated_at', iso))),
       optional(() => all(() => this.client.from('screenshots').select('*').gt('updated_at', iso))),
+      optional(() => all(() => this.client.from('voice').select('*').gt('updated_at', iso))),
     ]);
-    return { sessions: sessions.map(fromRow), recordings, items: items ?? [], screenshots: screenshots ?? [] };
+    return { sessions: sessions.map(fromRow), recordings, items: items ?? [], screenshots: screenshots ?? [], voice: voice ?? [] };
   }
 
   async saveSession(session, machine) {

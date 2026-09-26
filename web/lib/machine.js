@@ -11,6 +11,7 @@ import { measureClock } from './cloud.js';
 import { readAddonLog, mergeSession } from './sessions.js';
 import { clockModel, startFromName, baseName, eventMs } from './timeline.js';
 import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken } from './live.js';
+import { VoiceNotes } from './voice.js';
 import { ObsLink } from './obs.js';
 import * as folders from './folders.js';
 
@@ -50,6 +51,8 @@ export class Machine {
     this.timers = [];
     // The live link: the chat log on this PC, read as the game writes it.
     this.live = { status: 'off', file: null, flavor: null, size: 0, remainder: '', linkSeenAt: 0, state: new LiveState(this.loadSince()), lastPush: 0, pushedSeq: -1, error: null, changedAt: 0 };
+    // Voice notes: transcribed here, uploaded in batches.
+    this.voice = { status: 'off', notes: null, queue: [] };
   }
 
   loadConfig() {
@@ -83,6 +86,10 @@ export class Machine {
         this.live.status = 'waiting';
         this.every(LIVE_EVERY, () => this.pollLive());
       }
+      if (this.config.voice) {
+        this.startVoice();
+        this.every(5000, () => this.flushVoice());
+      }
     }
     if (this.config.records) {
       await this.initRec();
@@ -96,6 +103,32 @@ export class Machine {
     this.timers = [];
     this.obs?.stop();
     this.obs = null;
+    this.voice.notes?.stop();
+    this.voice.notes = null;
+  }
+
+  // Voice notes ---------------------------------------------------------------
+
+  startVoice() {
+    if (this.voice.notes) return;
+    this.state.voice ??= [];
+    this.voice.notes = new VoiceNotes({
+      lang: this.config.voiceLang || 'en-US',
+      onState: (status) => { this.voice.status = status; this.changed(); },
+      onNote: (n) => {
+        const row = { id: n.id, machine: this.name, start_ms: Math.round(this.toServer(n.start)), end_ms: Math.round(this.toServer(n.end)), text: n.text };
+        this.state.voice.push(row);
+        this.voice.queue.push(row);
+        this.changed();
+      },
+    });
+    this.voice.notes.start();
+  }
+
+  async flushVoice() {
+    if (!this.voice.queue.length) return;
+    const rows = this.voice.queue.splice(0);
+    try { await this.store.saveVoice(rows); } catch (err) { this.voice.queue.unshift(...rows); this.voice.status = `error: ${err.message}`; }
   }
 
   restart() {
@@ -190,6 +223,7 @@ export class Machine {
         if (this.state.schema2) await this.uploadTrack(s);
       }
       if (this.state.schema2) await this.uploadItems(log.items);
+      await this.collectErrors(log.errors || [], f.flavor);
       this.seen.set(key, file.lastModified);
     }
     if (this.state.schema2) await this.uploadScreenshots();
@@ -318,6 +352,24 @@ export class Machine {
     if (!counters.length) return [];
     const clock = clockModel(this.state.clock);
     return counterValues(counters, pastLoot(this.state.sessions, (s, e) => eventMs(s, e, clock)), this.live.state);
+  }
+
+  // Lua errors the addon caught, kept in the settings so any computer can
+  // show them and copy a dump for a bug report.
+  async collectErrors(errors, flavor) {
+    if (!errors.length) return;
+    const have = new Map((this.state.settings.addonErrors || []).map((e) => [e.key, e]));
+    let changed = false;
+    for (const e of errors) {
+      const prev = have.get(e.key);
+      if (prev && prev.last === e.last && prev.n === e.n) continue;
+      have.set(e.key, { ...e, flavor, machine: this.name });
+      changed = true;
+    }
+    if (!changed) return;
+    const list = [...have.values()].sort((a, b) => (b.last || 0) - (a.last || 0)).slice(0, 100);
+    this.state.settings = { ...this.state.settings, addonErrors: list };
+    await this.store.saveSettings(this.state.settings);
   }
 
   // Position points go up in chunks of 1000; only chunks with new points.
@@ -498,8 +550,15 @@ export class Machine {
     // A couple of minutes of overlap covers uploads that were in flight.
     const newest = latest([...this.state.sessions, ...this.state.rows, ...this.state.items, ...this.state.screenshots]);
     const since = new Date(Date.parse(newest) - 120000).toISOString();
-    const { sessions, recordings, items, screenshots } = await this.store.changedSince(since);
+    const { sessions, recordings, items, screenshots, voice } = await this.store.changedSince(since);
     let n = 0;
+    this.state.voice ??= [];
+    for (const v of voice) {
+      if (this.state.voice.some((x) => x.id === v.id)) continue;
+      this.state.voice.push(v);
+      n++;
+    }
+    if (voice.length) this.state.voice.sort((a, b) => a.start_ms - b.start_ms);
     if (items.length) {
       const byId = new Map(this.state.items.map((r) => [r.item_id, r]));
       for (const r of items) byId.set(r.item_id, r);

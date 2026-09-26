@@ -19,12 +19,14 @@ import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, q
 import { looseEnds } from './lib/coverage.js';
 import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS } from './lib/questdb.js';
 import { pastLoot, dropsBetween } from './lib/live.js';
+import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
+import { makeZip } from './lib/zip.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
 
-const CATS = ['quest', 'lore', 'combat', 'loot', 'mark', 'travel', 'progress', 'world', 'economy', 'character', 'social'];
-const CAT_NAMES = { quest: 'Quests', lore: 'Lore', combat: 'Combat', loot: 'Loot', mark: 'Marks', travel: 'Travel', progress: 'Progress', world: 'NPCs seen', economy: 'Vendors & gold', character: 'Character', social: 'Social' };
+const CATS = ['quest', 'lore', 'combat', 'loot', 'mark', 'voice', 'travel', 'progress', 'world', 'economy', 'character', 'social'];
+const CAT_NAMES = { quest: 'Quests', lore: 'Lore', combat: 'Combat', loot: 'Loot', mark: 'Marks', voice: 'Narration', travel: 'Travel', progress: 'Progress', world: 'NPCs seen', economy: 'Vendors & gold', character: 'Character', social: 'Social' };
 // Busy categories start switched off in timelines and exports.
 const QUIET_CATS = new Set(['travel', 'world', 'economy', 'character', 'social']);
 const CLASS_COLORS = { WARRIOR: '#c69b6d', PALADIN: '#f48cba', HUNTER: '#aad372', ROGUE: '#fff468', PRIEST: '#ffffff', SHAMAN: '#0070dd', MAGE: '#3fc7eb', WARLOCK: '#8788ee', DRUID: '#ff7c0a', DEATHKNIGHT: '#c41e3a', MONK: '#00ff98', DEMONHUNTER: '#a330c9', EVOKER: '#33937f' };
@@ -54,7 +56,7 @@ function derived() {
     // Marks you deleted stay in the addon's log; they are hidden here.
     const gone = new Set(state.settings.deletedMarks || []);
     const sessions = gone.size ? state.sessions.map((sess) => ({ ...sess, events: sess.events.filter((e) => e.e !== 'mark' || !gone.has(markKey(sess.id, e))) })) : state.sessions;
-    const timelines = buildTimelines(sessions, recordings, clock);
+    const timelines = buildTimelines(sessions, recordings, clock, state.voice || []);
     const where = new Map();
     for (const [rec, events] of timelines) for (const e of events) where.set(`${e.session}|${e.t}`, { rec, offset: e.offset });
     const codex = buildCodex(sessions, (sid, t) => where.get(`${sid}|${t}`) ?? null);
@@ -516,6 +518,7 @@ pages[''] = async () => {
     ['Last session', lastSession ? esc(when(lastSession.events.at(-1)?.t ?? lastSession.started)) : '<span class="muted">none yet</span>'],
     ['Recordings', `${d.recordings.length}${unsynced ? ` · <a href="#/recordings">${unsynced} not synced</a>` : ''}`],
     m.liveEnabled?.() ? ['Live link', m.live.status === 'ok' ? `<span class="dot live"></span> reading the chat log · <a href="#/live">overlay</a>` : m.live.status === 'no-log' ? '<a href="#/live">no chat log yet</a>' : `<a href="#/live">${esc(m.live.status)}</a>`] : null,
+    (state.settings.addonErrors || []).length ? ['Addon errors', `<a href="#/setup#errors">${(state.settings.addonErrors || []).reduce((n, e) => n + (e.n || 1), 0)} caught · copy the dump</a>`] : null,
     ['Database', state.schema2 ? '<span class="dot ok"></span> up to date' : '<a href="#/setup">needs update</a>'],
   ].filter(Boolean);
   return `
@@ -1883,7 +1886,9 @@ pages.recording = async (id, params) => {
             ${exportBtn('csv', 'Events (.csv)')}
             ${exportBtn('kills', 'Kill counter (.csv)')}
             ${exportBtn('chapters', 'YouTube chapters')}
+            ${r.counts.voice ? exportBtn('narration', 'Narration (.srt)') : ''}
           </div>
+          ${overlayPackPanel(r)}
           <p class="muted small">Downloads go to this computer's Downloads folder. In Premiere, use File › Import on the .xml to get a sequence of this recording with a marker per event, or drop the .srt on the timeline as a caption track. The category checkboxes apply to markers, captions and events.
           ${r.path ? '' : '<br>The .xml needs the video\'s full path, which is filled in automatically when OBS is connected on the recording computer.'}</p>
         </div>
@@ -1902,6 +1907,7 @@ const EXPORTS = {
   csv: { ext: '.events.csv', type: 'text/csv' },
   chapters: { ext: '.chapters.txt', type: 'text/plain' },
   kills: { ext: '.kills.csv', type: 'text/csv' },
+  narration: { ext: '.narration.srt', type: 'application/x-subrip' },
 };
 
 function renderExport(r, format, cats) {
@@ -1912,6 +1918,7 @@ function renderExport(r, format, cats) {
     case 'srt': return toSRT(list, cfg.cueSeconds);
     case 'csv': return toCSV(list);
     case 'chapters': return toChapters(r.timeline);
+    case 'narration': return toSRT(r.timeline.filter((e) => e.cat === 'voice'), cfg.cueSeconds);
     case 'kills': {
       const clock = derived().clock;
       return toKillsCSV(r.timeline, lifetimeKillsBefore(state.sessions, r.start, (s, e) => eventMs(s, e, clock)));
@@ -2073,7 +2080,113 @@ async function wirePlayer(r, start) {
       download(stem(r.name) + EXPORTS[fmt].ext, EXPORTS[fmt].type, renderExport(r, fmt, cats));
     });
   }
+  document.getElementById('packBuild')?.addEventListener('click', (ev) => { ev.preventDefault(); buildOverlayPack(r).catch((err) => toast(err.message)); });
 }
+
+// Overlay pack: stills for Premiere, placed by an XML sequence -----------------
+
+function overlayPackPanel(r) {
+  const o = { drops: true, minQuality: 2, quests: true, levels: true, kills: true, killsMode: 'recording', corner: 'br', folder: '', cardSeconds: 4, ...(state.settings.overlayPack || {}) };
+  const counts = { drops: r.timeline.filter((e) => e.e === 'loot' && (e.q ?? 1) >= o.minQuality).length, quests: r.counts.quest ?? 0, kills: r.timeline.filter((e) => e.e === 'kill').length, levels: r.timeline.filter((e) => e.e === 'level').length };
+  return `<details class="pack" ${state.settings.overlayPack ? 'open' : ''}><summary>Overlay pack for Premiere (.zip)</summary>
+    <p class="muted small">Transparent PNG stills at the video's size (item cards with icons, quest and level banners, a kill counter) plus an XML sequence that puts each one on the tracks above this recording at the right frame. Import the XML, and they are already in place.</p>
+    <form id="packForm" class="pack-opts">
+      <label><input type="checkbox" name="drops" ${o.drops ? 'checked' : ''}> Drops of</label>
+      <select name="minQuality">${[[1, 'any quality'], [2, 'uncommon and up'], [3, 'rare and up'], [4, 'epic and up']].map(([q, l]) => `<option value="${q}" ${o.minQuality === q ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label><input type="checkbox" name="quests" ${o.quests ? 'checked' : ''}> Quest complete banners <span class="muted">${counts.quests}</span></label>
+      <label><input type="checkbox" name="levels" ${o.levels ? 'checked' : ''}> Level-ups <span class="muted">${counts.levels}</span></label>
+      <label><input type="checkbox" name="kills" ${o.kills ? 'checked' : ''}> Kill counter <span class="muted">${counts.kills}</span></label>
+      <select name="killsMode"><option value="recording" ${o.killsMode === 'recording' ? 'selected' : ''}>counting from this recording</option><option value="lifetime" ${o.killsMode === 'lifetime' ? 'selected' : ''}>lifetime total</option></select>
+      <label>Corner <select name="corner">${Object.entries(CORNERS).map(([k, l]) => `<option value="${k}" ${o.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Seconds per card <input type="number" name="cardSeconds" value="${o.cardSeconds}" min="1" max="30" style="width:70px"></label>
+      <label style="flex-basis:100%">Overlays folder on the editing computer <input type="text" name="folder" value="${esc(o.folder)}" placeholder="/Users/you/Movies/Chronicler overlays or C:\\Videos\\Chronicler overlays"></label>
+      <button id="packBuild" class="primary">Build the pack</button>
+      <span class="muted small" id="packStatus"></span>
+    </form>
+  </details>`;
+}
+
+async function buildOverlayPack(r) {
+  const f = new FormData(document.getElementById('packForm'));
+  const opts = { drops: f.get('drops') === 'on', minQuality: Number(f.get('minQuality')) || 2, quests: f.get('quests') === 'on', levels: f.get('levels') === 'on', kills: f.get('kills') === 'on', killsMode: f.get('killsMode') || 'recording', corner: f.get('corner') || 'br', folder: String(f.get('folder') || '').trim(), cardSeconds: Number(f.get('cardSeconds')) || 4 };
+  state.settings = { ...state.settings, overlayPack: opts };
+  state.store.saveSettings(state.settings).catch(() => {});
+  const status = document.getElementById('packStatus');
+  const say = (t) => { if (status) status.textContent = t; };
+  const cfg = settings();
+  const killsBefore = opts.killsMode === 'lifetime' ? lifetimeKillsBefore(state.sessions, r.start, (s, e) => eventMs(s, e, derived().clock)) : 0;
+  const { stills, clips } = planOverlays(r.timeline, { ...opts, killsBefore, duration: r.duration });
+  if (!stills.size) { say('Nothing to overlay with these options.'); return; }
+  const files = [];
+  let i = 0;
+  for (const [file, spec] of stills) {
+    i++;
+    say(`Rendering ${i} of ${stills.size}: ${file}`);
+    let icon = null;
+    if (spec.kind === 'item') {
+      const name = await iconName(spec.id);
+      if (name) icon = await loadImage(iconUrl(name));
+    }
+    let blob = await renderStill(spec, { width: cfg.width, height: cfg.height, corner: opts.corner, icon });
+    if (!blob && icon) blob = await renderStill(spec, { width: cfg.width, height: cfg.height, corner: opts.corner, icon: null });
+    if (blob) files.push({ name: `overlays/${file}`, data: blob });
+  }
+  files.push({ name: `${stem(r.name)}.overlays.xml`, data: toOverlayXML(r, clips, { fps: cfg.fps, width: cfg.width, height: cfg.height, folder: opts.folder }) });
+  files.push({ name: 'README.txt', data: packReadme(r, opts.folder, stills.size) });
+  say('Zipping…');
+  const zip = await makeZip(files);
+  downloadBlob(`${stem(r.name)}.overlays.zip`, new Blob([zip], { type: 'application/zip' }));
+  say(`Done: ${stills.size} stills, ${clips.length} placed on the timeline.`);
+}
+
+// A fresh canvas per still: one tainted by a cross-origin icon stays tainted.
+async function renderStill(spec, { width, height, corner, icon }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  drawStill(canvas.getContext('2d'), spec, { width, height, corner, icon });
+  try {
+    return await new Promise((res, rej) => { try { canvas.toBlob((b) => (b ? res(b) : rej(new Error('no image'))), 'image/png'); } catch (err) { rej(err); } });
+  } catch { return null; }
+}
+
+function loadImage(url) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = url;
+  });
+}
+
+function downloadBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// Narration: voice notes ------------------------------------------------------
+
+pages.narration = async () => {
+  const d = derived();
+  const m = state.machine;
+  const notes = (state.voice || []).slice().sort((a, b) => b.start_ms - a.start_ms);
+  const moment = (v) => ({ session: 'voice', t: v.start_ms / 1000, footage: d.where.get(`voice|${v.start_ms / 1000}`) ?? null });
+  const st = m.voice?.status ?? 'off';
+  const status = m.config.plays ? (m.config.voice ? `<span class="chip ${st === 'listening' ? 'done' : st.startsWith('error') ? 'bad' : ''}">${esc(st)}</span>` : '<a class="chip" href="#/setup">turn on voice notes on this computer</a>') : '';
+  return `${pageHead('Footage', 'Narration', 'What you said while playing, transcribed on the gaming PC as you spoke and lined up with the footage. Each recording exports it as captions (.srt), and it shows on the timelines.', `<div class="row">${status}</div>`)}
+    ${state.schema3 === false ? schemaNotice() : ''}
+    ${table(notes, [
+      { label: 'When', value: (v) => v.start_ms, html: (v) => esc(when(v.start_ms / 1000)) },
+      { label: 'Footage', value: (v) => moment(v).footage?.offset ?? -1, html: (v) => play(moment(v)) },
+      { label: 'Said', value: (v) => v.text, html: (v) => `<span class="note-text">${esc(v.text)}</span>` },
+      { label: 'Length', value: (v) => ((v.end_ms ?? v.start_ms) - v.start_ms) / 1000, html: (v) => `${(((v.end_ms ?? v.start_ms) - v.start_ms) / 1000).toFixed(1)}s`, num: true },
+    ], { search: (v) => v.text, sort: 0, desc: true, empty: 'No voice notes yet. On the gaming PC: This computer › Voice notes.' })}`;
+};
 
 // A small map beside the video: the route during this recording and a marker
 // that follows playback. Returns a function (seconds) => void, or null.
@@ -2180,6 +2293,12 @@ pages.setup = async () => {
     ${cfg.plays && !cfg.fresh ? `<div class="panel"><h3>World of Warcraft</h3>${wowBody}</div>
       <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Chronicler. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p>
         <p class="small">Optional commands: <code>/chron scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/chron scanner off</code> puts them back). <code>/chron shots off</code> stops automatic screenshots. <code>/chron social on</code> also logs group, duels and chat. <code>/chron</code> lists everything.</p></div>` : ''}
+    ${cfg.plays && !cfg.fresh ? `<form id="voiceForm" class="panel"><h3>Voice notes</h3>
+      <p class="small">Transcribes what you say into the microphone while you play (Chrome's own speech recognition, so it needs the internet and your OK for the microphone). Notes land on the timelines, on the <a href="#/narration">Narration</a> page and in each recording's captions.</p>
+      <label class="check"><input type="checkbox" name="voice" ${cfg.voice ? 'checked' : ''}><span>Transcribe my voice while this tab is open</span></label>
+      <div class="grid2"><label><span>Language</span><input type="text" name="voiceLang" value="${esc(cfg.voiceLang || 'en-US')}"></label></div>
+      <p class="small">Status: <b>${esc(m.voice?.status ?? 'off')}</b>${(state.voice || []).length ? ` · ${(state.voice || []).length} note${(state.voice || []).length === 1 ? '' : 's'} so far` : ''}</p>
+      <button class="primary" type="submit">Save</button></form>` : ''}
     ${state.schema2 ? '' : schemaNotice()}
     ${cfg.records && !cfg.fresh ? `<form id="obsForm" class="panel"><h3>OBS</h3>
       <p class="small">In OBS: <b>Tools › WebSocket Server Settings</b>, tick <b>Enable WebSocket server</b>, then click <b>Show Connect Info</b> and copy the <b>Server Password</b> here. If Chrome asks to let this site access apps on this device, click <b>Allow</b>.</p>
@@ -2200,6 +2319,7 @@ pages.setup = async () => {
         <label><span>Caption length, seconds</span><input type="number" step="0.5" name="cueSeconds" value="${s.cueSeconds}"></label>
       </div>
       <button type="submit">Save</button></form>
+    ${addonErrorsPanel()}
     <div class="panel"><h3>Account</h3><p class="small">Logged in as <b>${esc(state.user.email)}</b>. Clock: ${m.offset == null ? 'measuring…' : `${(m.offset / 1000).toFixed(3)}s from the server (±${Math.round((m.rtt ?? 0) / 2)} ms)`}.</p><button data-act="logout">Log out</button></div>
     <div class="panel danger"><h3>Start over</h3>
       <p class="small">Deletes every session, recording, item, route, screenshot, clock sample and deleted-mark record from your account, on both computers. Your own map images are kept. Sessions and recordings from before now will not come back even if the addon still has them; afterwards, type <code>/chron clear confirm</code> in game to empty the addon's log too.</p>
@@ -2207,8 +2327,56 @@ pages.setup = async () => {
     </div>`;
 };
 
+// Lua errors the addon caught, with a dump to paste into a bug report.
+function addonErrorsPanel() {
+  const list = state.settings.addonErrors || [];
+  const total = list.reduce((n, e) => n + (e.n || 1), 0);
+  return `<div class="panel" id="errors"><h3>Addon errors ${total ? `<span class="chip bad">${total}</span>` : '<span class="chip done">none</span>'}</h3>
+    <p class="small muted">Every Lua error the addon catches in game (its own and other addons') is kept with its stack and where you were. Copy the dump and paste it to whoever is fixing the addon. In game, <code>/chron errors</code> shows them too.</p>
+    ${list.length ? `<div class="row"><button id="copyErrors">Copy error dump</button><button class="ghost" id="clearErrors">Clear</button></div>
+    <table><thead><tr><th>Times</th><th>Error</th><th>While</th><th>Last</th></tr></thead><tbody>${list.slice(0, 20).map((e) => `<tr><td class="num">${e.n || 1}</td><td><code style="white-space:pre-wrap">${esc(String(e.msg).slice(0, 220))}</code></td><td class="muted small">${esc(e.ctx ?? '')}${e.zone ? ` · ${esc(e.zone)}` : ''}</td><td class="muted small">${e.last ? esc(when(e.last)) : ''}</td></tr>`).join('')}</tbody></table>${list.length > 20 ? `<p class="muted small">and ${list.length - 20} more in the dump.</p>` : ''}` : ''}
+  </div>`;
+}
+
+function errorDump() {
+  const list = state.settings.addonErrors || [];
+  const m = state.machine;
+  const last = state.sessions.at(-1);
+  const head = [
+    `Chronicler addon error dump — ${new Date().toISOString()}`,
+    `Site: ${location.host} · this computer: ${m?.name ?? '?'} · addon installed: ${m?.wow?.installs?.map((i) => `${i.flavor} ${i.addonVersion ?? '?'}`).join(', ') || 'unknown here'}`,
+    last ? `Last session: ${last.id} · ${last.char?.name ?? '?'} ${last.char?.class ?? ''} level ${last.char?.level ?? '?'} · build ${last.build?.version ?? '?'} (${last.build?.interface ?? '?'}) · ${last.flavor ?? ''}` : 'No sessions uploaded yet.',
+    `${list.length} distinct error${list.length === 1 ? '' : 's'}, ${list.reduce((n, e) => n + (e.n || 1), 0)} in total.`,
+    '',
+  ];
+  const body = list.map((e, i) => [
+    `${i + 1}. [${e.n || 1}×] ${e.first ? new Date(e.first * 1000).toISOString() : '?'} → ${e.last ? new Date(e.last * 1000).toISOString() : '?'}  addon ${e.version ?? '?'} build ${e.build ?? '?'}  while: ${e.ctx ?? '?'}  at: ${[e.zone, e.sub].filter(Boolean).join(': ') || '?'}${e.level ? ` level ${e.level}` : ''}${e.session ? `  session ${e.session}` : ''}`,
+    `   ${String(e.msg).replace(/\n/g, '\n   ')}`,
+    e.stack ? `   stack:\n   ${String(e.stack).replace(/\n/g, '\n   ')}` : '   (no stack)',
+    '',
+  ].join('\n'));
+  return [...head, ...body].join('\n');
+}
+
 function wireSetup() {
   const m = state.machine;
+  document.getElementById('copyErrors')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(errorDump()); toast('Error dump copied. Paste it into your message.'); } catch { download('chronicler-errors.txt', 'text/plain', errorDump()); }
+  });
+  document.getElementById('clearErrors')?.addEventListener('click', async () => {
+    if (!window.confirm('Clear the collected addon errors here? The addon keeps its own list until /chron errors clear.')) return;
+    state.settings = { ...state.settings, addonErrors: [] };
+    try { await state.store.saveSettings(state.settings); } catch (err) { toast(err.message); }
+    route({ keepScroll: true });
+  });
+  document.getElementById('voiceForm')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    const on = f.get('voice') === 'on';
+    m.saveConfig({ voice: on, voiceLang: String(f.get('voiceLang') || 'en-US').trim() || 'en-US' });
+    toast(on ? 'Voice notes on. Chrome will ask for the microphone.' : 'Voice notes off.');
+    route({ keepScroll: true });
+  });
   const act = {
     pickWow: () => m.pickWow(), grantWow: () => m.grantWow(), pickRec: () => m.pickRec(), grantRec: () => m.grantRec(),
     logout: async () => { await state.client.auth.signOut(); location.hash = '#/'; location.reload(); },
@@ -2414,7 +2582,7 @@ async function startApp(user) {
   const all = await state.store.loadAll();
   Object.assign(state, {
     sessions: all.sessions, rows: all.recordings, clock: all.clock, settings: all.settings,
-    items: all.items, screenshots: all.screenshots, schema2: all.schema2,
+    items: all.items, screenshots: all.screenshots, schema2: all.schema2, voice: all.voice ?? [], schema3: all.schema3,
   });
   state.machine = new Machine({ store: state.store, state, changed, notify: toast });
   document.getElementById('nav').hidden = false;

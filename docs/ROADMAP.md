@@ -23,14 +23,21 @@ Zone maps with layers (quests, creatures, people, vendors, gathering, loot, deat
 
 NPCs near you, loot windows and drop rates, the full item catalog, vendors, trainers, flight masters, fights, character progression, the 2-second position track, screenshots and optional social logging; with Characters, Bestiary, Items, Vendors, Highlights, Footage finder, Screenshots and global search in the web app.
 
+## Done since
+
+- **The quest database** (Phase 2's core): every Classic quest, quest giver, rare and zone from Questie, with per-zone coverage for the chosen character (ready, later, done, other faction or class), unfound quest givers and rare spawns on the maps, database pages for quests and NPCs not yet logged, and every zone map whether visited or not.
+- **The live link and stream overlay**: the addon posts into a hidden chat channel, the chat log carries it out as you play, the gaming PC feeds a live row, and an OBS browser source shows drops with effects by rarity, a quest tracker, item counters, kills, streaks, deaths, levels and zones. Drops for any stretch of time.
+- **Voice notes**: transcribed on the gaming PC as you speak, on the timelines and exported as narration captions.
+- **The overlay pack** (Phase 4): item cards, quest and level banners and a kill counter as transparent PNGs, placed by an XML sequence.
+- **Lua error tracking** with a dump to paste into a bug report.
+
 ## Next ideas
 
 - Import WoW's own combat log (`/combatlog`) for exact fight replays.
-- Mic on its own OBS track, transcribed and lined up with game events.
-- Near-live markers in OBS through WoW's chat log file.
-- Per-zone coverage: subzones visited vs. not, and quests seen but not done, as a checklist for completionists.
-- Route on the recording page synced to the video (done) extended with a scrub-to-position: click the map to jump the video to when you were there.
-- Item cards and kill counters rendered as overlays (Phase 4).
+- Mic on its own OBS track (the voice notes carry the words; the audio itself stays in OBS).
+- Subzones visited vs. not, per zone.
+- Route on the recording page synced to the video (done) extended with a scrub-to-position: click the map to jump the video to when you were there (done).
+- Quest title cards at accept (the pack has turn-in banners), and sounds for the overlay.
 
 ## Phase 2: the guide (completion without a scout)
 

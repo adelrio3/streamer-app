@@ -121,14 +121,70 @@ local function on(event, fn)
 	local list = listeners[event]
 	list[#list + 1] = fn
 end
+-- Lua errors are kept in ChroniclerDB.errors (with their stack, the event
+-- that was being handled, and where you were) so the web app can collect
+-- them for a bug report. Errors from other addons are caught too.
+local MAX_ERRORS = 60
+local function addonVersion()
+	local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+	local ok, v = pcall(function() return get and get(ADDON_NAME, "Version") end)
+	return ok and v or "?"
+end
+local function noteError(err, context, stack)
+	if type(ChroniclerDB) ~= "table" then return end
+	ChroniclerDB.errors = ChroniclerDB.errors or {}
+	local list = ChroniclerDB.errors
+	local msg = tostring(err)
+	local key = msg:sub(1, 200)
+	for i = 1, #list do
+		local e = list[i]
+		if e.key == key then
+			e.n = (e.n or 1) + 1
+			e.last = time()
+			if context and context ~= "global" then e.ctx = context end
+			return
+		end
+	end
+	if #list >= MAX_ERRORS then table.remove(list, 1) end
+	local ok, build = pcall(function() return select(4, GetBuildInfo()) end)
+	list[#list + 1] = {
+		key = key, msg = msg:sub(1, 1000), stack = stack and tostring(stack):sub(1, 1500) or nil, ctx = context,
+		zone = GetRealZoneText and GetRealZoneText() or nil, sub = GetSubZoneText and GetSubZoneText() or nil,
+		first = time(), last = time(), n = 1, version = addonVersion(), build = ok and build or nil,
+		level = UnitLevel and UnitLevel("player") or nil, session = session and session.id or nil,
+	}
+end
+ns.noteError = noteError
+
+-- WoW's xpcall passes arguments on; plain Lua 5.1 does not.
+local xpcallArgs = select(2, xpcall(function(a) return a end, function() end, 1)) == 1
+local currentEvent
+local function onError(err)
+	noteError(err, currentEvent, debugstack and debugstack(2, 12, 6) or nil)
+	return err
+end
+local origErrorHandler = geterrorhandler and geterrorhandler()
 frame:SetScript("OnEvent", function(_, event, ...)
 	local list = listeners[event]
 	if not list then return end
+	currentEvent = event
 	for i = 1, #list do
-		local ok, err = pcall(list[i], ...)
-		if not ok and geterrorhandler then geterrorhandler()(err) end
+		local ok, err
+		if xpcallArgs then ok, err = xpcall(list[i], onError, ...) else ok, err = pcall(list[i], ...) end
+		if not ok then
+			if not xpcallArgs then noteError(err, event) end
+			if origErrorHandler then pcall(origErrorHandler, err) end
+		end
 	end
+	currentEvent = nil
 end)
+-- Errors from anywhere else (timers, other addons) pass through here too.
+if seterrorhandler then
+	seterrorhandler(function(err)
+		if not currentEvent then noteError(err, "global", debugstack and debugstack(2, 12, 6) or nil) end
+		if origErrorHandler then return origErrorHandler(err) end
+	end)
+end
 
 local function say(msg)
 	if not (ChroniclerDB and ChroniclerDB.settings.silent) then
@@ -605,6 +661,7 @@ local function help()
 	print("  /chron note <text> - a mark with a note")
 	print("  /chron sync - sync flash and sound, for lining up recordings made on another PC")
 	print("  /chron silent - toggle chat feedback for marks")
+	print("  /chron errors [clear] - Lua errors caught so far (the web app collects them for a bug report)")
 	print("  /chron clear - forget all logged sessions (after the web app has uploaded them)")
 	for _, line in ipairs(ns.helpLines) do print("  " .. line) end
 end
@@ -629,6 +686,20 @@ SlashCmdList.CHRONICLER = function(input)
 		Chronicler_Mark("mark", rest)
 	elseif cmd == "sync" then
 		Chronicler_Sync()
+	elseif cmd == "errors" then
+		local list = ChroniclerDB.errors or {}
+		if rest == "clear" then
+			ChroniclerDB.errors = {}
+			print("|cffd4a017Chronicler|r error list cleared.")
+		else
+			local total = 0
+			for _, e in ipairs(list) do total = total + (e.n or 1) end
+			print(string.format("|cffd4a017Chronicler|r %d Lua error%s (%d distinct). The web app collects them: This computer > Addon errors > Copy error dump.", total, total == 1 and "" or "s", #list))
+			for i = math.max(1, #list - 2), #list do
+				local e = list[i]
+				print(string.format("  %dx %s", e.n or 1, tostring(e.msg):sub(1, 160)))
+			end
+		end
 	elseif cmd == "silent" then
 		ChroniclerDB.settings.silent = not ChroniclerDB.settings.silent
 		print("|cffd4a017Chronicler|r mark feedback " .. (ChroniclerDB.settings.silent and "off" or "on"))

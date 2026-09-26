@@ -15,16 +15,20 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - **automatic screenshots** at rares, level-ups, discoveries and deaths, plus your own
   - optional group, duel and chat logging (`/chron social on`)
   - **marks** (lore beat, beautiful shot, funny, redo) and the **sync flash**
+  - the **live link**: what happens goes into a hidden chat channel of your own, so the game's chat log carries it out as you play (nothing shows on stream); `/chron live off` stops it
+  - every **Lua error** it catches (its own and other addons'), with the stack and where you were: `/chron errors`
 - **The web app** (`web/`, hosted on Netlify, data in Supabase) is open in Chrome on each computer and bridges them:
   - on the **gaming PC** it watches the addon's log, uploads new play sessions, and installs or updates the addon for you
   - on the **recording computer** it listens to OBS for when each recording starts and stops, and reads the recordings folder
   - both computers measure their clocks against the server, so game events land on the right second of footage automatically, and a sync flash makes it exact
-  - **Chronicle**: Overview (activity, status, recent milestones), Characters (each one's journey with a class-coloured hero and XP ring), Quests (each with a map of pickup, objectives, kills while active, turn-in and route), Zones (with a loose-ends checklist: quests not turned in, rares and creatures never killed, shops and trainers never opened), Locations (zone maps with layers, creature-density and time-spent heat, nearest services on click, your own map images cropped in the app, GeoJSON export), Lore (every text and line of dialogue, filterable by zone for scripts)
+  - **Chronicle**: Overview (activity, status, recent milestones), Characters (each one's journey with a class-coloured hero and XP ring), Quests (each with a map of pickup, objectives, kills while active, turn-in and route, plus **every quest in Classic** from the quest database with where you stand on each), Zones (every quest of the zone for the chosen character: ready, later, done, other faction or class; quest givers not met yet and rare spawns as map layers; zones you have not been to; and a loose-ends checklist of what you came across but did not finish), Locations (zone maps with layers, creature-density and time-spent heat, nearest services on click, your own map images cropped in the app, GeoJSON export; every Classic zone map, visited or not), Lore (every text and line of dialogue, filterable by zone for scripts)
   - **World**: Bestiary (creatures you can fight, drop rates, every sighting's coordinates and density), People (quest givers, vendors, trainers, flight masters, townsfolk), Items (icons, full tooltips, every source) and the herbs, ore and chests you opened
-  - **Footage**: Recordings (with a live map: a marker follows the video, click the route to jump), a Highlights reel, Footage finder, Screenshots, Marks (deletable); every entry links to the second of footage it happened in
+  - **Footage**: Recordings (with a live map: a marker follows the video, click the route to jump), a Highlights reel, Footage finder, Screenshots, Marks (deletable), Narration (what you said, transcribed on the gaming PC as you spoke); every entry links to the second of footage it happened in
+  - **Stream**: Live overlay (an OBS browser source fed as you play: drop toasts with icons and effects by rarity, a quest tracker that fills in as objectives update, item counters for this session or all time, kills and streaks, deaths, levels and zone callouts, with a demo preview and test buttons) and Drops (everything that dropped in any stretch of time, CSV)
   - **This computer › Start over** deletes everything and blocks old sessions from returning
   - one search box across all of it
-  - per recording: **Premiere markers** (.xml), **captions** (.srt), **kill counter data** (.csv), **YouTube chapters** and a full event list
+  - per recording: **Premiere markers** (.xml), **captions** (.srt), **narration captions** (.srt), **kill counter data** (.csv), **YouTube chapters**, a full event list, and an **overlay pack**: transparent PNG item cards, quest and level banners and a kill counter, with an XML sequence that places them on the tracks above the recording
+  - **This computer › Addon errors**: every Lua error the addon caught, with a one-click dump to paste into a bug report
 
 Videos never leave the recording computer. Only the logs and recording times are stored in Supabase.
 
@@ -32,7 +36,7 @@ Videos never leave the recording computer. Only the logs and recording times are
 
 One-time, in a browser:
 
-1. **Supabase:** create a project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL Editor.
+1. **Supabase:** create a project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL Editor (run it again after updating: it only adds what is missing).
 2. **Netlify:** import this repository as a site and connect it to the Supabase project (the Supabase extension sets the keys; or add `SUPABASE_URL` and `SUPABASE_ANON_KEY` as environment variables). [`netlify.toml`](netlify.toml) has the rest.
 3. Open the site in **Chrome** on each computer (Edge also works on Windows), create your login on the first one, and follow the **This computer** page.
 
@@ -52,6 +56,8 @@ Every push to the branch Netlify builds is live a minute later. The addon update
 | `/chron social on\|off` | Also log group, duels and chat (off by default) |
 | `/chron track on\|off` | Position tracking for the footage finder (on by default) |
 | `/chron items` | Size of the item catalog |
+| `/chron live on\|off` | The live link for the stream overlay (on by default; posts to a hidden chat channel of your own and turns the chat log on) |
+| `/chron errors [clear]` | Lua errors caught so far; the web app collects them under This computer › Addon errors |
 | `/chron clear` | Empty the addon's log once it has been uploaded. Sessions older than 30 days are dropped automatically |
 
 Key bindings: Options › Keybindings › AddOns › Chronicler.
@@ -62,9 +68,13 @@ WoW only writes the addon's log to disk on logout or `/reload`; the app uploads 
 
 ```
 addon/Chronicler/        the WoW addon (Lua)
-web/                     the web app Netlify publishes
+web/                     the web app Netlify publishes (overlay.html is the OBS browser source)
 web/lib/                 SavedVariables parser, sessions, clock bridge and timelines, codex, exports,
-                         OBS link, folder access, Supabase storage, this computer's background jobs
+                         OBS link, folder access, Supabase storage, this computer's background jobs,
+                         the quest database (questdb.js), the live link (live.js), voice notes,
+                         the overlay pack (overlaypack.js, zip.js)
+web/data/classic/        every Classic quest, quest giver, rare and zone (from Questie, GPL-3.0),
+                         generated by tools/import-questie.js
 netlify/functions/       hands the browser the Supabase URL and public key
 supabase/schema.sql      database tables and access rules
 tools/                   build step (copies the addon into the site), local dev server, add-interface
@@ -77,4 +87,5 @@ test/                    node --test suites; test/addon/harness.lua runs the add
 npm test          # all tests (addon tests need lua5.1)
 npm run serve     # the web app at http://127.0.0.1:8888 (paste Supabase URL and key when asked)
 npm run add-interface -- 11510   # after a WoW patch changes the interface number
+node tools/import-questie.js ../QuestieDB ../Questie   # refresh web/data/classic from Questie's repos
 ```

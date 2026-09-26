@@ -522,6 +522,15 @@ state.combat = { 0, "SWING_DAMAGE", false, "Creature-0-4372-0-17-448-00030", "Ho
 fire("COMBAT_LOG_EVENT_UNFILTERED")
 fire("PLAYER_DEAD")
 runTimers()
+-- A Lua error in a handler is recorded, with the event, and does not stop the others.
+ns.on("CHAT_MSG_SKILL", function() error("boom") end)
+local skillsBefore = #ChroniclerDB.sessions[1].events
+fire("CHAT_MSG_SKILL", "Your skill in Fishing has increased to 3.")
+fire("CHAT_MSG_SKILL", "Your skill in Fishing has increased to 4.")
+assert(#ChroniclerDB.errors == 1 and ChroniclerDB.errors[1].n == 2, "the same error counts twice")
+assert(ChroniclerDB.errors[1].msg:find("boom", 1, true) and ChroniclerDB.errors[1].ctx == "CHAT_MSG_SKILL", "error message and event kept")
+assert(ChroniclerDB.errors[1].zone == "Elwynn Forest" and ChroniclerDB.errors[1].version, "where and which version")
+assert(#ChroniclerDB.sessions[1].events == skillsBefore + 2, "the skill lines were still logged by the other listener")
 fire("PLAYER_LOGOUT")
 assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
 

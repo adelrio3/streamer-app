@@ -163,7 +163,8 @@ export function aligner(recordings) {
 
 // Map<recordingId, event[]> with `session`, `ms`, `offset`, `label`, `cat`
 // added to each event.
-export function buildTimelines(sessions, recordings, clock) {
+// voice: transcribed notes [{ id, start_ms, end_ms, text }] on the server clock.
+export function buildTimelines(sessions, recordings, clock, voice = []) {
   const align = aligner(recordings);
   const byRec = new Map(recordings.map((r) => [r.id, []]));
   for (const s of sessions) {
@@ -173,6 +174,13 @@ export function buildTimelines(sessions, recordings, clock) {
       if (!hit) continue;
       byRec.get(hit.recording.id).push({ ...e, session: s.id, ms, offset: hit.offset, label: describe(e), cat: category(e) });
     }
+  }
+  for (const v of voice) {
+    const hit = align(v.start_ms);
+    if (!hit || !v.text) continue;
+    const e = { e: 'voice', t: v.start_ms / 1000, text: v.text, id: v.id, session: 'voice', ms: v.start_ms, offset: hit.offset, label: v.text, cat: 'voice' };
+    if (v.end_ms) e.until = hit.offset + Math.max(0.5, (v.end_ms - v.start_ms) / 1000);
+    byRec.get(hit.recording.id).push(e);
   }
   for (const list of byRec.values()) list.sort((a, b) => a.offset - b.offset);
   return byRec;
