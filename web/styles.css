@@ -290,7 +290,23 @@ ol.steps li { margin-bottom: 6px; }
 .map .pin.layer-quest b { transform: rotate(-45deg); }
 .map .pin.layer-death { border-radius: 2px; }
 .map.hide-quest .layer-quest, .map.hide-creature .layer-creature, .map.hide-person .layer-person, .map.hide-vendor .layer-vendor,
-.map.hide-object .layer-object, .map.hide-loot .layer-loot, .map.hide-death .layer-death, .map.hide-mark .layer-mark { display: none; }
+.map.hide-object .layer-object, .map.hide-loot .layer-loot, .map.hide-death .layer-death, .map.hide-mark .layer-mark,
+.map.hide-unfound .layer-unfound, .map.hide-rares .layer-rares { display: none; }
+.map .pin.layer-unfound { width: 14px; height: 14px; margin: -7px 0 0 -7px; background: rgba(0, 0, 0, .55); border: 2px dashed var(--c); box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 0 10px color-mix(in srgb, var(--c) 55%, transparent); }
+.map .pin.layer-rares { border-radius: 2px; transform: rotate(45deg); background: rgba(0, 0, 0, .55); border: 2px solid var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 60%, transparent); }
+.map .pin.layer-rares:hover { transform: rotate(45deg) scale(1.5); }
+.map .pin.layer-unfound.killed, .map .pin.layer-rares.killed { opacity: .45; }
+.cov { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
+.cov .bar { flex: 1; height: 10px; }
+.cov .bar > div { background: linear-gradient(90deg, var(--gold), var(--gold-2)); box-shadow: 0 0 12px rgba(242, 204, 107, .45); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.cov b { font-family: var(--serif); font-size: 1.15rem; color: var(--gold-2); min-width: 3.2em; text-align: right; }
+select.inline { display: inline-block; width: auto; margin: 0 4px; padding: 2px 8px; font-size: .9rem; }
+.chip.st-ready { color: var(--gold-2); border-color: #5a4a1e; }
+.chip.st-active { color: #8fd3ff; border-color: #2c4a5e; }
+.chip.st-later { color: var(--muted); }
+.chip.st-done { color: var(--green); border-color: #35553a; }
+.chip.st-other, .chip.st-excluded, .chip.st-hidden { color: var(--muted); opacity: .8; }
+.pin-quests { margin: 6px 0 0; padding-left: 1.1em; font-size: .9rem; }
 .map-missing { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 360px; text-align: center; background: rgba(20, 17, 12, .9); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 14px 18px; font-size: .9rem; color: var(--text-2); pointer-events: none; }
 .map-legend { position: absolute; left: 10px; bottom: 8px; background: rgba(0, 0, 0, .55); padding: 2px 8px; border-radius: 99px; pointer-events: none; }
 .map-info { margin: 0; min-height: 120px; }
@@ -442,3 +458,10 @@ a:focus-visible, button:focus-visible, .pin:focus-visible { outline: 2px solid v
 .card.shine::before { opacity: 1; }
 .card.shine .num { animation: shine 1.4s ease-out; }
 @keyframes shine { 0% { filter: brightness(1); } 20% { filter: brightness(1.9) drop-shadow(0 0 8px rgba(242, 204, 107, .9)); } 100% { filter: brightness(1); } }
+
+/* Quest database */
+.cov.small { margin: 0; gap: 8px; min-width: 150px; }
+.cov.small b { font-size: .9rem; min-width: 3.4em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips .chip { text-decoration: none; }
+.chips .chip:hover { border-color: var(--gold-dim); color: var(--text); }

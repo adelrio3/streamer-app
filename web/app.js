@@ -15,8 +15,9 @@ import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
 import { money, RANKS, qualityName } from './lib/describe.js';
 import { ROLE_NAMES } from './lib/world.js';
-import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON } from './lib/maps.js';
+import { buildMaps, routesFor, cluster, LAYERS, mapImageCandidates, heatCells, questTrail, nearestServices, toGeoJSON, CLASSIC_ZONE_IDS } from './lib/maps.js';
 import { looseEnds } from './lib/coverage.js';
+import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, zoneRares, rarePins, progressSets, givers, enders, objectives, searchEntries, raceNames, classNames, STATES, STATE_ORDER, RANK_NAMES, FACTIONS } from './lib/questdb.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -34,6 +35,8 @@ const WOWHEAD = { classic: 'https://www.wowhead.com/classic', tbc: 'https://www.
 const state = {
   client: null, store: null, user: null, machine: null, sessions: [], rows: [], clock: [], settings: {}, cache: null,
   items: [], screenshots: [], schema2: true, tracks: null, shotUrls: new Map(),
+  // The Classic quest database, loaded the first time a page needs it.
+  db: undefined, dbLoading: null, spawns: null, coverageWho: null,
 };
 let status = {};
 
@@ -75,6 +78,242 @@ function markKey(sessionId, m) {
 
 function invalidate() {
   state.cache = null;
+}
+
+// Quest database ------------------------------------------------------------
+// web/data/classic/*.json (every Classic quest, from Questie), fetched once
+// the first time a page needs it. null when the files are missing.
+
+async function questDB() {
+  if (state.db !== undefined) return state.db;
+  state.dbLoading ??= (async () => {
+    try {
+      const names = ['quests', 'npcs', 'objects', 'items', 'zones'];
+      const parts = await Promise.all(names.map((n) => fetch(`data/classic/${n}.json`).then((r) => { if (!r.ok) throw new Error(`${n}.json: ${r.status}`); return r.json(); })));
+      state.db = indexDB({ quests: parts[0].quests, npcs: parts[1].npcs, objects: parts[2].objects, items: parts[3].items, zones: parts[4].zones });
+      if (state.cache) state.cache.index = null;
+    } catch (err) {
+      console.warn('Quest database not available:', err.message);
+      state.db = null;
+    }
+    return state.db;
+  })();
+  return state.dbLoading;
+}
+
+// Spawn points (a bigger file), only for maps.
+async function spawnTable() {
+  if (!state.spawns) {
+    try { state.spawns = (await fetch('data/classic/spawns.json').then((r) => r.json())).spawns; } catch { state.spawns = {}; }
+  }
+  return state.spawns;
+}
+
+// Which character the quest database is read for: the one chosen in a
+// "For …" menu, else the one played most recently. 'all' means everyone.
+function coverageWho() {
+  const d = derived();
+  const chars = d.characters.slice().sort((a, b) => (b.last?.t ?? 0) - (a.last?.t ?? 0));
+  const wanted = state.coverageWho || chars[0]?.key || 'all';
+  const c = wanted === 'all' ? null : chars.find((x) => x.key === wanted) ?? null;
+  const who = c ? { raceToken: c.info.raceToken, classToken: c.info.classToken, faction: c.info.faction } : null;
+  const { done, active } = progressSets(d.codex.quests, c ? c.key : null);
+  return { key: c ? c.key : 'all', char: c, chars, ctx: { who, level: c?.level || 0, done, active } };
+}
+
+function whoSelect(cov) {
+  setTimeout(() => document.getElementById('covWho')?.addEventListener('change', (ev) => { state.coverageWho = ev.target.value; route({ keepScroll: true }); }));
+  const options = [['all', 'everyone'], ...cov.chars.map((c) => [c.key, `${c.name} (${[c.info.race, c.info.class].filter(Boolean).join(' ')}, level ${c.level})`])];
+  return `<select id="covWho" class="inline">${options.map(([k, label]) => `<option value="${esc(k)}" ${k === cov.key ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
+}
+
+const stateChip = (st) => `<span class="chip st-${st}">${esc(STATES[st] ?? st)}</span>`;
+
+function giverLinks(db, q) {
+  return givers(db, q).map((g) => (g.kind === 'npc' ? `<a href="#/npc/n${g.id}">${esc(g.name)}</a>` : g.kind === 'object' ? `${esc(g.name)} <span class="muted small">(object)</span>` : `${itemLink(g.id, g.name)} <span class="muted small">(item)</span>`)).join(', ');
+}
+
+// Why a quest is not ready: the level, the quests before it, its faction or class.
+function whyNot(db, q, st, ctx) {
+  if (st === 'later') return waitingOn(db, q, ctx).join(' · ');
+  if (st === 'other') return [raceNames(q.ra), classNames(q.cl)].filter(Boolean).join(' · ');
+  if (st === 'excluded') return 'replaced by a quest already done or taken';
+  return '';
+}
+
+function coverageColumns(db, ctx, { zone = false } = {}) {
+  return [
+    { label: 'Status', value: (r) => STATE_ORDER.indexOf(r.state), html: (r) => stateChip(r.state) },
+    { label: 'Quest', value: (r) => r.q.n, html: (r) => `<a href="#/quest/q${r.q.id}">${esc(r.q.n)}</a>${r.q.rep ? ' <span class="chip">repeatable</span>' : ''}` },
+    ...(zone ? [{ label: 'Zone', value: (r) => db.zoneName(r.q.zone), html: (r) => (r.q.zone ? `<a href="#/zone/${enc(db.zoneName(r.q.zone))}">${esc(db.zoneName(r.q.zone))}</a>` : '') }] : []),
+    { label: 'Lvl', value: (r) => r.q.l || 0, num: true },
+    { label: 'Req', value: (r) => r.q.r || 0, num: true },
+    { label: 'From', value: (r) => givers(db, r.q).map((g) => g.name).join(', '), html: (r) => giverLinks(db, r.q) },
+    { label: 'Category', value: (r) => (r.q.sort ? db.zoneName(r.q.sort) : ''), html: (r) => (r.q.sort ? `<span class="muted">${esc(db.zoneName(r.q.sort))}</span>` : '') },
+    { label: 'Waiting on', value: (r) => whyNot(db, r.q, r.state, ctx), html: (r) => `<span class="muted small">${esc(whyNot(db, r.q, r.state, ctx))}</span>` },
+  ];
+}
+
+// Every quest of a zone from the database, with where the character stands,
+// the quest givers not yet met, and the zone's rares.
+async function coverageSection(zoneName) {
+  const db = await questDB();
+  const zoneId = db?.zoneId(zoneName);
+  if (!zoneId) return '';
+  const cov = coverageWho();
+  const c = zoneCoverage(db, zoneId, cov.ctx);
+  const spawns = await spawnTable();
+  const { world } = derived();
+  const seen = new Set(world.npcs.map((n) => n.npcId).filter(Boolean));
+  const killed = new Set(world.creatures.filter((n) => n.kills > 0).map((n) => n.npcId).filter(Boolean));
+  const pins = unfoundGivers(db, spawns, c, { seen });
+  const rares = zoneRares(db, spawns, zoneId, { killed });
+  const mapId = db.zones[zoneId]?.m;
+  const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+  const unfound = new Set(pins.map((p) => p.key)).size;
+  return `<h2 id="coverage">Every quest here <span class="chip ${c.total && c.done === c.total ? 'done' : 'active'}">${c.done} of ${c.total}</span></h2>
+    <p class="muted">From the Classic quest database: what ${cov.char ? esc(cov.char.name) : 'anyone'} can still do in ${esc(zoneName)}, including quests you have not found yet. For ${whoSelect(cov)}</p>
+    <div class="cov"><div class="bar"><div style="width:${pct}%"></div></div><b>${pct}%</b></div>
+    <div class="cards">
+      ${card(c.counts.ready || 0, 'ready to pick up', `#/zone/${enc(zoneName)}#coverage`)}
+      ${card(c.counts.active || 0, 'in progress', '#/quests')}
+      ${card(c.counts.later || 0, 'later (level or chain)', `#/zone/${enc(zoneName)}#coverage`)}
+      ${card(c.done, 'done', `#/zone/${enc(zoneName)}#coverage`)}
+      ${c.counts.other ? card(c.counts.other, 'other faction or class', `#/zone/${enc(zoneName)}#coverage`) : ''}
+      ${rares.length ? card(rares.filter((r) => !r.killed).length, `of ${rares.length} rares not yet killed`, `#/zone/${enc(zoneName)}#rares`) : ''}
+    </div>
+    ${mapId ? `<p><a class="btn" href="#/map/${mapId}?show=unfound,rares">${unfound ? `Show ${unfound} quest giver${unfound === 1 ? '' : 's'} not found yet` : 'Open the map'}${rares.length ? ` and ${rares.length} rare spawn${rares.length === 1 ? '' : 's'}` : ''} on the map</a></p>` : ''}
+    ${table(c.rows, coverageColumns(db, cov.ctx), { search: (r) => `${r.q.n} ${r.q.o ?? ''} ${STATES[r.state]} ${givers(db, r.q).map((g) => g.name).join(' ')}`, sort: 0, limit: 300, empty: 'No quests here in the database.' })}
+    ${rares.length ? `<h3 id="rares">Rares of ${esc(zoneName)}</h3>${table(rares, [
+      { label: 'Rare', value: (r) => r.name, html: (r) => `<a href="#/npc/n${r.id}">${esc(r.name)}</a>` },
+      { label: 'Level', value: (r) => r.level?.[0] ?? 0, html: (r) => (r.level ? r.level.join('–') : ''), num: true },
+      { label: 'Rank', value: (r) => r.rank },
+      { label: 'Killed', value: (r) => (r.killed ? 1 : 0), html: (r) => (r.killed ? '<span class="chip done">yes</span>' : '<span class="chip">not yet</span>') },
+      { label: 'Spawns', value: (r) => r.points.length, html: (r) => `${r.points.slice(0, 3).map(([x, y]) => coords(x, y)).join(' · ')}${r.points.length > 3 ? ` <span class="muted small">+${r.points.length - 3}</span>` : ''}`, num: true },
+    ], { sort: 1 })}` : ''}`;
+}
+
+// A zone you have not been to: the database's side only.
+async function dbZonePage(name) {
+  const db = await questDB();
+  const zoneId = db?.zoneId(name);
+  if (!zoneId) return '<p>Not found.</p>';
+  const zone = db.zones[zoneId];
+  return `${crumb('#/zones', 'Zones')}
+    ${pageHead('Zone', esc(zone.n), 'You have not been here yet. This is what the quest database knows about it.', zone.m ? `<div class="row"><a class="btn" href="#/map/${zone.m}?show=unfound,rares">Open map</a></div>` : '')}
+    ${await coverageSection(zone.n)}`;
+}
+
+// Pins from the database for a zone map: quest givers not met, rare spawns.
+async function dbMapPins(db, areaId) {
+  if (!db || !areaId) return [];
+  const spawns = await spawnTable();
+  const { world } = derived();
+  const cov = coverageWho();
+  const c = zoneCoverage(db, areaId, cov.ctx);
+  const seen = new Set(world.npcs.map((n) => n.npcId).filter(Boolean));
+  const killed = new Set(world.creatures.filter((n) => n.kills > 0).map((n) => n.npcId).filter(Boolean));
+  return [...unfoundGivers(db, spawns, c, { seen }), ...rarePins(zoneRares(db, spawns, areaId, { killed }))];
+}
+
+function dbQuestFacts(db, q, cov) {
+  const st = questState(q, cov.ctx);
+  return facts([
+    q.zone ? `<a href="#/zone/${enc(db.zoneName(q.zone))}">${esc(db.zoneName(q.zone))}</a>` : '', q.sort ? esc(db.zoneName(q.sort)) : '',
+    q.l ? `level ${q.l}` : '', q.r ? `needs level ${q.r}` : '', raceNames(q.ra) ? esc(raceNames(q.ra)) : 'both factions', classNames(q.cl) ? esc(classNames(q.cl)) : '',
+    q.rep ? 'repeatable' : '', st === 'later' ? `waiting on ${esc(waitingOn(db, q, cov.ctx).join(', '))}` : '', `ID ${q.id}`,
+  ]);
+}
+
+// Givers, turn-in, objectives, chain and rewards of a quest, from the database.
+async function dbQuestBody(db, q, cov, { map = true } = {}) {
+  const link = (id) => { const x = db.quests.get(id); return x ? `<a href="#/quest/q${id}">${esc(x.n)}</a> ${stateChip(questState(x, cov.ctx))}` : `quest ${id}`; };
+  const who = (list) => list.map((g) => (g.kind === 'npc' ? `<a href="#/npc/n${g.id}">${esc(g.name)}</a>${g.sub ? ` <span class="muted small">&lt;${esc(g.sub)}&gt;</span>` : ''}${g.zone ? ` <span class="muted small">in ${esc(db.zoneName(g.zone))}</span>` : ''}` : g.kind === 'object' ? `${esc(g.name)} <span class="muted small">(object${g.zone ? ` in ${esc(db.zoneName(g.zone))}` : ''})</span>` : `${itemLink(g.id, g.name)} <span class="muted small">(item)</span>`)).join('<br>');
+  const gv = givers(db, q);
+  const en = enders(db, q);
+  const obs = objectives(db, q);
+  const before = [...(q.pre || []).map((id) => [id, q.pre.length > 1 ? 'one of' : '']), ...(q.preAll || []).map((id) => [id, ''])];
+  const prev = (db.previous.get(q.id) || []).map((x) => x.id);
+  const unlocks = (db.unlocks.get(q.id) || []).map((x) => x.id);
+  let mapHtml = '';
+  if (map) {
+    const spawns = await spawnTable();
+    const zone = q.zone ? db.zones[q.zone] : null;
+    const pins = [];
+    for (const g of gv) if (g.kind !== 'item') for (const [x, y] of (spawns[`${g.kind[0]}${g.id}`]?.[q.zone] || []).slice(0, 6)) pins.push({ x, y, layer: 'unfound', label: `${g.name} gives ${q.n}`, key: `g${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
+    for (const g of en) if (g.kind !== 'item') for (const [x, y] of (spawns[`${g.kind[0]}${g.id}`]?.[q.zone] || []).slice(0, 6)) pins.push({ x, y, layer: 'person', label: `${g.name} takes ${q.n} back`, key: `e${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
+    for (const o of obs) if (o.kind === 'kill') for (const [x, y] of (spawns[`n${o.id}`]?.[q.zone] || []).slice(0, 24)) pins.push({ x, y, layer: 'creature', label: o.name, key: `k${o.id}`, href: `#/npc/n${o.id}` });
+    if (zone?.m && pins.length) {
+      setTimeout(() => wireMap('dbQuestMap', zone.m, pins, { routes: false }));
+      mapHtml = `<h3>Where</h3><div class="filters" id="mapLayers"><label><input type="checkbox" value="unfound" checked><span class="cat" style="background:${LAYERS.unfound.color}"></span>Quest giver</label><label><input type="checkbox" value="person" checked><span class="cat" style="background:${LAYERS.person.color}"></span>Turn in</label><label><input type="checkbox" value="creature" checked><span class="cat" style="background:${LAYERS.creature.color}"></span>Targets</label></div><div class="map-wrap"><div class="map" id="dbQuestMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin.</p></div></div>`;
+    }
+  }
+  return `<div class="grid3">
+      ${gv.length ? `<div class="panel"><h3>Given by</h3>${who(gv)}</div>` : ''}
+      ${en.length ? `<div class="panel"><h3>Turn in to</h3>${who(en)}</div>` : ''}
+      ${q.rr?.length ? `<div class="panel"><h3>Reputation</h3>${q.rr.map(([f, v]) => `${esc(FACTIONS[f] ?? `faction ${f}`)} ${v > 0 ? '+' : ''}${v}`).join('<br>')}</div>` : ''}
+    </div>
+    ${q.o ? `<h3>Objectives</h3>${lore(q.o)}` : ''}
+    ${obs.length ? `<ul>${obs.map((o) => `<li>${o.kind === 'kill' ? `Kill <a href="#/npc/n${o.id}">${esc(o.name)}</a>` : o.kind === 'item' ? itemLink(o.id, o.name) : esc(o.name)}${o.text && o.text !== o.name ? ` <span class="muted small">${esc(o.text)}</span>` : ''}</li>`).join('')}</ul>` : ''}
+    ${mapHtml}
+    ${before.length || prev.length || q.next || unlocks.length || q.ex?.length || q.bcs?.length ? `<div class="grid3">
+      ${before.length || prev.length ? `<div class="panel"><h3>Before this</h3>${[...prev.map((id) => `${link(id)} <span class="muted small">earlier in the chain</span>`), ...before.map(([id, note]) => `${link(id)}${note ? ` <span class="muted small">${note}</span>` : ''}`)].join('<br>')}</div>` : ''}
+      ${q.next || unlocks.length ? `<div class="panel"><h3>After this</h3>${[...(q.next ? [`${link(q.next)} <span class="muted small">next in the chain</span>`] : []), ...unlocks.filter((id) => id !== q.next).map((id) => link(id))].join('<br>')}</div>` : ''}
+      ${q.ex?.length || q.bcs?.length ? `<div class="panel"><h3>Instead of</h3>${[...(q.ex || []).map((id) => `${link(id)} <span class="muted small">one or the other</span>`), ...(q.bcs || []).map((id) => `${link(id)} <span class="muted small">a breadcrumb to this</span>`)].join('<br>')}</div>` : ''}
+    </div>` : ''}`;
+}
+
+// A quest you have not logged yet.
+async function dbQuestPage(key) {
+  const db = await questDB();
+  const id = /^q\d+$/.test(key) ? Number(key.slice(1)) : 0;
+  const q = db?.quests.get(id);
+  if (!q) return '<p>Quest not found.</p>';
+  const cov = coverageWho();
+  return `${crumb('#/quests?show=db', 'Quests')}
+    ${pageHead('Quest', esc(q.n), 'You have not logged this quest yet. From the quest database:', `<div class="row">${stateChip(questState(q, cov.ctx))}${wowhead('quest', q.id)}</div>`)}
+    ${dbQuestFacts(db, q, cov)}
+    ${await dbQuestBody(db, q, cov)}`;
+}
+
+// Under a logged quest: what the database adds (chain, prerequisites, givers).
+async function dbQuestPanel(qid) {
+  const db = qid ? await questDB() : null;
+  const q = db?.quests.get(qid);
+  if (!q) return '';
+  const cov = coverageWho();
+  return `<h2>In the quest database</h2>${dbQuestFacts(db, q, cov)}${await dbQuestBody(db, q, cov, { map: false })}`;
+}
+
+function dbNpcQuests(db, n, cov, tag = 'h2') {
+  const list = (title, ids) => (ids?.length ? `<${tag}>${title}</${tag}><ul>${ids.map((id) => { const q = db.quests.get(id); return q && !q.hidden ? `<li><a href="#/quest/q${id}">${esc(q.n)}</a> <span class="muted small">level ${q.l}</span> ${stateChip(questState(q, cov.ctx))}</li>` : ''; }).join('')}</ul>` : '');
+  return list('Gives', n.qs) + list('Takes back', n.qe);
+}
+
+// An NPC you have not met yet.
+async function dbNpcPage(key) {
+  const db = await questDB();
+  const id = /^n\d+$/.test(key) ? Number(key.slice(1)) : 0;
+  const n = db?.npc(id);
+  if (!n) return '<p>Not found.</p>';
+  const spawns = await spawnTable();
+  const cov = coverageWho();
+  const zone = db.zones[n.z];
+  const pts = spawns[`n${id}`]?.[n.z] || [];
+  const rare = n.rank === 2 || n.rank === 4;
+  if (zone?.m && pts.length) setTimeout(() => wireMap('npcMap', zone.m, pts.map(([x, y]) => ({ x, y, layer: rare ? 'rares' : n.qs ? 'unfound' : 'person', label: n.n, key: `n${id}` })), { routes: false }));
+  return `${crumb(rare ? '#/bestiary' : '#/people', rare ? 'Bestiary' : 'People')}
+    ${pageHead('NPC', `${esc(n.n)}${n.sub ? ` <span class="muted" style="font-size:.55em;font-family:var(--sans);font-weight:400">&lt;${esc(n.sub)}&gt;</span>` : ''}`, 'You have not met this one yet. From the quest database:', `<div class="row">${wowhead('npc', id)}</div>`)}
+    ${facts([n.lvl ? `Level ${n.lvl.join('–')}` : '', RANK_NAMES[n.rank] ? `<span class="chip">${RANK_NAMES[n.rank]}</span>` : '', zone ? `<a href="#/zone/${enc(zone.n)}">${esc(zone.n)}</a>` : '', n.f ? { A: 'Alliance', H: 'Horde', AH: 'both factions' }[n.f] : '', `ID ${id}`])}
+    ${dbNpcQuests(db, n, cov)}
+    ${zone?.m && pts.length ? `<h2>Where</h2><div class="map-wrap"><div class="map" id="npcMap"></div></div><p class="muted small">${pts.slice(0, 6).map(([x, y]) => coords(x, y)).join(' · ')}${pts.length > 6 ? ` and ${pts.length - 6} more` : ''}</p>` : ''}`;
+}
+
+async function dbNpcSection(npcId) {
+  const db = npcId ? await questDB() : null;
+  const n = db?.npc(npcId);
+  if (!n || (!n.qs && !n.qe)) return '';
+  return `<h2>In the quest database</h2>${dbNpcQuests(db, n, coverageWho(), 'h3')}`;
 }
 
 const settings = () => ({ fps: 60, width: 1920, height: 1080, cueSeconds: 3, ...state.settings });
@@ -264,7 +503,7 @@ pages[''] = async () => {
   const m = state.machine;
   const needsSetup = m.config.fresh || (m.config.plays && m.wow.state !== 'ok') || (m.config.records && m.rec.state !== 'ok');
   const feed = activityFeed(12);
-  const manifest = await fetch('addon/manifest.json', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  const [manifest, db] = await Promise.all([fetch('addon/manifest.json', { cache: 'no-store' }).then((r) => r.json()).catch(() => null), questDB()]);
   const installed = m.wow.installs?.map((i) => i.addonVersion).filter(Boolean)[0];
   const lastSession = state.sessions.at(-1);
   const unsynced = d.recordings.filter((r) => r.source === 'filename' && (d.timelines.get(r.id) || []).length).length;
@@ -283,6 +522,7 @@ pages[''] = async () => {
     ${activityChart()}
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
+      ${db ? card(progressSets(c.quests).done.size, `of ${db.countable.toLocaleString()} Classic quests done`, '#/quests?show=db') : ''}
       ${card(t.kills, 'creatures slain', '#/bestiary')}
       ${card(d.world.creatures.length, 'creatures met', '#/bestiary')}
       ${card(d.world.people.length, 'people met', '#/people')}
@@ -393,9 +633,14 @@ function animateNumbers(root) {
   }
 }
 
-pages.quests = async () => {
+pages.quests = async (_, params) => {
   const c = await codex();
+  const db = await questDB();
+  const show = db && params.get('show') === 'db' ? 'db' : 'logged';
+  const tabs = tabsHtml([['logged', 'Logged', c.quests.length], ...(db ? [['db', 'Every Classic quest', db.countable]] : [])], show, '#/quests?show=');
+  if (show === 'db') return dbQuestsPage(db, params, tabs);
   return `${pageHead('Chronicle', 'Quests', 'Every quest you have been offered, accepted or turned in, with the text exactly as you read it.')}
+    ${tabs}
     ${table(c.quests, [
       { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.key)}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
       { label: 'Zone', value: (q) => q.zone },
@@ -408,11 +653,26 @@ pages.quests = async () => {
     ], { search: (q) => `${q.title} ${q.zone} ${q.giver?.name} ${q.text}`, sort: 5, empty: 'No quests logged yet.' })}`;
 };
 
+// Every quest in the game, with where the character stands on each.
+function dbQuestsPage(db, params, tabs) {
+  const cov = coverageWho();
+  const filter = params.get('state') || 'all';
+  const rows = [...db.quests.values()].filter((q) => !q.hidden).map((q) => ({ q, state: questState(q, cov.ctx) }));
+  const counts = {};
+  for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
+  const shown = filter === 'all' ? rows : rows.filter((r) => r.state === filter);
+  setTimeout(() => document.getElementById('stateFilter')?.addEventListener('change', (ev) => { location.hash = `#/quests?show=db&state=${ev.target.value}`; }));
+  return `${pageHead('Chronicle', 'Quests', 'Every quest in Classic from the quest database, including the ones you have not found yet, with where you stand on each.')}
+    ${tabs}
+    <p class="muted">For ${whoSelect(cov)} show <select id="stateFilter" class="inline">${[['all', `everything (${rows.length})`], ...STATE_ORDER.filter((st) => counts[st]).map((st) => [st, `${STATES[st]} (${counts[st]})`])].map(([k, l]) => `<option value="${k}" ${k === filter ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></p>
+    ${table(shown, coverageColumns(db, cov.ctx, { zone: true }), { search: (r) => `${r.q.n} ${db.zoneName(r.q.zone)} ${r.q.o ?? ''} ${STATES[r.state]} ${givers(db, r.q).map((g) => g.name).join(' ')}`, sort: 0, limit: 300, empty: 'No quests in this state.' })}`;
+}
+
 pages.quest = async (key) => {
   const c = await codex();
   if (!state.tracks && state.schema2) { try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); } }
   const q = c.quests.find((x) => x.key === key);
-  if (!q) return '<p>Quest not found.</p>';
+  if (!q) return dbQuestPage(key);
   const moments = [
     ...q.offered.map((m) => ['Offered', m]), ...q.accepted.map((m) => ['Accepted', m]),
     ...q.turnedIn.map((m) => ['Turned in', m]), ...q.abandoned.map((m) => ['Abandoned', m]),
@@ -425,7 +685,8 @@ pages.quest = async (key) => {
     ${q.text ? `<h3>Description</h3>${lore(q.text)}` : ''}
     ${q.objectives ? `<h3>Objectives</h3>${lore(q.objectives)}` : ''}
     ${q.progress ? `<h3>Progress</h3>${lore(q.progress)}` : ''}
-    ${q.reward ? `<h3>Completion</h3>${lore(q.reward)}` : ''}`;
+    ${q.reward ? `<h3>Completion</h3>${lore(q.reward)}` : ''}
+    ${await dbQuestPanel(q.qid)}`;
 };
 
 // Bestiary: things you can fight -------------------------------------------
@@ -530,7 +791,7 @@ pages.people = async (_, params) => {
 pages.npc = async (key) => {
   const { world, codex } = derived();
   const n = world.byNpc.get(key);
-  if (!n) return '<p>Not found.</p>';
+  if (!n) return dbNpcPage(key);
   const quests = [...n.quests].map((qk) => codex.quests.find((q) => q.key === qk)).filter(Boolean);
   const kicker = n.object ? 'Object' : n.attackable ? 'Creature' : n.roles.filter((r) => r !== 'other' && r !== 'talker').map((r) => ROLE_NAMES[r]).join(' · ') || 'Person';
   const back = n.object ? ['#/items?show=objects', 'Herbs, ore & chests'] : n.attackable ? ['#/bestiary', 'Bestiary'] : ['#/people', 'People'];
@@ -566,6 +827,7 @@ pages.npc = async (key) => {
       { label: 'Known', value: (x) => x.type, html: (x) => (x.type === 'CURRENT' ? 'You are here' : x.type === 'REACHABLE' ? 'Yes' : 'Not yet') },
     ], { sort: 0 }) : '')}
     ${section('Quests', quests.length ? `<ul>${quests.map((q) => `<li><a href="#/quest/${enc(q.key)}">${esc(q.title)}</a> <span class="chip ${q.status}">${q.status}</span></li>`).join('')}</ul>` : '')}
+    ${await dbNpcSection(n.npcId)}
     ${section('Dialogue', n.lines.map((l) => `<div class="row"><span class="chip">${esc(l.kind)}</span>${play(firstFootage(l.moments))}${l.moments.length > 1 ? `<span class="muted small">heard ${l.moments.length}×</span>` : ''}</div>${lore(l.text)}`).join(''))}
     ${section('Where', n.spots.length ? `${mapId ? `${n.attackable && onMap.length > 2 ? `<div class="filters" id="mapLayers"><label><input type="checkbox" value="creature" checked><span class="cat" style="background:${LAYERS.creature.color}"></span>Sightings</label><label><input type="checkbox" value="density" checked><span class="cat" style="background:${LAYERS.density.color}"></span>Density</label></div>` : ''}<div class="map-wrap"><div class="map" id="npcMap"></div></div>` : ''}${[...byMap.keys()].length > 1 ? `<p class="small muted">Also on: ${[...byMap.entries()].filter(([id]) => id !== mapId).map(([id, sp]) => `<a href="#/map/${id}">${esc(sp[0].z ?? `Map ${id}`)}</a> (${sp.length})`).join(', ')}</p>` : ''}` + table(n.spots.slice().reverse(), [
       { label: 'When', value: (sp) => sp.t, html: (sp) => `<span class="muted">${esc(when(sp.t))}</span>` },
@@ -887,22 +1149,44 @@ pages.locations = async () => {
       { label: 'Creatures', value: (m) => m.counts.creature ?? 0, num: true },
       { label: 'People', value: (m) => (m.counts.person ?? 0) + (m.counts.vendor ?? 0), num: true },
       { label: 'First visit', value: (m) => m.first?.t ?? 0, html: (m) => (m.first ? play(m.first) : '') },
-    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 2, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}`;
+    ], { search: (m) => `${m.zone} ${m.subzones.join(' ')}`, sort: 2, desc: true, empty: 'No maps yet. Positions are logged by addon 0.3.0 and later.' })}
+    ${await otherMaps(maps)}`;
 };
+
+// Zone maps you have not been on, with the database's pins.
+async function otherMaps(maps) {
+  const db = await questDB();
+  if (!db) return '';
+  const seen = new Set(maps.map((m) => String(m.id)));
+  const rest = Object.entries(CLASSIC_ZONE_IDS).filter(([id]) => !seen.has(id)).map(([id, area]) => ({ id: Number(id), name: db.zoneName(area), quests: (db.questsByZone.get(area) || []).filter((q) => !q.hidden).length })).sort((a, b) => a.name.localeCompare(b.name));
+  return `<h2>Other maps</h2><p class="muted">Every Classic zone, with quest givers not found yet and rare spawns from the quest database.</p>
+    <p class="chips">${rest.map((z) => `<a class="chip" href="#/map/${z.id}?show=unfound,rares">${esc(z.name)} <span class="muted">${z.quests}</span></a>`).join(' ')}</p>`;
+}
 
 pages.map = async (id, params) => {
   const { maps } = derived();
-  const m = maps.find((x) => String(x.id) === String(id));
-  if (!m) return '<p>Map not found.</p>';
+  const db = await questDB();
+  const areaId = CLASSIC_ZONE_IDS[id] ?? null;
+  let m = maps.find((x) => String(x.id) === String(id));
+  if (!m) {
+    // A map you have not been on: the database's pins only.
+    if (!db || !areaId) return '<p>Map not found.</p>';
+    m = { id: Number(id), zone: db.zoneName(areaId), subzones: [], markers: [], counts: {}, events: 0, first: null, last: null };
+  }
   if (!state.tracks && state.schema2) {
     try { state.tracks = await state.store.loadTracks(); } catch { state.tracks = new Map(); }
   }
   const hidden = new Set((params.get('hide') || 'loot,lore,time').split(',').filter(Boolean));
+  for (const k of (params.get('show') || '').split(',')) hidden.delete(k);
+  const dbPins = await dbMapPins(db, areaId);
+  const markers = [...m.markers, ...dbPins];
+  const counts = { ...m.counts };
+  for (const p of dbPins) counts[p.layer] = (counts[p.layer] || 0) + 1;
   const timePoints = routesFor(m.id, derived().sessions, state.tracks).flatMap((r) => r.points.map(([x, y]) => ({ x, y })));
   const heat = { density: heatCells(m.markers.filter((mk) => mk.layer === 'creature'), 4), time: heatCells(timePoints, 3) };
   const services = derived().world.people;
   setTimeout(() => {
-    wireMap('zoneMap', m.id, m.markers, {
+    wireMap('zoneMap', m.id, markers, {
       routes: true, hidden, heat,
       onBackground: (x, y) => {
         const near = nearestServices(services, m.id, x, y);
@@ -914,14 +1198,14 @@ pages.map = async (id, params) => {
     });
     document.getElementById('geojson')?.addEventListener('click', () => {
       const routes = routesFor(m.id, derived().sessions, state.tracks);
-      download(`${(m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: m.zone ?? `Map ${m.id}`, mapId: m.id, zone: m.zone, markers: cluster(m.markers), routes }), null, 1));
+      download(`${(m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: m.zone ?? `Map ${m.id}`, mapId: m.id, zone: m.zone, markers: cluster(markers), routes }), null, 1));
     });
   });
-  const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : m.counts[k]);
+  const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : counts[k]);
   return `${crumb('#/locations', 'Locations')}
     ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
-    <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${m.counts[k] ? ` <span class="muted">${m.counts[k]}</span>` : ''}</label>`).join('')}</div>
-    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.</p></div></div>`;
+    <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}</div>
+    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>`;
 };
 
 // Draws a map: the image, the route from the position track, and clustered
@@ -972,9 +1256,10 @@ async function wireMap(elId, mapId, markers, { routes = true, hidden = new Set()
     const p = pins[Number(pin.dataset.i)];
     if (!info) return;
     ev.preventDefault();
-    const moments = p.moments.slice().sort((a, b) => b.t - a.t);
+    const moments = (p.moments || []).filter((mo) => mo.t != null).sort((a, b) => b.t - a.t);
     info.innerHTML = `<h3>${p.href && p.href !== '#' ? `<a href="${p.href}">${esc(p.label)}</a>` : esc(p.label)}</h3>
-      <p class="muted small">${esc(LAYERS[p.layer]?.name ?? '')}${p.sub2 ? ` · ${esc(p.sub2)}` : ''}${p.sub ? ` · ${esc(p.sub)}` : ''} · ${coords(p.x, p.y)}${p.n > 1 ? ` · ${p.n} times here` : ''}</p>
+      <p class="muted small">${esc(LAYERS[p.layer]?.name ?? '')}${p.sub2 ? ` · ${esc(p.sub2)}` : ''}${p.sub ? ` · ${esc(p.sub)}` : ''} · ${coords(p.x, p.y)}${p.n > 1 && moments.length ? ` · ${p.n} times here` : ''}</p>
+      ${p.quests ? `<ul class="pin-quests">${p.quests.map((q) => `<li><a href="#/quest/q${q.id}">${esc(q.name)}</a> <span class="muted small">level ${q.level}</span> ${stateChip(q.state)}</li>`).join('')}</ul>` : ''}
       ${moments.map((mo) => `<div class="row"><span class="muted small">${esc(when(mo.t))}</span>${play(mo)}</div>`).join('')}`;
   });
   document.getElementById('mapLayers')?.addEventListener('change', (ev) => {
@@ -1083,7 +1368,8 @@ function cropDialog(bitmap) {
 pages.search = async (_, params) => {
   const q = params.get('q') || '';
   const d = derived();
-  d.index ??= buildIndex({ codex: d.codex, world: d.world, characters: d.characters });
+  const db = await questDB();
+  d.index ??= [...buildIndex({ codex: d.codex, world: d.world, characters: d.characters }), ...(db ? searchEntries(db) : [])];
   const hits = search(d.index, q);
   const groups = new Map();
   for (const h of hits) {
@@ -1143,24 +1429,42 @@ pages.lore = async (_, params) => {
 
 pages.zones = async () => {
   const c = await codex();
+  const db = await questDB();
   const quests = new Map(c.quests.map((q) => [q.key, q]));
-  return `${pageHead('Chronicle', 'Zones', 'Where you have been, with what happened there. Each zone links to its map.')}
+  const cov = db ? coverageWho() : null;
+  const dbZones = db ? allZones(db, cov.ctx) : [];
+  const covByName = new Map(dbZones.map((z) => [z.name.toLowerCase(), z]));
+  const visited = new Set(c.zones.map((z) => z.name.toLowerCase()));
+  const unvisited = dbZones.filter((z) => !visited.has(z.name.toLowerCase()) && z.total);
+  const covCell = (z) => (z ? `<div class="cov small"><div class="bar"><div style="width:${z.total ? Math.round((z.done / z.total) * 100) : 0}%"></div></div><b>${z.done}/${z.total}</b></div>` : '');
+  return `${pageHead('Chronicle', 'Zones', 'Where you have been, with what happened there. Each zone links to its map.', db ? `<p class="muted" style="margin:0">Quest counts are for ${whoSelect(cov)}</p>` : '')}
     ${table(c.zones, [
       { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` },
       { label: 'Map', value: (z) => '', html: (z) => derived().maps.filter((m) => m.zone === z.name).map((m) => `<a class="chip" href="#/map/${m.id}">map</a>`).join(' ') },
+      ...(db ? [{ label: 'Every quest', value: (z) => covByName.get(z.name.toLowerCase())?.done ?? 0, html: (z) => covCell(covByName.get(z.name.toLowerCase())), num: true }] : []),
       { label: 'Quests done', value: (z) => z.quests.filter((k) => quests.get(k)?.status === 'done').length, num: true },
       { label: 'Quests seen', value: (z) => z.quests.length, num: true },
       { label: 'Kills', value: (z) => z.kills, num: true },
       { label: 'Subzones', value: (z) => z.subzones.length, num: true },
       { label: 'Loose ends', value: (z) => looseEnds(z.name, c, derived().world).total, html: (z) => { const n = looseEnds(z.name, c, derived().world).total; return n ? `<a class="chip active" href="#/zone/${enc(z.name)}#loose">${n}</a>` : '<span class="chip done">clear</span>'; }, num: true },
       { label: 'First visit', value: (z) => z.first.t, html: (z) => play(z.first) },
-    ], { search: (z) => `${z.name} ${z.subzones.join(' ')}`, sort: 6 })}`;
+    ], { search: (z) => `${z.name} ${z.subzones.join(' ')}`, sort: db ? 7 : 6 })}
+    ${unvisited.length ? `<h2>Not been there yet</h2>
+    <p class="muted">Zones with quests ${cov.char ? esc(cov.char.name) : 'someone'} can do, from the quest database.</p>
+    ${table(unvisited, [
+      { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` },
+      { label: 'Map', value: (z) => '', html: (z) => (z.mapId ? `<a class="chip" href="#/map/${z.mapId}?show=unfound,rares">map</a>` : '') },
+      { label: 'Quests', value: (z) => z.total, num: true },
+      { label: 'Ready now', value: (z) => z.counts.ready ?? 0, num: true },
+      { label: 'Later', value: (z) => z.counts.later ?? 0, num: true },
+      { label: 'Other faction or class', value: (z) => z.counts.other ?? 0, num: true },
+    ], { search: (z) => z.name, sort: 3, desc: true })}` : ''}`;
 };
 
 pages.zone = async (name) => {
   const c = await codex();
   const z = c.zones.find((x) => x.name === name);
-  if (!z) return '<p>Not found.</p>';
+  if (!z) return dbZonePage(name);
   const quests = z.quests.map((k) => c.quests.find((q) => q.key === k)).filter(Boolean);
   const { world, maps } = derived();
   const creatures = world.creatures.filter((k) => k.zones.includes(name));
@@ -1176,6 +1480,7 @@ pages.zone = async (name) => {
       { label: 'Accepted', value: (q) => q.accepted[0]?.t ?? 0, html: (q) => (q.accepted[0] ? play(q.accepted[0]) : '') },
       { label: 'Turned in', value: (q) => q.turnedIn[0]?.t ?? 0, html: (q) => (q.turnedIn[0] ? play(q.turnedIn[0]) : '') },
     ], { sort: 2 })}
+    ${await coverageSection(name)}
     ${looseEndsSection(name, c, world)}
     <h2>Creatures</h2>
     <p>${creatures.map((k) => `<a href="#/npc/${enc(k.key)}">${esc(k.name)}</a> <span class="muted">${k.kills}</span>`).join(' · ') || '<span class="muted">None</span>'}</p>

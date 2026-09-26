@@ -14,6 +14,8 @@ export const LAYERS = {
   death: { name: 'Deaths & close calls', color: '#ff4d4d' },
   lore: { name: 'Lore (books, dialogue)', color: '#c9b6f5' },
   mark: { name: 'Marks, screenshots, level-ups', color: '#b48cf0' },
+  unfound: { name: 'Quest givers not found yet', color: '#ffb347' },
+  rares: { name: 'Rare spawns (database)', color: '#ff6fb5' },
   route: { name: 'Your route', color: '#f2cc6b' },
   density: { name: 'Creature density', color: '#e06a5f', heat: true },
   time: { name: 'Where you spent time', color: '#f2cc6b', heat: true },
@@ -143,7 +145,7 @@ export function spread(pins, radius = 1.4) {
 // Classic zone maps: the game's UiMap ID -> the older zone (area) ID that
 // some map image hosts still use.
 export const CLASSIC_ZONE_IDS = {
-  1411: 14, 1412: 215, 1413: 17, 1414: 1637, 1415: 1638, 1416: 36, 1417: 45, 1418: 3, 1419: 4, 1420: 85, 1421: 130, 1422: 28,
+  1411: 14, 1412: 215, 1413: 17, 1416: 36, 1417: 45, 1418: 3, 1419: 4, 1420: 85, 1421: 130, 1422: 28,
   1423: 139, 1424: 267, 1425: 47, 1426: 1, 1427: 51, 1428: 46, 1429: 12, 1430: 41, 1431: 10, 1432: 38, 1433: 44, 1434: 33,
   1435: 8, 1436: 40, 1437: 11, 1438: 141, 1439: 148, 1440: 331, 1441: 400, 1442: 406, 1443: 405, 1444: 357, 1445: 15,
   1446: 440, 1447: 16, 1448: 361, 1449: 490, 1450: 493, 1451: 1377, 1452: 618, 1453: 1519, 1454: 1637, 1455: 1537,
