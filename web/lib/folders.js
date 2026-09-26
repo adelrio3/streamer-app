@@ -128,6 +128,12 @@ export async function installAddon(flavorDir, files) {
   }
 }
 
+// macOS writes "._name" companion files next to every file on drives that are
+// not Mac-formatted; they are not videos.
+export function isHiddenFile(name) {
+  return name.startsWith('.');
+}
+
 export const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.mov', '.flv', '.ts', '.m4v', '.webm'];
 
 // Video files in the recordings folder (and one level of subfolders):
@@ -136,7 +142,7 @@ export async function listVideos(dir, depth = 0) {
   const out = [];
   for await (const entry of entries(dir)) {
     if (entry.kind === 'directory' && depth < 1) out.push(...await listVideos(entry, depth + 1));
-    else if (entry.kind === 'file' && VIDEO_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(ext))) {
+    else if (entry.kind === 'file' && !isHiddenFile(entry.name) && VIDEO_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(ext))) {
       const file = await entry.getFile();
       out.push({ name: entry.name, handle: entry, size: file.size, lastModified: file.lastModified });
     }

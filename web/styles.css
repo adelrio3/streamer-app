@@ -71,7 +71,7 @@ button.primary:hover { background: var(--gold-2); }
 table { width: 100%; border-collapse: collapse; }
 .scroll { overflow-x: auto; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; font-size: .85rem; position: sticky; top: 56px; background: var(--bg); cursor: pointer; user-select: none; }
+th { color: var(--muted); font-weight: 500; font-size: .85rem; background: var(--bg); cursor: pointer; user-select: none; }
 tbody tr:hover { background: var(--panel); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -122,7 +122,6 @@ ol.steps li { margin-bottom: 6px; }
 
 @media (max-width: 900px) {
   .player { grid-template-columns: 1fr; }
-  th { top: 0; position: static; }
   main { padding: 16px 16px 48px; }
   .top { padding: 8px 16px; gap: 8px; }
   nav { order: 3; flex-basis: 100%; overflow-x: auto; flex-wrap: nowrap; }

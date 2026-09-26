@@ -108,7 +108,8 @@ export function recordingId(name) {
 export function resolveRecordings(rows = []) {
   const out = [];
   for (const row of rows) {
-    if (!Number.isFinite(row.start_ms)) continue;
+    // Skip macOS "._" companion files saved by earlier versions.
+    if (!Number.isFinite(row.start_ms) || String(row.name).startsWith('.')) continue;
     const rawStart = row.start_ms;
     const duration = row.duration > 0 ? row.duration : Number.isFinite(row.end_ms) && row.end_ms > rawStart ? (row.end_ms - rawStart) / 1000 : null;
     if (!duration) continue;

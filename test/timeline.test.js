@@ -112,4 +112,5 @@ test('recordings still being recorded or missing times are skipped', () => {
   assert.equal(resolveRecordings([{ name: 'a.mp4', start_ms: 1000, end_ms: null, duration: null }]).length, 0);
   assert.equal(resolveRecordings([{ name: 'a.mp4', start_ms: null, duration: 5 }]).length, 0);
   assert.equal(resolveRecordings([{ name: 'a.mp4', start_ms: 1000, duration: 5 }])[0].end, 6000);
+  assert.equal(resolveRecordings([{ name: '._a.mp4', start_ms: 1000, duration: 5 }]).length, 0, 'macOS companion files');
 });
