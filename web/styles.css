@@ -579,3 +579,14 @@ a.rpg-stat:hover { border-color: var(--line-2); }
 @media (max-width: 1100px) { .rpg { grid-template-columns: 220px 1fr; } .rpg-detail { grid-column: 1 / -1; position: static; } }
 @media (max-width: 720px) { .rpg { grid-template-columns: 1fr; } .rpg-menu, .rpg-list { position: static; max-height: none; } }
 main.enter .rpg-item, main.enter .rpg-row { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 20ms); }
+
+/* Storyline chapters and the route replay panel */
+.chapters { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+.chapter { padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: var(--radius); }
+.chapter.st-done { border-left-color: var(--green); }
+.chapter.st-ready { border-left-color: var(--gold); }
+.chapter.st-active { border-left-color: var(--cyan); }
+.chapter blockquote { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--line-2); color: var(--text-2); font-family: var(--serif); font-size: 1.02rem; }
+.replay { margin-top: 14px; }
+.replay .row.small label, .replay label.small { color: var(--muted); font-size: .85rem; gap: 6px; }
+main.enter .chapter { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 25ms); }

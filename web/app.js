@@ -21,6 +21,10 @@ import { indexDB, questState, waitingOn, zoneCoverage, allZones, unfoundGivers, 
 import { pastLoot, dropsBetween } from './lib/live.js';
 import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
 import { makeZip } from './lib/zip.js';
+import { storylines, storylinesByContinent, storylineOutline } from './lib/story.js';
+import { findShorts, toShortXML, shortsCSV } from './lib/shorts.js';
+import { assembleEpisode, toEpisodeXML, episodeChapters } from './lib/episode.js';
+import { planReplay, drawReplayFrame, easeProgress } from './lib/replay.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -1537,6 +1541,107 @@ async function otherMaps(maps) {
     <p class="chips">${rest.map((z) => `<a class="chip" href="#/map/${z.id}?show=unfound,rares">${esc(z.name)} <span class="muted">${z.quests}</span></a>`).join(' ')}</p>`;
 }
 
+// Storylines: quest chains from the database as chapters ----------------------
+
+pages.storylines = async (_, params) => {
+  const db = await questDB();
+  if (!db) return `${pageHead('World', 'Storylines', 'Quest chains as chapters. The quest database is not available, so there is nothing to show yet.')}`;
+  const cov = coverageWho();
+  const list = storylines(db, cov.ctx);
+  const groups = storylinesByContinent(list).sort((a, b) => ZONE_GROUPS.indexOf(a.name) - ZONE_GROUPS.indexOf(b.name));
+  const continent = params.get('continent') || '';
+  const g = groups.find((x) => x.name === continent);
+  const done = list.reduce((n, s) => n + s.done, 0);
+  const total = list.reduce((n, s) => n + s.total, 0);
+  const rows = (g ? g.storylines : list).map((s) => ({ ...s, name: s.name, sub: `${s.zones.join(' → ')}${s.minLevel ? ` · level ${s.minLevel}${s.maxLevel !== s.minLevel ? `–${s.maxLevel}` : ''}` : ''}` }));
+  return `${pageHead('World', 'Storylines', 'Every quest chain in Classic as chapters in order: what leads to what, across zones. A storyline is the spine of a zone episode; pick one for its outline.', `<p class="muted" style="margin:0">For ${whoSelect(cov)}</p>`)}
+    ${completionHero(done, total, `${done.toLocaleString()} of ${total.toLocaleString()} storyline quests done.`, `${list.length} storylines · ${list.filter((s) => s.total && s.done === s.total).length} finished`)}
+    ${tabsHtml([['', 'Everywhere', list.length], ...groups.map((x) => [x.name, x.name, x.storylines.length])], continent, '#/storylines?continent=')}
+    ${table(rows, [
+      ...completionColumns('Storyline', (r) => `#/storyline/${r.id}`),
+      { label: 'Chapters', value: (r) => r.quests.length, num: true },
+      { label: 'Next', value: (r) => r.next?.n ?? '', html: (r) => (r.next ? `<a href="#/quest/q${r.next.id}">${esc(r.next.n)}</a>` : (r.total && r.done === r.total ? '<span class="chip done">finished</span>' : '')) },
+    ], { search: (r) => `${r.name} ${r.zones.join(' ')} ${r.quests.map((q) => q.q.n).join(' ')}`, sort: 1, desc: true, limit: 200 })}`;
+};
+
+pages.storyline = async (id) => {
+  const db = await questDB();
+  if (!db) return '<p>The quest database is not available.</p>';
+  const cov = coverageWho();
+  const s = storylines(db, cov.ctx).find((x) => String(x.id) === String(id)) || storylines(db, {}).find((x) => String(x.id) === String(id));
+  if (!s) return `${crumb('#/storylines', 'Storylines')}<p>No such storyline.</p>`;
+  const c = await codex();
+  const codexQuests = new Map(c.quests.map((q) => [q.key, q]));
+  const giverName = (q) => { const g = givers(db, q)[0]; return g ? `${g.name}${g.zone ? ` · ${esc(db.zoneName(g.zone))}` : ''}` : ''; };
+  setTimeout(() => document.getElementById('outlineDl')?.addEventListener('click', () => download(`${s.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-outline.md`, 'text/markdown', storylineOutline(s, codexQuests))));
+  return `${crumb('#/storylines', 'Storylines')}
+    ${pageHead('Storyline', esc(s.name), `${esc(s.zones.join(' → '))}${s.minLevel ? ` · level ${s.minLevel}${s.maxLevel !== s.minLevel ? `–${s.maxLevel}` : ''}` : ''} · ${s.quests.length} chapters.`, `<div class="row"><button id="outlineDl">Outline (Markdown)</button><p class="muted" style="margin:0">For ${whoSelect(cov)}</p></div>`)}
+    ${completionHero(s.done, s.total, `${s.done} of ${s.total} chapters done.`, s.next ? `Next: <a href="#/quest/q${s.next.id}">${esc(s.next.n)}</a>` : '')}
+    <ol class="chapters">
+      ${s.quests.map((r, i) => { const cq = codexQuests.get(`q${r.q.id}`); return `<li class="chapter st-${r.state}">
+        <div class="row spread"><span><span class="muted">${i + 1}.</span> <a href="#/quest/q${r.q.id}"><b>${esc(r.q.n)}</b></a> ${r.q.l ? `<span class="muted small">level ${r.q.l}</span>` : ''}</span>${stateChip(r.state)}</div>
+        <div class="muted small">${esc(db.zoneName(r.q.zone ?? r.q.z) ?? '')}${giverName(r.q) ? ` · from ${giverName(r.q)}` : ''}</div>
+        ${r.q.o ? `<div class="small">${esc(r.q.o)}</div>` : ''}
+        ${cq?.text ? `<blockquote class="small">${esc(cq.text)}</blockquote>` : ''}
+      </li>`; }).join('')}
+    </ol>`;
+};
+
+// Shorts: the moments worth a vertical, cut ready ----------------------------
+
+pages.shorts = async () => {
+  const { world, recordings } = derived();
+  const highlights = findHighlights(derived().sessions, derived().moment, (id) => world.byItem.get(id)?.quality ?? null);
+  const shorts = findShorts(highlights);
+  const byRec = new Map(recordings.map((r) => [r.id, r]));
+  setTimeout(() => {
+    document.getElementById('shortsCsv')?.addEventListener('click', () => download('shorts.csv', 'text/csv', shortsCSV(shorts, byRec)));
+    for (const b of document.querySelectorAll('[data-short]')) b.addEventListener('click', () => { const sh = shorts[Number(b.dataset.short)]; const r = byRec.get(sh.rec); if (r) download(`short-${sh.labels[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toShortXML(r, sh)); });
+  });
+  return `${pageHead('Footage', 'Shorts', 'Moments worth a vertical short, cut from the highlights with room before and after: deaths, close calls, rares, great loot, level-ups and your marks. Each one exports as a 9:16 Premiere sequence showing the centre of the frame.', `<div class="row"><button class="ghost" id="shortsCsv" ${shorts.length ? '' : 'disabled'}>All shorts (CSV)</button></div>`)}
+    ${table(shorts.map((sh, i) => ({ ...sh, i })), [
+      { label: 'Score', value: (sh) => sh.score, html: (sh) => `<b>${Math.round(sh.score)}</b>`, num: true },
+      { label: 'Moment', value: (sh) => sh.labels.join(' / '), html: (sh) => `${sh.kinds.map((k) => `<span class="chip">${esc(HIGHLIGHT_KINDS[k] ?? k)}</span>`).join(' ')} ${esc(sh.labels.join(' / '))}` },
+      { label: 'Recording', value: (sh) => byRec.get(sh.rec)?.name ?? sh.rec, html: (sh) => `<a class="btn play" href="#/recording/${sh.rec}?t=${sh.in.toFixed(2)}">▶ ${tc(sh.in)} – ${tc(sh.out)}</a>` },
+      { label: 'Seconds', value: (sh) => sh.duration, html: (sh) => sh.duration.toFixed(0), num: true },
+      { label: 'Where', value: (sh) => [sh.zone, sh.char].filter(Boolean).join(' · ') },
+      { label: '', value: () => '', html: (sh) => `<button class="ghost small" data-short="${sh.i}">Premiere 9:16</button>` },
+    ], { sort: 0, desc: true, search: (sh) => `${sh.labels.join(' ')} ${sh.zone} ${sh.char} ${sh.kinds.join(' ')}`, empty: 'No shorts yet. They appear once highlights land on recorded footage.' })}`;
+};
+
+// Episodes: everything recorded in one zone, as one sequence --------------------
+
+pages.episodes = async (_, params) => {
+  if (!state.tracks) { try { state.tracks = state.schema2 ? await state.store.loadTracks() : new Map(); } catch { state.tracks = new Map(); } }
+  const { recordings, clock, maps } = derived();
+  const zones = [...new Map(maps.filter((m) => m.zone).map((m) => [m.zone, m])).values()].map((m) => m.zone).sort();
+  const zone = params.get('zone') || zones[0] || '';
+  const mapIds = maps.filter((m) => m.zone === zone).map((m) => m.id);
+  const toMs = (s, t) => eventMs(s, { t }, clock);
+  const markers = [];
+  for (const s of derived().sessions) for (const e of s.events) {
+    if (e.e !== 'quest_turnin' || (e.z && e.z !== zone)) continue;
+    const mo = derived().moment(s, e);
+    if (mo.footage) markers.push({ rec: mo.footage.rec, offset: mo.footage.offset, label: `Quest complete: ${e.title ?? e.qid}`, comment: [e.z, e.sz].filter(Boolean).join(' · ') });
+  }
+  const ep = zone ? assembleEpisode({ mapIds, sessions: derived().sessions, tracks: state.tracks, recordings, toMs, markers }) : { clips: [], markers: [], duration: 0 };
+  const byRec = new Map(recordings.map((r) => [r.id, r]));
+  setTimeout(() => {
+    document.getElementById('epZone')?.addEventListener('change', (ev) => { location.hash = `#/episodes?zone=${enc(ev.target.value)}`; });
+    document.getElementById('epXml')?.addEventListener('click', () => download(`episode-${zone.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toEpisodeXML(zone, ep, recordings)));
+    document.getElementById('epChapters')?.addEventListener('click', () => download(`episode-${zone.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-chapters.txt`, 'text/plain', episodeChapters(ep)));
+  });
+  return `${pageHead('Footage', 'Episodes', 'A zone episode assembled from every recorded stretch you spent there, in the order you played it, with a marker at each quest turned in. Import the sequence into Premiere and cut from there.', `<div class="row"><label class="row" style="margin:0"><span>Zone</span><select id="epZone">${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select></label><button id="epXml" ${ep.clips.length ? '' : 'disabled'}>Premiere sequence</button><button class="ghost" id="epChapters" ${ep.clips.length ? '' : 'disabled'}>Chapters</button></div>`)}
+    ${zone ? `<div class="cards">${card(ep.clips.length, 'stretches', '#/footage')}${card(Math.round(ep.duration / 60), 'minutes', '#/footage')}${card(ep.markers.length, 'quests turned in', '#/quests')}</div>` : '<p class="muted">No zone recorded yet. Episodes need recordings and the route the addon logs.</p>'}
+    ${table(ep.clips, [
+      { label: 'Recording', value: (c) => c.recName, html: (c) => `<a class="btn play" href="#/recording/${c.rec}?t=${c.in.toFixed(2)}">▶ ${tc(c.in)} – ${tc(c.out)}</a> <span class="muted small">${esc(c.recName)}</span>` },
+      { label: 'In the episode', value: (c) => c.start, html: (c) => tc(c.start), num: true },
+      { label: 'Seconds', value: (c) => c.duration, html: (c) => c.duration.toFixed(0), num: true },
+      { label: 'Character', value: (c) => c.char ?? '' },
+    ], { empty: 'Nothing recorded in this zone yet.' })}
+    ${ep.markers.length ? `<h2>Chapters</h2><pre class="small">${esc(episodeChapters(ep))}</pre>` : ''}`;
+};
+
 pages.map = async (id, params) => {
   const { maps } = derived();
   const db = await questDB();
@@ -1594,8 +1699,98 @@ pages.map = async (id, params) => {
   return `${crumb('#/locations', 'Locations')}
     ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
     <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}<span class="row" style="margin-left:auto"><button class="ghost small" id="layersDefault" title="Quests and your route">Default</button><button class="ghost small" id="layersAll">All</button><button class="ghost small" id="layersNone">None</button></span></div>
-    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>`;
+    <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>
+    ${replayPanel(m)}`;
 };
+
+// Route replay: the route walked on this map, drawn in over a few seconds,
+// recorded to a WebM (quick B-roll) or a PNG sequence (for Premiere).
+function replayPanel(m) {
+  const routes = routesFor(m.id, derived().sessions, state.tracks);
+  if (!routes.length) return '';
+  setTimeout(() => wireReplay(m, routes));
+  return `<div class="panel replay" id="replayPanel">
+    <div class="row spread"><h3 style="margin:0">Route replay <span class="muted small">${routes.length} stretch${routes.length === 1 ? '' : 'es'} of your route, as B-roll</span></h3>
+      <span class="row">
+        <label class="row small"><span>Seconds</span><input type="number" id="rpSeconds" value="8" min="3" max="60" step="1" style="width:64px"></label>
+        <label class="row small"><span>Size</span><select id="rpSize"><option value="1280x720">1280×720</option><option value="1920x1080" selected>1920×1080</option><option value="1080x1920">1080×1920 (vertical)</option></select></label>
+        <label class="row small"><span>FPS</span><select id="rpFps"><option>24</option><option selected>30</option><option>60</option></select></label>
+        <button class="ghost small" id="rpPlay">Play</button>
+        <button class="small" id="rpWebm">Record WebM</button>
+        <button class="ghost small" id="rpPng">PNG sequence</button>
+      </span></div>
+    <canvas id="rpCanvas" width="1920" height="1080" style="width:100%;height:auto;border-radius:8px;margin-top:10px;background:#000"></canvas>
+    <p class="muted small" id="rpNote">The WebM plays in OBS and browsers; Premiere takes the PNG sequence (File › Import, tick "Image Sequence"). The map image must allow cross-origin drawing: your own uploaded map always does.</p>
+  </div>`;
+}
+
+async function wireReplay(m, routes) {
+  const canvas = document.getElementById('rpCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const note = document.getElementById('rpNote');
+  const mapImg = document.querySelector('#zoneMap img');
+  const settings = () => { const [w, h] = document.getElementById('rpSize').value.split('x').map(Number); return { w, h, seconds: Number(document.getElementById('rpSeconds').value) || 8, fps: Number(document.getElementById('rpFps').value) || 30 }; };
+  const image = () => (mapImg && mapImg.complete && mapImg.naturalWidth ? mapImg : null);
+  let stop = null;
+  const play = (onFrame) => new Promise((resolve) => {
+    if (stop) stop();
+    const { w, h, seconds, fps } = settings();
+    canvas.width = w; canvas.height = h;
+    const plan = planReplay(routes, { seconds, fps });
+    let frame = 0; let done = false;
+    stop = () => { done = true; resolve(); };
+    const step = () => {
+      if (done) return;
+      drawReplayFrame(ctx, { width: w, height: h, image: image(), plan, progress: easeProgress(frame, plan.frames) });
+      onFrame?.(frame, plan.frames);
+      frame++;
+      if (frame >= plan.frames) { done = true; setTimeout(resolve, 300); return; }
+      setTimeout(step, 1000 / fps);
+    };
+    step();
+  });
+  drawReplayFrame(ctx, { width: canvas.width, height: canvas.height, image: image(), plan: planReplay(routes), progress: 1 });
+  mapImg?.addEventListener('load', () => drawReplayFrame(ctx, { width: canvas.width, height: canvas.height, image: image(), plan: planReplay(routes), progress: 1 }));
+  const slug = (m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  document.getElementById('rpPlay')?.addEventListener('click', () => play());
+  document.getElementById('rpWebm')?.addEventListener('click', async () => {
+    if (!('MediaRecorder' in window)) { toast('This browser cannot record video.'); return; }
+    const { fps } = settings();
+    const stream = canvas.captureStream(fps);
+    const chunks = [];
+    let rec;
+    try { rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 12_000_000 }); } catch { rec = new MediaRecorder(stream); }
+    rec.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+    const finished = new Promise((resolve) => { rec.onstop = resolve; });
+    rec.start(200);
+    note.textContent = 'Recording…';
+    await play();
+    rec.stop();
+    await finished;
+    downloadBlob(`${slug}-route.webm`, new Blob(chunks, { type: 'video/webm' }));
+    note.textContent = 'Saved. In OBS: Sources › + › Media Source. For Premiere use the PNG sequence.';
+  });
+  document.getElementById('rpPng')?.addEventListener('click', async () => {
+    const { w, h, seconds, fps } = settings();
+    if (seconds * fps > 1800) { toast('That is over 1,800 frames. Shorten it or lower the FPS.'); return; }
+    canvas.width = w; canvas.height = h;
+    const plan = planReplay(routes, { seconds, fps });
+    const files = [];
+    try {
+      for (let i = 0; i < plan.frames; i++) {
+        drawReplayFrame(ctx, { width: w, height: h, image: image(), plan, progress: easeProgress(i, plan.frames) });
+        const blob = await new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('could not read the canvas'))), 'image/png'));
+        files.push({ name: `${slug}-route/${slug}-${String(i + 1).padStart(4, '0')}.png`, data: blob });
+        if (i % 10 === 0) note.textContent = `Rendering frame ${i + 1} of ${plan.frames}…`;
+      }
+      downloadBlob(`${slug}-route-png.zip`, new Blob([await makeZip(files)], { type: 'application/zip' }));
+      note.textContent = `${plan.frames} frames at ${fps} fps. Premiere: File › Import, pick the first PNG, tick "Image Sequence".`;
+    } catch (err) {
+      note.textContent = /security|tainted|insecure/i.test(err.message) ? 'The map image blocks cross-origin drawing. Use "Use my own map image" above, then try again.' : err.message;
+    }
+  });
+}
 
 const MAP_DEFAULT_LAYERS = ['quest', 'route'];
 const MAP_LAYERS_KEY = 'chronicler.mapLayers';

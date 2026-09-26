@@ -165,7 +165,7 @@ export function fileURL(file) {
   return `file://localhost${joined.startsWith('/') ? '' : '/'}${joined}`;
 }
 
-function xml(s) {
+export function xml(s) {
   return String(s ?? '')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -182,3 +182,56 @@ export function stem(name) {
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
+
+// A cut sequence for Premiere: clips laid end to end from one or more
+// recordings, with markers. clips: [{ file: { id, name, path, duration },
+// in, out }] in seconds; markers: [{ at, name, comment }] in sequence seconds.
+export function toSequenceXML({ name, clips, markers = [], fps = 60, width = 1920, height = 1080, sourceWidth = 1920, sourceHeight = 1080 }) {
+  const timebase = Math.round(fps);
+  const ntsc = Math.abs(fps - timebase) > 0.001 ? 'TRUE' : 'FALSE';
+  const frames = (sec) => Math.round(sec * fps);
+  const rate = `<rate><timebase>${timebase}</timebase><ntsc>${ntsc}</ntsc></rate>`;
+  const files = new Map();
+  const fileXml = (f) => {
+    if (files.has(f.id)) return `<file id="${xml(f.id)}"/>`;
+    files.set(f.id, true);
+    return `<file id="${xml(f.id)}"><name>${xml(f.name)}</name><pathurl>${xml(fileURL(f.path || f.name))}</pathurl>${rate}<duration>${frames(f.duration || 0)}</duration>`
+      + `<media><video><samplecharacteristics>${rate}<width>${sourceWidth}</width><height>${sourceHeight}</height></samplecharacteristics></video>`
+      + '<audio><channelcount>2</channelcount></audio></media></file>';
+  };
+  let cursor = 0;
+  const placed = clips.map((c, i) => {
+    const len = Math.max(1, frames(c.out - c.in));
+    const item = { ...c, start: cursor, end: cursor + len, inF: frames(c.in), outF: frames(c.in) + len, n: i + 1 };
+    cursor += len;
+    return item;
+  });
+  const total = cursor;
+  const clipXml = (c, id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${xml(c.file.name)}</name><duration>${frames(c.file.duration || 0)}</duration>${rate}`
+    + `<start>${c.start}</start><end>${c.end}</end><in>${c.inF}</in><out>${c.outF}</out>${mediaFile}${extra}</clipitem>`;
+  const video = placed.map((c) => clipXml(c, `clipitem-v${c.n}`, fileXml(c.file))).join('\n        ');
+  files.clear();
+  const audio = placed.map((c) => clipXml(c, `clipitem-a${c.n}`, `<file id="${xml(c.file.id)}"/>`, '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>')).join('\n        ');
+  const markerXml = markers.map((m) => `<marker><name>${xml(m.name)}</name><comment>${xml(m.comment || '')}</comment><in>${frames(m.at)}</in><out>-1</out></marker>`).join('\n      ');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4">
+  <sequence id="sequence-1">
+    <name>${xml(name)}</name>
+    <duration>${total}</duration>
+    ${rate}
+    <timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode>
+    <media>
+      <video>
+        <format><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></format>
+        <track>${video}</track>
+      </video>
+      <audio>
+        <track>${audio}</track>
+      </audio>
+    </media>
+      ${markerXml}
+  </sequence>
+</xmeml>
+`;
+}
