@@ -2892,7 +2892,7 @@ function renderLogin(message = '') {
   document.getElementById('nav').hidden = true;
   main.innerHTML = `<div class="login"><div class="panel glow">
     <div class="brand" style="font-size:2rem;margin-bottom:6px"><span class="brand-mark"></span>Chronicler</div>
-    <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team.</p>
+    <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team. Emailed links only come back to this site once its address is the project's Site URL (Supabase › Authentication › URL Configuration).</p>
     ${message ? `<div class="notice">${message}</div>` : ''}
     <form id="login">
       <label><span>Email</span><input type="email" name="email" required autocomplete="username" style="width:100%"></label>
@@ -3046,10 +3046,13 @@ async function boot() {
   if (!cfg && !window.__chroniclerTestClient) return renderConnect();
   try {
     state.client = await makeClient(cfg);
+    // Back from a sign-in or confirmation link: its tokens (or its error) sit in the address.
+    const linkError = /^#error=/.test(location.hash) ? new URLSearchParams(location.hash.slice(1)) : null;
     const { data } = await state.client.auth.getSession();
-    // Back from a sign-in link: its tokens sit in the address; tidy them away.
     if (/^#(access_token|error)=/.test(location.hash)) history.replaceState(null, '', `${location.pathname}#/`);
-    if (!data.session) return renderLogin();
+    if (!data.session) {
+      return renderLogin(linkError ? `The link did not work: <b>${esc(linkError.get('error_description') || linkError.get('error') || 'unknown error')}</b>. Links work once and expire after an hour, and some mail apps open them themselves for a preview, which uses them up. Ask for a new one and open it in this browser, or log in with your password.` : '');
+    }
     await startApp(data.session.user);
   } catch (err) {
     renderConnect(`Could not reach Supabase: ${err.message}`);

@@ -36,7 +36,7 @@ Videos never leave the recording computer. Only the logs and recording times are
 
 One-time, in a browser:
 
-1. **Supabase:** create a project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL Editor (run it again after updating: it only adds what is missing).
+1. **Supabase:** create a project and run [`supabase/schema.sql`](supabase/schema.sql) in its SQL Editor (run it again after updating: it only adds what is missing). Under **Authentication › URL Configuration** set the **Site URL** to the site's address (the Netlify address you open) and add it to **Redirect URLs** too; otherwise confirmation and sign-in emails send you to `localhost:3000`.
 2. **Netlify:** import this repository as a site and connect it to the Supabase project (the Supabase extension sets the keys; or add `SUPABASE_URL` and `SUPABASE_ANON_KEY` as environment variables). [`netlify.toml`](netlify.toml) has the rest.
 3. Open the site in **Chrome** on each computer (Edge also works on Windows), create your login on the first one (a password, or an emailed sign-in link), and follow the **This computer** page.
 
