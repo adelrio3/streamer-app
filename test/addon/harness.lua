@@ -612,7 +612,13 @@ end
 local before = #chat.sent
 SlashCmdList.CHRONICLER("live test")
 assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/chron live test sends a test line")
-assert(chat.logging and chat.flushes > 0, "the chat log is flushed to disk after sending (logging toggled off and on) and left on")
+-- A moment later the log is closed (which writes the buffer out) and reopened.
+local flushesBefore = chat.flushes
+trackTick()
+assert(chat.flushes == flushesBefore + 1 and not chat.logging, "the chat log is closed after a send, to flush it")
+assert(#chat.sent == before + 1, "nothing is sent while the log is closed")
+runTimers()
+assert(chat.logging, "the chat log is reopened")
 
 -- A chat log the way WoW writes it, for the web side's tests.
 local log = {}

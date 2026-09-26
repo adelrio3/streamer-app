@@ -75,7 +75,7 @@ local function filter(_, event, text)
 end
 
 local function flush()
-	if #queue == 0 or not enabled() then return end
+	if #queue == 0 or not enabled() or reopening then return end
 	local to = whisperTarget()
 	if not to then return end
 	local now = GetTime()
@@ -101,13 +101,25 @@ end
 -- a long time. Turning logging off and on again closes and reopens the
 -- file, which writes the buffer out. The API itself prints nothing (the
 -- "Chat logging enabled" lines come from the /chatlog command's Lua code).
+-- Off and on in the same frame may be folded into nothing, so the reopen
+-- comes a moment later; nothing of ours is sent in between.
 local FLUSH_AFTER = 1.5 -- seconds after the last send
+local reopening = false
+local function reopenLog()
+	reopening = false
+	if LoggingChat and enabled() then LoggingChat(true) end
+end
 local function flushLog()
-	if not unflushed or not LoggingChat then return end
+	if not unflushed or reopening or not LoggingChat then return end
 	if GetTime() - lastSend < FLUSH_AFTER then return end
-	LoggingChat(false)
-	LoggingChat(true)
 	unflushed = false
+	LoggingChat(false)
+	if C_Timer and C_Timer.After then
+		reopening = true
+		C_Timer.After(0.5, reopenLog)
+	else
+		LoggingChat(true)
+	end
 end
 
 local function heartbeat()
@@ -190,8 +202,6 @@ ns.commands.live = function(arg)
 		push("T", time())
 		lastSend = -MIN_GAP
 		flush()
-		lastSend = -FLUSH_AFTER
-		flushLog()
 		print(string.format("|cffd4a017Chronicler|r test line whispered to %s. Within a few seconds: the Live overlay page on this PC shows \"test line received\", and the overlay shows LIVE LINK OK.", whisperTarget() or "you"))
 	else
 		local logging = LoggingChat and LoggingChat() or false
