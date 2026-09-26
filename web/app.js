@@ -104,6 +104,8 @@ async function questDB() {
     } catch (err) {
       console.warn('Quest database not available:', err.message);
       state.db = null;
+      state.dbError = err.message;
+      toast(`The quest database did not load (${err.message}). World pages need it.`);
     }
     return state.db;
   })();
