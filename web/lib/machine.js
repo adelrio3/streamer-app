@@ -550,6 +550,29 @@ export class Machine {
     this.changed('wow');
   }
 
+  // Writing beside the recordings (the session package) needs the folder
+  // granted for writing, which Chrome asks about once per session.
+  async recWritable() {
+    if (!this.recRoot) return false;
+    return (await folders.permission(this.recRoot, 'readwrite')) === 'granted';
+  }
+
+  async grantRecWrite() {
+    if (!this.recRoot) return false;
+    await folders.requestPermission(this.recRoot, 'readwrite');
+    this.changed('wow');
+    return this.recWritable();
+  }
+
+  // A writable stream for a new file next to a recording (in the folder the
+  // video is in), or null when the folder cannot be written.
+  async recFile(name, beside = null) {
+    if (!(await this.recWritable())) return null;
+    const dir = (beside && await folders.folderOfVideo(this.recRoot, beside)) || this.recRoot;
+    const handle = await dir.getFileHandle(name, { create: true });
+    return handle.createWritable();
+  }
+
   row(name) {
     return this.state.rows.find((r) => r.name.toLowerCase() === name.toLowerCase());
   }

@@ -147,6 +147,16 @@ export const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.mov', '.flv', '.ts', '.m4v', 
 
 // Video files in the recordings folder (and one level of subfolders):
 // [{ name, handle, size, lastModified }].
+// The folder a video sits in (the recordings folder or one of its subfolders),
+// for writing files beside it.
+export async function folderOfVideo(dir, name, depth = 0) {
+  for await (const entry of entries(dir)) {
+    if (entry.kind === 'file' && entry.name === name) return dir;
+    if (entry.kind === 'directory' && depth < 1) { const d = await folderOfVideo(entry, name, depth + 1); if (d) return d; }
+  }
+  return null;
+}
+
 export async function listVideos(dir, depth = 0) {
   const out = [];
   for await (const entry of entries(dir)) {

@@ -33,3 +33,19 @@ test('companions pair with the recording they were made beside and take its timi
   assert.ok(xml.includes('<in>18</in>'), 'the overlay is trimmed by 18 frames');
   assert.ok(xml.includes('cam 2026-09-27 14-13-35.mkv') && xml.includes('overlay 2026-09-27 14-13-34.mp4'));
 });
+
+test('toFCPXML: a rendered overlay companion gets a video-only track at its own size', async () => {
+  const { toFCPXML } = await import('../web/lib/exports.js');
+  const rec = { name: '2026-09-25 20-15-42.mkv', path: '/Users/me/Movies/2026-09-25 20-15-42.mkv', duration: 100, companions: [
+    { role: 'cam', name: 'cam 2026-09-25 20-15-43.mkv', path: '/Users/me/Movies/cam 2026-09-25 20-15-43.mkv', duration: 99, offset: 1 },
+    { role: 'overlay', name: '2026-09-25 20-15-42.overlay.mp4', path: '/Users/me/Movies/2026-09-25 20-15-42.overlay.mp4', duration: 100, offset: 0, width: 1920, height: 1080 },
+  ] };
+  const xml = toFCPXML(rec, [], { fps: 60, width: 3840, height: 2160 });
+  const videoTracks = (xml.match(/<track><clipitem id="clipitem-(?:1|c\d+v)"/g) || []).length;
+  const audioTracks = (xml.match(/<track><clipitem id="clipitem-(?:2|c\d+a)"/g) || []).length;
+  assert.equal(videoTracks, 3);
+  assert.equal(audioTracks, 2, 'the overlay has no sound');
+  assert.ok(xml.indexOf('overlay.mp4') > xml.indexOf('cam 2026'), 'the overlay is the top track');
+  assert.ok(xml.includes('<width>1920</width><height>1080</height>'));
+  assert.ok(xml.includes('<width>3840</width><height>2160</height>'));
+});

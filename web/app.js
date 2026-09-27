@@ -27,6 +27,8 @@ import { tales, tellTale, taleText } from './lib/tales.js';
 import { findShorts, toShortXML, shortsCSV } from './lib/shorts.js';
 import { assembleEpisode, toEpisodeXML, episodeChapters } from './lib/episode.js';
 import { planReplay, drawReplayFrame, easeProgress } from './lib/replay.js';
+import { OverlayScene, overlayEvents, firstTimes, renderOverlayVideo } from './lib/overlayvideo.js';
+import { Mp4Writer, memorySink, fileSink } from './lib/mp4.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -2867,6 +2869,7 @@ pages.recording = async (id, params) => {
             ${exportBtn('chapters', 'YouTube chapters')}
             ${r.counts.voice ? exportBtn('narration', 'Narration (.srt)') : ''}
           </div>
+          ${sessionPackPanel(r)}
           ${overlayPackPanel(r)}
           <p class="muted small">Downloads go to this computer's Downloads folder. In Premiere, use File › Import on the .xml to get a sequence of this recording with a marker per event, or drop the .srt on the timeline as a caption track. The category checkboxes apply to markers, captions and events.
           ${r.path ? '' : '<br>The .xml needs the video\'s full path, which is filled in automatically when OBS is connected on the recording computer.'}</p>
@@ -3060,6 +3063,145 @@ async function wirePlayer(r, start) {
     });
   }
   document.getElementById('packBuild')?.addEventListener('click', (ev) => { ev.preventDefault(); buildOverlayPack(r).catch((err) => toast(err.message)); });
+  document.getElementById('sessionBuild')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    const f = new FormData(document.getElementById('sessionForm'));
+    const el = document.getElementById('sessionStatus');
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    buildSessionPackage(r, { fps: Number(f.get('fps')) || 30, size: String(f.get('size') || 'recording'), say: (t) => { if (el) el.textContent = t; } })
+      .catch((err) => { toast(err.message); if (el) el.textContent = err.message; })
+      .finally(() => { btn.disabled = false; });
+  });
+}
+
+// Session package: the overlay drawn again from the events as a chroma-key
+// video, and a Premiere sequence with every file on its own track ---------
+
+const PACKS_KEY = 'chronicler.packs'; // what this computer has built, by recording name
+function readPacks() { try { return JSON.parse(localStorage.getItem(PACKS_KEY) || '{}'); } catch { return {}; } }
+function savePacks(p) { try { localStorage.setItem(PACKS_KEY, JSON.stringify(p)); } catch { /* storage off */ } }
+const building = new Set();
+
+function sessionPackPanel(r) {
+  const cfg = settings();
+  const sp = { fps: 30, size: 'recording', auto: false, ...(cfg.sessionPack || {}) };
+  const done = readPacks()[r.name];
+  const status = building.has(r.id) ? 'Building…' : done?.failed ? `Failed: ${done.failed}` : done ? `Built ${new Date(done.at).toLocaleString()}: ${done.overlay} and ${done.xml} ${done.where === 'folder' ? 'next to the recording' : 'in Downloads'}.` : (sp.auto ? 'Builds on its own once the play session is uploaded.' : '');
+  return `<details class="pack" open><summary>Session package for Premiere (overlay video + sequence)</summary>
+    <p class="muted small">The stream overlay drawn again from this recording's events, frame by frame over the chroma colour, as an .mp4 (nothing to record while you play), plus a sequence (.xml) with the game footage, the camera and the overlay each on their own track and a marker per event. In Premiere: File › Import the .xml, select the overlay clip on the top track, Effects › Video Effects › Keying › Ultra Key, and pick the ${/^[0-9a-f]{6}$/i.test(overlayConfig().bg || '') ? `#${overlayConfig().bg}` : 'green'} with the eyedropper.</p>
+    <form id="sessionForm" class="pack-opts">
+      <label>Overlay frame rate <select name="fps"><option value="30" ${sp.fps !== 60 ? 'selected' : ''}>30 fps</option><option value="60" ${sp.fps === 60 ? 'selected' : ''}>60 fps</option></select></label>
+      <label>Size <select name="size"><option value="recording" ${sp.size !== '1080' ? 'selected' : ''}>${cfg.width}×${cfg.height} (the recording)</option><option value="1080" ${sp.size === '1080' ? 'selected' : ''}>1920×1080</option></select></label>
+      <button id="sessionBuild" class="primary" ${building.has(r.id) ? 'disabled' : ''}>Build the overlay video and the sequence</button>
+      <span class="muted small" id="sessionStatus" data-rec="${r.id}">${esc(status)}</span>
+    </form>
+    <p class="muted small">Keep this tab open while it renders (a 4K overlay of a long session takes a while; the status shows how far along it is). Files are written next to the recording when this app may write in the recordings folder (This computer › OBS › Session package), otherwise they download.</p>
+  </details>`;
+}
+
+function untainted(img) {
+  try {
+    const c = document.createElement('canvas'); c.width = 2; c.height = 2;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0, 2, 2); x.getImageData(0, 0, 1, 1);
+    return true;
+  } catch { return false; }
+}
+
+async function loadOverlayFonts() {
+  const href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@500;600;700;800&display=swap';
+  if (!document.querySelector(`link[href="${href}"]`)) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.append(l); }
+  const wanted = ['600 30px "Cormorant Garamond"', '700 30px "Cormorant Garamond"', '500 14px Inter', '600 14px Inter', '700 14px Inter', '800 11px Inter'];
+  try { await Promise.race([Promise.all(wanted.map((f) => document.fonts.load(f))), new Promise((res) => setTimeout(res, 6000))]); } catch { /* fall back to system fonts */ }
+}
+
+// Builds the overlay video and the sequence for a recording (r: recSummary + timeline).
+async function buildSessionPackage(r, { fps = null, size = null, say = () => {} } = {}) {
+  if (building.has(r.id)) throw new Error('Already building this one.');
+  building.add(r.id);
+  try {
+    const cfg = settings();
+    const sp = { fps: 30, size: 'recording', ...(cfg.sessionPack || {}) };
+    if (fps) sp.fps = fps;
+    if (size) sp.size = size;
+    const width = sp.size === '1080' ? 1920 : cfg.width; const height = sp.size === '1080' ? 1080 : cfg.height;
+    const timeline = r.timeline || derived().timelines.get(r.id) || [];
+    const names = derived().recChars.get(r.id) || [];
+    const c = derived().characters.find((x) => names.includes(x.name));
+    const character = { name: c?.name ?? names[0] ?? null, realm: c?.realm ?? null, race: c?.info?.race ?? null, cls: c?.info?.class ?? null, level: timeline[0]?.lvl ?? c?.level ?? null, zone: timeline[0]?.z ?? null };
+    const world = derived().world;
+    const rankOf = (name) => { const ranks = world.creatures.find((x) => x.name === name)?.ranks || []; return ['worldboss', 'rareelite', 'rare', 'elite'].find((rk) => ranks.includes(rk)) || null; };
+    const events = overlayEvents(r, timeline, { firsts: firstTimes(state.sessions), character, rankOf });
+    const oc = overlayConfig();
+    const race = oc.theme && oc.theme !== 'auto' ? oc.theme : character.race;
+    const bg = /^[0-9a-f]{6}$/i.test(oc.bg || '') ? `#${oc.bg}` : '#00ff00';
+    // Item counters start from what the account had before this recording.
+    const loot = pastLoot(state.sessions, (s, e) => eventMs(s, e, derived().clock));
+    const counters = (state.settings.liveCounters || []).map((k) => ({ id: Number(k.id), name: k.name, mode: k.mode || 'session', base: (Number(k.add) || 0) + (k.mode === 'ongoing' ? loot.filter((l) => l.id === Number(k.id) && l.at < r.start).reduce((a, l) => a + (l.n || 1), 0) : 0) }));
+    // The items' art, as the overlay showed it.
+    const ids = [...new Set([...events.filter((e) => e.kind === 'loot' && e.id).map((e) => e.id), ...counters.map((k) => k.id)])].slice(0, 400);
+    const icons = new Map();
+    for (let i = 0; i < ids.length; i++) {
+      say(`Fetching item art ${i + 1} of ${ids.length}…`);
+      const name = await iconName(ids[i]);
+      const img = name ? await loadImage(iconUrl(name)) : null;
+      if (img && untainted(img)) icons.set(ids[i], img);
+    }
+    await loadOverlayFonts();
+    const scene = new OverlayScene({ width, height, layout: oc, counters, icons, race, bg });
+    scene.load(events);
+    const m = state.machine;
+    const overlayName = `${stem(r.name)}.overlay.mp4`;
+    const xmlName = `${stem(r.name)}.session.xml`;
+    const writable = m ? await m.recFile(overlayName, r.name).catch(() => null) : null;
+    const sink = writable ? fileSink(writable) : memorySink();
+    say('Rendering the overlay…');
+    await renderOverlayVideo({ scene, fps: sp.fps, seconds: r.duration, sink, canvas: document.createElement('canvas'), Mp4Writer, onProgress: (p) => say(`Rendering the overlay: ${duration(p.seconds)} of ${duration(r.duration)}${p.elapsed > 2 ? ` · ${(p.seconds / p.elapsed).toFixed(1)}× real time` : ''}`) });
+    if (!writable) downloadBlob(overlayName, sink.blob());
+    const dir = r.path ? r.path.replace(/[^\\/]*$/, '') : '';
+    const overlay = { role: 'overlay', name: overlayName, path: dir + overlayName, duration: r.duration, offset: 0, width, height };
+    const list = timeline.filter((e) => !QUIET_CATS.has(e.cat));
+    const xml = toFCPXML({ ...r, companions: [...(r.companions || []), overlay] }, list, cfg);
+    const xw = m ? await m.recFile(xmlName, r.name).catch(() => null) : null;
+    if (xw) { await xw.write(xml); await xw.close(); } else download(xmlName, 'application/xml', xml);
+    const packs = readPacks();
+    packs[r.name] = { at: Date.now(), overlay: overlayName, xml: xmlName, where: writable ? 'folder' : 'downloads', fps: sp.fps, width, height };
+    savePacks(packs);
+    const msg = `Session package ready: ${overlayName} and ${xmlName} ${writable ? 'are next to the recording' : 'went to Downloads'}.`;
+    say(msg);
+    toast(msg);
+    return packs[r.name];
+  } catch (err) {
+    const packs = readPacks();
+    packs[r.name] = { at: Date.now(), failed: err.message };
+    savePacks(packs);
+    throw err;
+  } finally { building.delete(r.id); }
+}
+
+// On the recording computer, once a recording has ended and its play session
+// has arrived, the package builds on its own (one at a time, newest first).
+let autoPacking = false;
+async function autoPack() {
+  const m = state.machine;
+  const sp = settings().sessionPack;
+  if (!m?.config?.records || !sp?.auto || autoPacking || !state.sessions) return;
+  const packs = readPacks();
+  const now = Date.now() + (m.offset ?? 0);
+  const next = derived().recordings
+    .filter((r) => r.role === 'game' && r.machine === m.name && r.duration > 30 && !packs[r.name] && !building.has(r.id) && now - r.end > 60000 && now - r.end < 14 * 24 * 3600 * 1000 && (derived().timelines.get(r.id) || []).length > 0)
+    .sort((a, b) => b.start - a.start)[0];
+  if (!next) return;
+  autoPacking = true;
+  try {
+    toast(`Building the session package for ${next.name}…`);
+    await buildSessionPackage({ ...recSummary(next), timeline: derived().timelines.get(next.id) || [] }, { say: (t) => { const el = document.getElementById('sessionStatus'); if (el && el.dataset.rec === next.id) el.textContent = t; } });
+  } catch (err) {
+    toast(`Session package for ${next.name}: ${err.message}`);
+  } finally {
+    autoPacking = false;
+    setTimeout(autoPack, 2000);
+  }
 }
 
 // Overlay pack: stills for Premiere, placed by an XML sequence -----------------
@@ -3288,12 +3430,19 @@ pages.setup = async () => {
         <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"><small class="muted">Files in the same folder named <code>cam …</code> or <code>overlay …</code> with the same timestamp pair up with the main recording.</small></label>
       </div>
       <p class="small">Status: <b>${esc(obs.state)}</b>${obs.recording ? ' · recording now' : ''}${obs.error ? ` · <span style="color:var(--red)">${esc(obs.error)}</span>` : ''}</p>
-      <h3 style="margin-top:18px">Camera and overlay in their own OBS</h3>
-      <p class="small">Source Record costs too much next to a 4K60 recording. Instead, a second OBS instance records the camera and a third the overlay, and this app starts and stops their recordings the moment the main one starts and stops. Launch each from Terminal with its own profile, collection and WebSocket port (macOS):</p>
-      <pre class="small" style="white-space:pre-wrap">open -n -a "OBS" --args --multi --profile Camera --collection Camera --websocket_port 4456 --websocket_password camera1
-open -n -a "OBS" --args --multi --profile Overlay --collection Overlay --websocket_port 4457 --websocket_password overlay1</pre>
-      <p class="small muted">In each: its own scene (the webcam with the mic on track 1; the overlay Browser source over the chroma colour, no audio), Settings › Output › Recording to the same recordings folder, and Settings › Advanced › Recording › Filename Formatting <code>cam %CCYY-%MM-%DD %hh-%mm-%ss</code> or <code>overlay %CCYY-%MM-%DD %hh-%mm-%ss</code>. Then tick it here with the same port and password. The app also starts the Camera instance's Virtual Camera, so a streaming OBS can use <b>OBS Virtual Camera</b> as its camera while the file stays clean.</p>
-      ${(cfg.obsMore || []).map((c, i) => { const st = (m.obsMore || []).find((x) => x.key === c.key)?.status; return `<div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
+      <h3 style="margin-top:18px">Session package</h3>
+      <p class="small">Recording the overlay costs too much next to the game capture, so it is not recorded at all: once a recording ends and its play session has been uploaded (the addon writes it at logout), this computer draws the overlay again from the events, frame by frame over the chroma colour, and writes it next to the recording as an .mp4 with a Premiere sequence (.xml): game footage, camera and overlay each on their own track, a marker per event. Import the .xml, key the overlay track with Ultra Key, and edit.</p>
+      <label class="check"><input type="checkbox" name="pack_auto" ${(settings().sessionPack || {}).auto ? 'checked' : ''}><span>Build the session package on its own when a session closes (keep this app open on this computer)</span></label>
+      <div class="grid2">
+        <label><span>Overlay frame rate</span><select name="pack_fps"><option value="30" ${(settings().sessionPack || {}).fps !== 60 ? 'selected' : ''}>30 fps (renders faster; the overlay's motion is simple)</option><option value="60" ${(settings().sessionPack || {}).fps === 60 ? 'selected' : ''}>60 fps</option></select></label>
+        <label><span>Overlay size</span><select name="pack_size"><option value="recording" ${(settings().sessionPack || {}).size !== '1080' ? 'selected' : ''}>${settings().width}×${settings().height} (the recording)</option><option value="1080" ${(settings().sessionPack || {}).size === '1080' ? 'selected' : ''}>1920×1080 (scaled up in Premiere)</option></select></label>
+      </div>
+      <p class="small">Writing next to the recordings: <b id="recWriteState">checking…</b> <button type="button" id="recWrite" class="ghost">Allow</button> <span class="muted">Chrome asks once per visit; without it the files go to this computer's Downloads folder.</span></p>
+      <h3 style="margin-top:18px">Camera in its own OBS</h3>
+      <p class="small">Source Record costs too much next to a 4K60 recording. Instead, a second OBS instance records the camera, and this app starts and stops its recording the moment the main one starts and stops. Launch it from Terminal with its own profile, collection and WebSocket port (macOS):</p>
+      <pre class="small" style="white-space:pre-wrap">open -n -a "OBS" --args --multi --profile Camera --collection Camera --websocket_port 4456 --websocket_password camera1</pre>
+      <p class="small muted">In it: one scene with the webcam and the mic on track 1, Settings › Output › Recording to the same recordings folder, and Settings › Advanced › Recording › Filename Formatting <code>cam %CCYY-%MM-%DD %hh-%mm-%ss</code>. Then tick it here with the same port and password. The app also starts its Virtual Camera, so a streaming OBS can use <b>OBS Virtual Camera</b> as its camera while the file stays clean. (An <code>overlay …</code> file recorded by a third instance still pairs up, but the session package makes that unnecessary.)</p>
+      ${(cfg.obsMore || []).filter((c) => c.key !== 'overlay' || c.enabled).map((c, i) => { const st = (m.obsMore || []).find((x) => x.key === c.key)?.status; return `<div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
         <label class="check" style="margin:0"><input type="checkbox" name="more_${c.key}_enabled" ${c.enabled ? 'checked' : ''}><span><b>${esc(c.label)}</b> OBS</span></label>
         <label style="margin:0"><span class="muted small">port</span> <input type="number" name="more_${c.key}_port" value="${c.port}" style="width:90px"></label>
         <label style="margin:0"><span class="muted small">password</span> <input type="password" name="more_${c.key}_password" value="${esc(c.password || '')}" autocomplete="off" style="width:160px"></label>
@@ -3401,7 +3550,7 @@ function wireSetup() {
       // Data goes; this account's set-up stays: maps, the recording size, and the
       // live overlay's token (the OBS sources carry it), layout, counters and pad.
       const s0 = state.settings;
-      const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack };
+      const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack, sessionPack: s0.sessionPack };
       state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
       await state.store.saveSettings(state.settings);
       for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
@@ -3427,9 +3576,18 @@ function wireSetup() {
     const f = new FormData(ev.target);
     const obsMore = (m.config.obsMore || []).map((c) => ({ ...c, enabled: f.get(`more_${c.key}_enabled`) === 'on', port: Number(f.get(`more_${c.key}_port`)) || c.port, password: String(f.get(`more_${c.key}_password`) ?? '') }));
     m.saveConfig({ pattern: f.get('pattern'), obs: { enabled: f.get('enabled') === 'on', password: f.get('password'), port: Number(f.get('port')) || 4455 }, obsMore });
+    state.settings = { ...state.settings, sessionPack: { ...(state.settings.sessionPack || {}), auto: f.get('pack_auto') === 'on', fps: Number(f.get('pack_fps')) || 30, size: String(f.get('pack_size') || 'recording') } };
+    state.store.saveSettings(state.settings).catch(() => {});
     toast('Saved.');
     setTimeout(route, 1500);
+    setTimeout(autoPack, 2000);
   });
+  const recWriteState = document.getElementById('recWriteState');
+  if (recWriteState) {
+    const show = async () => { const ok = await m.recWritable(); recWriteState.textContent = ok ? 'allowed' : m.recRoot ? 'not yet allowed' : 'no recordings folder chosen'; const b = document.getElementById('recWrite'); if (b) b.hidden = ok || !m.recRoot; };
+    show();
+    document.getElementById('recWrite')?.addEventListener('click', async () => { await m.grantRecWrite(); show(); });
+  }
   document.getElementById('videoForm')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
@@ -3547,6 +3705,7 @@ const PAGE_TOPICS = { '': ['data', 'voice'], live: ['data', 'live', 'wow'], drop
 function changed(topic = 'all') {
   if (topic !== 'live' && topic !== 'obs' && topic !== 'clock') invalidate();
   renderStatus();
+  if (topic === 'data' || topic === 'all') setTimeout(autoPack, 1500);
   // Redraw the current page with new data, except where it would interrupt:
   // the video player, or a form being typed in.
   clearTimeout(redrawTimer);

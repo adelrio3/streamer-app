@@ -122,9 +122,10 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     + '<audio><channelcount>2</channelcount></audio></media></file>';
   const clip = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${name}</name><duration>${duration}</duration>${rate}`
     + `<start>0</start><end>${duration}</end><in>0</in><out>${duration}</out>${mediaFile}${extra}</clipitem>`;
-  // Source Record companions (camera, overlay) as their own tracks, placed by
-  // their start offset: a file that began later starts later on the sequence,
-  // one that began earlier is trimmed at its head.
+  // Companions (the camera's OBS file, the overlay video drawn from the
+  // events) as their own tracks, placed by their start offset: a file that
+  // began later starts later on the sequence, one that began earlier is
+  // trimmed at its head. The overlay goes on the top track.
   const companions = (recording.companions || []).map((c, i) => {
     const fid = `file-c${i + 1}`;
     const dur = frames(c.duration);
@@ -133,8 +134,8 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     const end = start + (dur - inF);
     const cname = xml(c.name);
     const f = `<file id="${fid}"><name>${cname}</name><pathurl>${xml(fileURL(c.path || c.name))}</pathurl>${rate}<duration>${dur}</duration>`
-      + `<media><video><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></video>`
-      + '<audio><channelcount>2</channelcount></audio></media></file>';
+      + `<media><video><samplecharacteristics>${rate}<width>${c.width || width}</width><height>${c.height || height}</height></samplecharacteristics></video>`
+      + (c.role === 'overlay' ? '</media></file>' : '<audio><channelcount>2</channelcount></audio></media></file>');
     const item = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${cname}</name><duration>${dur}</duration>${rate}<start>${start}</start><end>${end}</end><in>${inF}</in><out>${dur}</out>${mediaFile}${extra}</clipitem>`;
     return {
       role: c.role, end,
