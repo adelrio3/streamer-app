@@ -2331,9 +2331,7 @@ pages.lore = async (kind, params) => {
       <small>${esc(t.zones.join(' → '))}${t.level ? ` · level ${t.level}` : ''}</small>
       <small class="muted">${t.total > 1 ? `${t.done} of ${t.total} chapters lived` : 'a single chapter'}</small>
     </a>`;
-  const pick = [...storylines(db, {}).slice(0, 400)].sort((a, b) => a.name.localeCompare(b.name));
   setTimeout(() => {
-    document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
   });
   const sparks = Array.from({ length: 18 }, (_, i) => `<i class="spark" style="--x:${(i * 53) % 100}%;--y:${(i * 37) % 100}%;--d:${(i % 7) * 0.9}s;--s:${3 + (i % 4)}px"></i>`).join('');
   return `<div class="lore-hero treasure">
@@ -2349,10 +2347,7 @@ pages.lore = async (kind, params) => {
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
     ${living.length ? `<h2 class="lore-h">Still being lived</h2><div class="shelf">${living.map(cover).join('')}</div>` : ''}
     ${!all.length ? '<p class="muted" style="text-align:center">The shelf is empty. Finish a storyline and its tale appears here.</p>' : ''}
-    <div class="lore-foot">
-      <div class="panel"><h3>Read ahead</h3><p class="muted small">Hear a storyline as if it were already done, from the database alone.</p><select id="pretendSel"><option value="">choose a storyline…</option>${pick.map((st) => `<option value="${st.id}">${esc(st.name)} (${esc(st.startZone ?? '')})</option>`).join('')}</select></div>
-      <div class="panel"><h3>A single quest</h3><p class="muted small">Any quest can be told on its own, for example <a href="#/lore/tale?id=q4402&pretend=1">Galgar's Cactus Apple Surprise</a>.</p></div>
-    </div>`;
+    `;
 };
 
 // The account's own voice for the tales: the unnamed adventurer is he or she.
