@@ -1256,10 +1256,29 @@ function charCard(c) {
     <div class="lbl">${c.questsDone} quests · ${c.recordings.length} recordings · ${duration(c.playSeconds)} logged</div></a>`;
 }
 
+// The character playing right now, from the live link, before its first
+// play session has been uploaded (the addon writes it at logout).
+function liveCharacterCard(characters) {
+  const c = state.live?.state?.character;
+  if (!c?.name) return '';
+  const fresh = state.live.updated_at && Date.now() - Date.parse(state.live.updated_at) < 6 * 3600 * 1000;
+  if (!fresh || characters.some((x) => x.name === c.name && (x.realm ?? '') === (c.realm ?? ''))) return '';
+  const cls = c.cls ? c.cls[0] + c.cls.slice(1).toLowerCase() : '';
+  const race = c.race === 'NightElf' ? 'Night Elf' : c.race === 'Scourge' ? 'Undead' : c.race ?? '';
+  return `<a class="card charcard live-char" href="#/live" style="--class:${CLASS_COLORS[c.cls] ?? 'var(--gold)'}"><div class="num">${esc(c.name)}</div>
+    <div class="lbl">Level ${c.level ?? '?'} ${esc(race)} ${esc(cls)} · ${esc(c.realm ?? '')}</div>
+    <div class="lbl"><span class="dot live" style="display:inline-block"></span> playing now${c.zone ? ` in ${esc(c.zone)}` : ''} · the entry is written at logout</div></a>`;
+}
+
 pages.characters = async () => {
   const { characters } = derived();
+  // On a computer that is not feeding the live link, the live row says who is playing.
+  const m = state.machine;
+  if (m && !(m.liveEnabled?.() && m.wow.state === 'ok') && !(state.live?.updated_at && Date.now() - Date.parse(state.live.updated_at) < 10000)) {
+    try { const row = await state.store.loadLive(); if (row) state.live = row; } catch { /* offline */ }
+  }
   return `${pageHead('Chronicle', 'Characters', '')}
-    <div class="cards">${characters.map(charCard).join('') || '<p class="muted">No characters yet.</p>'}</div>`;
+    <div class="cards">${liveCharacterCard(characters)}${characters.map(charCard).join('') || (state.live?.state?.character?.name ? '' : '<p class="muted">No characters yet.</p>')}</div>`;
 };
 
 pages.character = async (key, params = new URLSearchParams()) => {
@@ -3852,7 +3871,7 @@ const firstHandChip = (kind, key) => (noteFor(kind, key).length ? ' <span class=
 
 // Which pages show which topics. Everything else redraws only when the
 // recorded data changes, so a kill on the live link never rebuilds a map.
-const PAGE_TOPICS = { '': ['data', 'voice'], recordings: ['data', 'wow'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
+const PAGE_TOPICS = { '': ['data', 'voice'], characters: ['data', 'live'], recordings: ['data', 'wow'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
 function changed(topic = 'all') {
   if (topic !== 'live' && topic !== 'obs' && topic !== 'clock') invalidate();
   renderStatus();
