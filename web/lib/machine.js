@@ -640,7 +640,12 @@ export class Machine {
       const more = { ...c, status: { state: 'off', recording: false }, link: null };
       more.link = new ObsLink({
         port: c.port, password: c.password,
-        onStatus: (s) => { more.status = s; this.changed('obs'); },
+        onStatus: (s) => {
+          // The camera instance also feeds OBS Virtual Camera, which the
+          // streaming instance picks up as its camera source.
+          if (c.key === 'cam' && s.state === 'connected' && more.status?.state !== 'connected') more.link.request('StartVirtualCam').catch?.(() => {});
+          more.status = s; this.changed('obs');
+        },
         onRecording: (ev) => this.onObs(ev, more).catch((err) => this.notify(err.message)),
       });
       more.link.start();
