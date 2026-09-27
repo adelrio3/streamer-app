@@ -26,6 +26,7 @@ const LIVE_PUSH_GAP_LIVE = 200; // ...and while a session is on: every change go
 const LIVE_HEARTBEAT = 60000; // a touch of updated_at when nothing changed
 const LIVE_SINCE_KEY = 'chronicler.live.since';
 const LIVE_FOLLOW_KEY = 'chronicler.live.follow'; // the recording the stream session follows
+const LIVE_KNOWN_KEY = 'chronicler.live.known'; // items and creatures already called out as new, until the wiki has them
 const LIVE_PURGE_MIN = 1024 * 1024; // empty the chat log once it is over 1 MB...
 const LIVE_PURGE_QUIET = 3 * 60 * 1000; // ...and the game has not written it for 3 minutes (logged out)
 const LIVE_PURGE_RETRY = 60 * 1000; // try again a minute later if the game still had it open
@@ -293,7 +294,8 @@ export class Machine {
   async forgetLive() {
     this.live.follow = null;
     this.live.manualSince = 0;
-    try { localStorage.removeItem(LIVE_FOLLOW_KEY); } catch { /* storage off */ }
+    this.live.known = new Set();
+    try { localStorage.removeItem(LIVE_FOLLOW_KEY); localStorage.removeItem(LIVE_KNOWN_KEY); } catch { /* storage off */ }
     if (this.liveEnabled()) await this.resetLive();
   }
 
@@ -419,14 +421,28 @@ export class Machine {
   // An item looted or a creature hunted for the first time this session is
   // "novel" when the wiki (every uploaded session) has never had it either:
   // the overlay calls those out. Decided once per event, when the wiki is loaded.
+  // "New" means new to the account, not to the stream session: the wiki
+  // (every uploaded session, any character) decides, and until the current
+  // play session is uploaded (the game writes its log at logout), a set kept
+  // here remembers what has already been called out, so a second stream
+  // session in the same evening does not call it out again.
   markNovel(events) {
     const world = this.state?.cache?.world;
     if (!world) return;
+    if (!this.live.known) { try { this.live.known = new Set(JSON.parse(localStorage.getItem(LIVE_KNOWN_KEY) || '[]')); } catch { this.live.known = new Set(); } }
+    const known = this.live.known;
+    let grew = false;
     for (const e of events) {
-      if (e.novel !== undefined || !e.first) continue;
-      if (e.kind === 'loot') e.novel = !world.byItem?.get(Number(e.id))?.obtained;
-      else if (e.kind === 'kill') e.novel = !(world.byNpc?.get(`n${e.npcId}`)?.kills > 0) && !world.creatures?.some((c) => c.name === e.name && c.kills > 0);
+      if (e.novel !== undefined) continue;
+      if (e.kind !== 'loot' && e.kind !== 'kill') continue;
+      const key = e.kind === 'loot' ? `i${Number(e.id)}` : `k${e.npcId || e.name}`;
+      const inWiki = e.kind === 'loot'
+        ? Boolean(world.byItem?.get(Number(e.id))?.obtained)
+        : (world.byNpc?.get(`n${e.npcId}`)?.kills > 0) || Boolean(world.creatures?.some((c) => c.name === e.name && c.kills > 0));
+      e.novel = !inWiki && !known.has(key);
+      if (!known.has(key)) { known.add(key); grew = true; }
     }
+    if (grew) { try { localStorage.setItem(LIVE_KNOWN_KEY, JSON.stringify([...known].slice(-5000))); } catch { /* storage off */ } }
   }
 
   async liveToken() {
