@@ -3383,10 +3383,21 @@ pages.setup = async () => {
       <div class="grid2">
         <label><span>Server password</span><input type="password" name="password" value="${esc(cfg.obs.password)}" autocomplete="off"></label>
         <label><span>Server port</span><input type="number" name="port" value="${cfg.obs.port}"></label>
-        <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"><small class="muted">Source Record files in the same folder named <code>cam …</code> or <code>overlay …</code> with the same timestamp pair up with the main recording.</small></label>
+        <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"><small class="muted">Files in the same folder named <code>cam …</code> or <code>overlay …</code> with the same timestamp pair up with the main recording.</small></label>
       </div>
       <p class="small">Status: <b>${esc(obs.state)}</b>${obs.recording ? ' · recording now' : ''}${obs.error ? ` · <span style="color:var(--red)">${esc(obs.error)}</span>` : ''}</p>
-      <button class="primary" type="submit">Save</button></form>
+      <h3 style="margin-top:18px">Camera and overlay in their own OBS</h3>
+      <p class="small">Source Record costs too much next to a 4K60 recording. Instead, a second OBS instance records the camera and a third the overlay, and this app starts and stops their recordings the moment the main one starts and stops. Launch each from Terminal with its own profile, collection and WebSocket port (macOS):</p>
+      <pre class="small" style="white-space:pre-wrap">open -n -a "OBS" --args --multi --profile Camera --collection Camera --websocket_port 4456 --websocket_password camera1
+open -n -a "OBS" --args --multi --profile Overlay --collection Overlay --websocket_port 4457 --websocket_password overlay1</pre>
+      <p class="small muted">In each: its own scene (the webcam with the mic on track 1; the overlay Browser source over the chroma colour, no audio), Settings › Output › Recording to the same recordings folder, and Settings › Advanced › Recording › Filename Formatting <code>cam %CCYY-%MM-%DD %hh-%mm-%ss</code> or <code>overlay %CCYY-%MM-%DD %hh-%mm-%ss</code>. Then tick it here with the same port and password.</p>
+      ${(cfg.obsMore || []).map((c, i) => { const st = (m.obsMore || []).find((x) => x.key === c.key)?.status; return `<div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
+        <label class="check" style="margin:0"><input type="checkbox" name="more_${c.key}_enabled" ${c.enabled ? 'checked' : ''}><span><b>${esc(c.label)}</b> OBS</span></label>
+        <label style="margin:0"><span class="muted small">port</span> <input type="number" name="more_${c.key}_port" value="${c.port}" style="width:90px"></label>
+        <label style="margin:0"><span class="muted small">password</span> <input type="password" name="more_${c.key}_password" value="${esc(c.password || '')}" autocomplete="off" style="width:160px"></label>
+        <span class="muted small">${c.enabled ? (st ? `${esc(st.state)}${st.recording ? ' · recording' : ''}${st.error ? ` · ${esc(st.error)}` : ''}` : 'starting…') : 'off'}</span>
+      </div>`; }).join('')}
+      <button class="primary" type="submit" style="margin-top:10px">Save</button></form>
       <div class="panel"><h3>Recordings folder</h3>${recBody}</div>` : ''}
     <form id="videoForm" class="panel"><h3>Video settings (shared by all your computers)</h3>
       <div class="grid2">
@@ -3512,7 +3523,8 @@ function wireSetup() {
   document.getElementById('obsForm')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target);
-    m.saveConfig({ pattern: f.get('pattern'), obs: { enabled: f.get('enabled') === 'on', password: f.get('password'), port: Number(f.get('port')) || 4455 } });
+    const obsMore = (m.config.obsMore || []).map((c) => ({ ...c, enabled: f.get(`more_${c.key}_enabled`) === 'on', port: Number(f.get(`more_${c.key}_port`)) || c.port, password: String(f.get(`more_${c.key}_password`) ?? '') }));
+    m.saveConfig({ pattern: f.get('pattern'), obs: { enabled: f.get('enabled') === 'on', password: f.get('password'), port: Number(f.get('port')) || 4455 }, obsMore });
     toast('Saved.');
     setTimeout(route, 1500);
   });

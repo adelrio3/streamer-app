@@ -39,6 +39,10 @@ export function defaultMachineConfig(platform = globalThis.navigator?.platform ?
     records: mac,
     pattern: '%CCYY-%MM-%DD %hh-%mm-%ss',
     obs: { enabled: mac, port: 4455, password: '' },
+    // More OBS instances on the same computer that record alongside the main
+    // one (a second for the camera, a third for the overlay): the app starts
+    // and stops their recordings with the main one.
+    obsMore: [{ key: 'cam', label: 'Camera', enabled: false, port: 4456, password: '' }, { key: 'overlay', label: 'Overlay', enabled: false, port: 4457, password: '' }],
   };
 }
 
@@ -67,14 +71,14 @@ export class Machine {
     const base = defaultMachineConfig();
     try {
       const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
-      return saved ? { ...base, ...saved, obs: { ...base.obs, ...(saved.obs || {}) } } : { ...base, fresh: true };
+      return saved ? { ...base, ...saved, obs: { ...base.obs, ...(saved.obs || {}) }, obsMore: mergeMore(base.obsMore, saved.obsMore) } : { ...base, fresh: true };
     } catch {
       return { ...base, fresh: true };
     }
   }
 
   saveConfig(patch) {
-    const next = { ...this.config, ...patch, obs: { ...this.config.obs, ...(patch.obs || {}) } };
+    const next = { ...this.config, ...patch, obs: { ...this.config.obs, ...(patch.obs || {}) }, obsMore: mergeMore(this.config.obsMore, patch.obsMore) };
     delete next.fresh;
     this.config = next;
     localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
@@ -113,6 +117,8 @@ export class Machine {
     this.timers = [];
     this.obs?.stop();
     this.obs = null;
+    for (const c of this.obsMore || []) c.link?.stop();
+    this.obsMore = [];
     this.voice.notes?.stop();
     this.voice.notes = null;
   }
@@ -630,22 +636,42 @@ export class Machine {
       onRecording: (ev) => this.onObs(ev).catch((err) => this.notify(err.message)),
     });
     this.obs.start();
+    this.obsMore = (this.config.obsMore || []).filter((c) => c.enabled).map((c) => {
+      const more = { ...c, status: { state: 'off', recording: false }, link: null };
+      more.link = new ObsLink({
+        port: c.port, password: c.password,
+        onStatus: (s) => { more.status = s; this.changed('obs'); },
+        onRecording: (ev) => this.onObs(ev, more).catch((err) => this.notify(err.message)),
+      });
+      more.link.start();
+      return more;
+    });
   }
 
-  async onObs(ev) {
+  // ev from the main OBS, or from a companion instance (`more`) whose
+  // recording the app starts and stops with the main one. Every file gets a
+  // row with exact times; only the main one drives the sync prompt.
+  async onObs(ev, more = null) {
     if (ev.type === 'start') {
-      this.pendingStart = this.toServer(ev.at);
+      const start = this.toServer(ev.at);
+      if (!more) this.pendingStart = start;
       if (ev.path) {
         const name = baseName(ev.path);
-        await this.putRow({ ...(this.row(name) || {}), name, path: ev.path, machine: this.name, start_ms: Math.round(this.pendingStart), end_ms: null, duration: null, source: 'obs', sync: null });
+        await this.putRow({ ...(this.row(name) || {}), name, path: ev.path, machine: this.name, start_ms: Math.round(start), end_ms: null, duration: null, source: 'obs', sync: null });
       }
-      this.notify('Recording started. Press your Sync key in game for a precise line-up.');
+      if (!more) {
+        this.notify('Recording started. Press your Sync key in game for a precise line-up.');
+        for (const c of this.obsMore || []) if (c.status?.state === 'connected' && !c.status.recording) c.link.request('StartRecord').catch?.(() => {});
+      }
     } else if (ev.type === 'stop' && ev.path) {
       const name = baseName(ev.path);
       const start = this.toServer(ev.start);
       const end = this.toServer(ev.at);
       await this.putRow({ ...(this.row(name) || {}), name, path: ev.path, machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: 'obs' });
-      this.notify(`Recording saved: ${name}`);
+      if (!more) {
+        this.notify(`Recording saved: ${name}`);
+        for (const c of this.obsMore || []) if (c.status?.state === 'connected' && c.status.recording) c.link.request('StopRecord').catch?.(() => {});
+      }
     }
   }
 
@@ -724,6 +750,13 @@ export class Machine {
       this.notify('Recording stopped: the stream session is complete.');
     }
   }
+}
+
+// Companion OBS settings merged by key, so new defaults reach old saves.
+function mergeMore(base, saved) {
+  const out = (base || []).map((b) => ({ ...b, ...((saved || []).find((s) => s.key === b.key) || {}) }));
+  for (const s of saved || []) if (!out.some((o) => o.key === s.key)) out.push(s);
+  return out;
 }
 
 export function screenshotTime(name) {
