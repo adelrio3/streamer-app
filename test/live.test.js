@@ -169,3 +169,17 @@ test('a live session reset to an earlier moment replays what happened since (OBS
   live.apply({ at: t0 + 12000, kind: 'session', action: 'stop', name: 'x', seconds: 8, kills: live.kills });
   assert.equal(live.events.at(-1).kind, 'session', 'session events reach the overlay');
 });
+
+test('a reset keeps who is playing: the login line and the last heartbeat survive the new moment', () => {
+  const t0 = 1_790_000_000_000;
+  const live = new LiveState(t0);
+  live.apply({ at: t0 + 100, kind: 'begin', version: '1.0.1', name: 'Zelmera', realm: 'Mankrik', level: 1, race: 'Troll', cls: 'HUNTER' });
+  live.apply({ at: t0 + 200, kind: 'heartbeat', level: 1, xp: 10, xpMax: 400, zone: 'Durotar', sub: 'Valley of Trials', x: 42, y: 68, money: 0, race: 'Troll', cls: 'HUNTER' });
+  live.apply({ at: t0 + 300, kind: 'kill', npcId: 3098, name: 'Mottled Boar' });
+  live.reset(t0 + 250); // OBS started here
+  assert.equal(live.character.name, 'Zelmera');
+  assert.equal(live.character.race, 'Troll');
+  assert.equal(live.character.zone, 'Durotar');
+  assert.equal(live.kills, 1);
+  assert.equal(live.snapshot(t0 + 400).character.name, 'Zelmera');
+});

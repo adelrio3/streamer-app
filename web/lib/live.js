@@ -128,11 +128,19 @@ export class LiveState {
   // A session can start before the PC hears of it (the recording computer's
   // OBS started it): resetting to that earlier moment replays what happened
   // since, so the counters are exact from the first frame.
+  // The character (from the addon's B line at login and its last heartbeat)
+  // is kept whatever the new moment is: a session starting mid-play must not
+  // lose who is playing.
   reset(since) {
-    const keep = (this.history || []).filter((e) => e.at >= since);
+    const hist = this.history || [];
+    const begin = [...hist].reverse().find((e) => e.kind === 'begin');
+    const beat = this.lastBeat;
+    const keep = hist.filter((e) => e.at >= since);
     this.history = [];
     this.wipe(since);
+    if (begin && !keep.includes(begin)) this.apply(begin);
     for (const e of keep) this.apply({ ...e, first: undefined, novel: e.novel });
+    if (beat) this.apply(beat);
   }
 
   wipe(since) {
@@ -162,7 +170,8 @@ export class LiveState {
   apply(e) {
     if (!e || !e.at) return false;
     this.history ??= [];
-    if (e.kind !== 'heartbeat') { this.history.push(e); if (this.history.length > 6000) this.history.shift(); }
+    if (e.kind === 'heartbeat') this.lastBeat = e;
+    else { this.history.push(e); if (this.history.length > 6000) this.history.shift(); }
     if (e.at < this.since && e.kind !== 'begin' && e.kind !== 'heartbeat') return false;
     this.lastEventAt = Math.max(this.lastEventAt, e.at);
     const c = this.character;
