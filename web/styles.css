@@ -408,7 +408,6 @@ a.card:hover { border-color: var(--gold-dim); box-shadow: 0 10px 30px -12px rgba
 a.card:hover::before { opacity: 1; }
 .card .num { background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .charcard { border-left: 3px solid var(--class); }
-.charcard.planned { opacity: .6; border-left-style: dashed; }
 .charcard.live-char { box-shadow: 0 0 18px -6px var(--cyan); }
 .charcard .num { background: none; color: var(--class); -webkit-text-fill-color: var(--class); }
 
