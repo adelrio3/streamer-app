@@ -3970,7 +3970,8 @@ async function route({ keepScroll = false } = {}) {
     const target = a.getAttribute('href').slice(2);
     let alias = { item: 'items', character: 'characters', quest: 'quests', zone: 'characters', zones: 'characters', journal: 'characters', texts: 'lore', recording: 'recordings', session: 'sessions', map: 'locations', texts: 'lore', vendors: 'people', creatures: 'bestiary', npcs: 'people', creature: 'bestiary', storyline: 'storylines' }[page] ?? page;
     if (page === 'npc') {
-      const n = state.cache?.world?.byNpc.get(rest.map(decodeURIComponent).join('/'));
+      // derived() rather than the raw cache: a redraw right after new data would otherwise light up People for a creature.
+      const n = state.sessions ? derived().world?.byNpc.get(rest.map(decodeURIComponent).join('/')) : null;
       alias = n?.attackable ? 'bestiary' : n?.object ? 'items' : 'people';
     }
     a.classList.toggle('active', target.split('?')[0] === alias);

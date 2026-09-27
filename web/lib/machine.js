@@ -813,24 +813,26 @@ export class Machine {
       n++;
     }
     if (voice.length) this.state.voice.sort((a, b) => a.start_ms - b.start_ms);
+    // The server answers with everything updated in the overlap window, most
+    // of it already here: only what really differs counts as a change.
+    const same = (a, b) => a && b && a.updated_at === b.updated_at;
     if (items.length) {
       const byId = new Map(this.state.items.map((r) => [r.item_id, r]));
-      for (const r of items) byId.set(r.item_id, r);
+      let fresh = 0;
+      for (const r of items) { if (!same(byId.get(r.item_id), r)) fresh++; byId.set(r.item_id, r); }
       this.state.items = [...byId.values()];
-      n++;
+      if (fresh) n++;
     }
     if (sessions.length) this.state.tracks = null; // reload routes when next needed
     const deleted = new Set(this.state.settings.deletedSessions || []);
     for (const s of sessions) {
       if (deleted.has(s.id)) continue;
       const i = this.state.sessions.findIndex((x) => x.id === s.id);
-      if (i >= 0) this.state.sessions[i] = s; else this.state.sessions.push(s);
-      n++;
+      if (i >= 0) { if (!same(this.state.sessions[i], s)) n++; this.state.sessions[i] = s; } else { this.state.sessions.push(s); n++; }
     }
     for (const r of recordings) {
       const i = this.state.rows.findIndex((x) => x.name === r.name);
-      if (i >= 0) this.state.rows[i] = r; else this.state.rows.push(r);
-      n++;
+      if (i >= 0) { if (!same(this.state.rows[i], r)) n++; this.state.rows[i] = r; } else { this.state.rows.push(r); n++; }
     }
     if (n) this.changed('data');
     await this.followRecordings();
