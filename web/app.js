@@ -2589,12 +2589,18 @@ function overlayConfig() {
   return c;
 }
 
+// The overlay is designed at 1920×1080; the canvas set on This computer
+// (3840×2160 for 4K) scales every widget and every address by this factor.
+const canvasK = () => Math.max(0.5, Math.min(4, (settings().width || 1920) / 1920));
+const widgetSize = (k) => WIDGET_SIZES[k].map((v) => Math.round(v * canvasK()));
+
 function overlayUrl(cfg, token, { demo = false, widget = null } = {}) {
   const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}overlay.html`;
   const p = new URLSearchParams();
   if (demo) p.set('demo', '1'); else if (token) p.set('token', token);
   if (widget) p.set('widget', widget); else p.set('show', cfg.show.join(','));
-  if (Number(cfg.scale) !== 1) p.set('scale', String(cfg.scale));
+  const scale = Math.round(Number(cfg.scale || 1) * canvasK() * 100) / 100;
+  if (scale !== 1) p.set('scale', String(scale));
   if (!widget) for (const [k] of OVERLAY_WIDGETS) if (DEFAULT_OVERLAY[k] && cfg[k] && cfg[k] !== DEFAULT_OVERLAY[k]) p.set(k, cfg[k]);
   if (/^[0-9a-f]{6}$/i.test(String(cfg.bg || '').replace('#', ''))) p.set('bg', String(cfg.bg).replace('#', '').toLowerCase());
   if (cfg.theme && cfg.theme !== 'auto') p.set('theme', cfg.theme);
@@ -2669,8 +2675,8 @@ pages.live = async () => {
       </div>
       <div>
         <form id="overlayForm" class="panel"><h3>One window per widget</h3>
-          <p class="small muted">Each widget as its own OBS Browser source, so you place and size them however you like. Pop out a preview to see it run on its own with demo events. Give the drop toasts their full size: the legendary rays and bursts spread far around the card. Full-screen effects is a 1920 × 1080 source to lay over the whole stream.</p>
-          <table class="widget-list"><tbody>${OVERLAY_WIDGETS.map(([k, label]) => `<tr><td><b>${esc(label)}</b><br><span class="muted small">${WIDGET_SIZES[k][0]} × ${WIDGET_SIZES[k][1]}</span></td><td><button type="button" class="small" data-copy-widget="${k}" ${token ? '' : 'disabled'}>Copy address</button> <button type="button" class="ghost small" data-pop-widget="${k}">Pop out preview</button></td></tr>`).join('')}</tbody></table>
+          <p class="small muted">Each widget as its own OBS Browser source, so you place and size them however you like. Pop out a preview to see it run on its own with demo events. Give the drop toasts their full size: the legendary rays and bursts spread far around the card. Full-screen effects is a whole-canvas source to lay over the whole stream.</p>
+          <table class="widget-list"><tbody>${OVERLAY_WIDGETS.map(([k, label]) => `<tr><td><b>${esc(label)}</b><br><span class="muted small">${widgetSize(k)[0]} × ${widgetSize(k)[1]}</span></td><td><button type="button" class="small" data-copy-widget="${k}" ${token ? '' : 'disabled'}>Copy address</button> <button type="button" class="ghost small" data-pop-widget="${k}">Pop out preview</button></td></tr>`).join('')}</tbody></table>
           <label class="row" style="margin-top:10px"><span>Chroma key background</span><input type="color" name="bgPick" value="${/^[0-9a-f]{6}$/i.test(String(cfg.bg || '').replace('#', '')) ? `#${String(cfg.bg).replace('#', '')}` : '#00ff00'}" style="width:48px;padding:0"><input type="text" name="bg" value="${esc(cfg.bg || '')}" placeholder="transparent (empty) or a hex like 00ff00" style="max-width:220px"></label>
           <p class="small muted">Leave it empty for a transparent background (an OBS Browser source needs nothing more). Set a hex colour when the overlay goes through a capture or a feed that cannot carry transparency, and key it out with OBS's Chroma Key filter.</p>
           <h3 style="margin-top:18px">Everything in one window</h3>
@@ -2680,7 +2686,7 @@ pages.live = async () => {
           <label style="margin-top:10px"><span>Size <b id="scaleOut">${Number(cfg.scale).toFixed(2)}×</b></span><input type="range" name="scale" min="0.6" max="1.8" step="0.05" value="${cfg.scale}"></label>
           <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Compendium has run on the gaming PC.'}</p>
           <div class="row"><button type="button" id="copyUrl" ${token ? '' : 'disabled'}>Copy address</button><a class="btn ghost" href="${overlayUrl(cfg, token, { demo: true })}" target="_blank" rel="noopener">Open the demo</a></div>
-          <p class="small muted">In OBS: <b>Sources › + › Browser</b>, paste the address, width <b>1920</b>, height <b>1080</b>, FPS <b>60</b>. Untick <i>Shutdown source when not visible</i>. Put it above the game capture. The background is transparent. Keep this address to yourself: anyone with it can watch your counters.</p>
+          <p class="small muted">In OBS: <b>Sources › + › Browser</b>, paste the address, width <b>${settings().width}</b>, height <b>${settings().height}</b>, FPS <b>${Math.round(settings().fps)}</b>${canvasK() !== 1 ? ` (the sizes here follow the ${settings().width}×${settings().height} canvas set on <a href="#/setup">This computer</a>; the address carries the matching scale)` : ''}. Untick <i>Shutdown source when not visible</i>. Put it above the game capture. The background is transparent. Keep this address to yourself: anyone with it can watch your counters.</p>
         </form>
         <div class="panel"><h3>Preview <span class="muted small">demo events</span></h3><div class="overlay-preview" id="overlayPreview"><iframe title="Overlay preview" src="${overlayUrl(cfg, token, { demo: true })}"></iframe></div></div>
       </div>
@@ -2722,9 +2728,11 @@ function wireLive(cfg, token) {
     const box = document.getElementById('overlayPreview');
     const frame = box?.querySelector('iframe');
     if (!box || !frame) return;
-    const s = box.clientWidth / 1920;
+    const s = box.clientWidth / settings().width;
+    frame.style.width = `${settings().width}px`;
+    frame.style.height = `${settings().height}px`;
     frame.style.transform = `scale(${s})`;
-    box.style.height = `${Math.round(1080 * s)}px`;
+    box.style.height = `${Math.round(settings().height * s)}px`;
   };
   fit();
   new ResizeObserver(fit).observe(document.getElementById('overlayPreview'));
@@ -2747,14 +2755,14 @@ function wireLive(cfg, token) {
   for (const b of document.querySelectorAll('[data-copy-widget]')) {
     b.addEventListener('click', async () => {
       const w = b.dataset.copyWidget;
-      try { await navigator.clipboard.writeText(overlayUrl(readForm(), token, { widget: w })); toast(`${OVERLAY_WIDGETS.find(([k]) => k === w)[1]} address copied. In OBS: Browser source, ${WIDGET_SIZES[w][0]} × ${WIDGET_SIZES[w][1]}.`); } catch (err) { toast(err.message); }
+      try { await navigator.clipboard.writeText(overlayUrl(readForm(), token, { widget: w })); toast(`${OVERLAY_WIDGETS.find(([k]) => k === w)[1]} address copied. In OBS: Browser source, ${widgetSize(w)[0]} × ${widgetSize(w)[1]}.`); } catch (err) { toast(err.message); }
     });
   }
   for (const b of document.querySelectorAll('[data-pop-widget]')) {
     b.addEventListener('click', () => {
       const w = b.dataset.popWidget;
-      const [width, height] = WIDGET_SIZES[w];
-      window.open(overlayUrl(readForm(), token, { widget: w, demo: true }), `chronicler-${w}`, `popup=yes,width=${width},height=${height}`);
+      const [width, height] = widgetSize(w);
+      window.open(overlayUrl(readForm(), token, { widget: w, demo: true }), `chronicler-${w}`, `popup=yes,width=${Math.min(width, screen.availWidth)},height=${Math.min(height, screen.availHeight)}`);
     });
   }
   form?.querySelector('[name=bgPick]')?.addEventListener('input', (ev) => { form.querySelector('[name=bg]').value = ev.target.value.replace('#', ''); form.dispatchEvent(new Event('input')); });
