@@ -416,6 +416,7 @@ fire("QUEST_TURNED_IN", 7, 170, 50)
 fire("QUEST_FINISHED")
 runTimers()
 state.level = 2
+SlashCmdList.COMPENDIUM("shots on") -- off by default since 1.0.1
 fire("PLAYER_LEVEL_UP", 2)
 runTimers()
 fire("CHAT_MSG_SYSTEM", "You have learned a new spell: |cff71d5ff|Hspell:635|h[Holy Light]|h|r.")

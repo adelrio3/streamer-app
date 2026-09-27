@@ -23,7 +23,7 @@ local function session() return ns.session() end
 local function idFromLink(link) return link and tonumber(link:match("|Hitem:(%d+)")) end
 local function nameFromLink(link) return link and link:match("%[(.-)%]") end
 
-local DEFAULTS = { screenshots = true, social = false, track = true, scanner = false }
+local DEFAULTS = { screenshots = false, social = false, track = true, scanner = false }
 
 on("ADDON_LOADED", function(name)
 	if name ~= ADDON_NAME then return end
@@ -221,8 +221,14 @@ local rares = {}  -- npc IDs already announced this session
 
 local RANK = { elite = true, rare = true, rareelite = true, worldboss = true }
 
+-- Off unless /comp shots on: the game freezes for a moment on every capture.
+-- Even then, one per reason per minute at most.
+local lastShot = {}
 local function screenshot(reason)
 	if not settings().screenshots or not Screenshot then return end
+	local t = GetTime and GetTime() or 0
+	if lastShot[reason] and t - lastShot[reason] < 60 then return end
+	lastShot[reason] = t
 	ns.pendingShot = reason
 	-- C_Timer.After only takes a Lua function, not the game's own Screenshot.
 	if C_Timer and C_Timer.After then C_Timer.After(0.3, function() Screenshot() end) else Screenshot() end
@@ -872,7 +878,7 @@ ns.commands.items = function()
 	print(string.format("|cff5a9bffCompendium|r %d items in the catalog, %d waiting for item info.", n, #pending))
 end
 for _, line in ipairs({
-	"/comp shots [on|off] - automatic screenshots at big moments",
+	"/comp shots [on|off] - automatic screenshots at rares, level-ups, discoveries and deaths (off by default; each freezes the game for a moment)",
 	"/comp scanner [on|off] - log every NPC in range using invisible nameplates",
 	"/comp social [on|off] - log group, duels and chat",
 	"/comp track [on|off] - position tracking for the footage finder",
