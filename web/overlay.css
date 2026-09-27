@@ -199,6 +199,12 @@ body.keyed .obj .bar > div, body.keyed .cnum.bump, body.keyed .callout .ctitle, 
 body.keyed .callout .ctitle { -webkit-text-stroke: 1.5px var(--panel-solid); paint-order: stroke fill; }
 body.keyed .callout .csub { text-shadow: none; -webkit-text-stroke: 1px var(--panel-solid); paint-order: stroke fill; }
 body.keyed .toast.q4, body.keyed .toast.q5 { animation: none; }
+/* Greens close to the key colour vanish under Ultra Key: the done/ready tags,
+   the full objective bar and uncommon items take a lime and the accent instead. */
+body.keyed { --q2: #b5f542; }
+body.keyed .quest.ready .qtag, body.keyed .quest.done .qtag { background: var(--gold); }
+body.keyed .obj.full .bar > div { background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
+body.keyed .callout.newitem.q2 .ctitle { color: #b5f542; }
 body.keyed .quest.done::after { display: none; }
 
 

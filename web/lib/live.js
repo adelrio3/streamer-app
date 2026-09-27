@@ -178,7 +178,7 @@ export class LiveState {
     switch (e.kind) {
       case 'begin': c.name = e.name; c.realm = e.realm; c.level = e.level; if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; this.begunAt = e.at; break;
       case 'test': this.lastTestAt = e.at; break;
-      case 'heartbeat': Object.assign(c, { level: e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; return true;
+      case 'heartbeat': Object.assign(c, { level: Math.max(c.level || 0, e.level || 0) || e.level, xp: e.xp, xpMax: e.xpMax, zone: e.zone, sub: e.sub, x: e.x, y: e.y, gold: e.money }); if (e.race) c.race = e.race; if (e.cls) c.cls = e.cls; return true; // the beat right after a level-up can still say the old level
       case 'loot': {
         if (!e.id) return false;
         e.first = !this.drops.has(e.id); // the first of its kind this session

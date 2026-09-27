@@ -26,8 +26,8 @@ local HEARTBEAT = 60
 local PAD_PREFIX = "CHRONPAD"
 local PAD_LINE = PAD_PREFIX .. SEP .. string.rep("=", 990) -- about 1 KB each in the file
 local PAD_DEFAULT_KB = 80 -- a little over the game's buffer
-local PAD_PER_TICK = 20 -- lines per half second; 80 KB takes about 2 seconds
-local FLUSH_AFTER = 1.0 -- seconds of quiet after the last message before the filler goes
+local PAD_PER_TICK = 80 -- lines per tick: the whole filler in one go, so the game writes the file at once
+local FLUSH_AFTER = 0.3 -- seconds of quiet after the last message before the filler goes
 
 local queue = {}
 local sent = 0
@@ -125,10 +125,10 @@ local function who()
 	return race or "-", class or "-"
 end
 
-local function heartbeat()
+local function heartbeat(level)
 	local zone, sub, _, x, y = ns.where()
 	local race, class = who()
-	push("H", UnitLevel("player"), UnitXP and UnitXP("player") or 0, UnitXPMax and UnitXPMax("player") or 0, zone, sub,
+	push("H", level or UnitLevel("player"), UnitXP and UnitXP("player") or 0, UnitXPMax and UnitXPMax("player") or 0, zone, sub,
 		x and ns.round(x * 100) or "-", y and ns.round(y * 100) or "-", GetMoney and GetMoney() or 0, race, class)
 	lastBeat = GetTime()
 end
@@ -149,7 +149,7 @@ ns.liveEvent = function(kind, data)
 	elseif kind == "objective" then push("Q", "progress", "-", data.text)
 	elseif kind == "kill" then push("K", data.npcId, data.name, data.rank)
 	elseif kind == "death" then push("D", data.killer, data.killerId)
-	elseif kind == "level" then push("V", data.level) heartbeat()
+	elseif kind == "level" then push("V", data.level) heartbeat(data.level) -- UnitLevel can still say the old one here
 	elseif kind == "zone" then push("Z", data.z, data.sz)
 	elseif kind == "rare" then push("R", data.npcId, data.name, data.level, data.rank)
 	elseif kind == "money" then

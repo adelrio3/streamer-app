@@ -10,7 +10,8 @@
 // items, hunts, levels, deaths, quests, zones, streaks, session start and
 // end) fire at the same moments they did on stream.
 
-import { LiveState, STREAK_WINDOW, QUALITY_COLORS } from './live.js';
+import { LiveState, STREAK_WINDOW, QUALITY_COLORS as GAME_QUALITY } from './live.js';
+const QUALITY_COLORS = GAME_QUALITY.map((c, i) => (i === 2 ? '#b5f542' : c)); // uncommon green would key out
 
 export const DESIGN_H = 1080; // everything is designed at 1080p and scaled to the frame
 export const RANK_WORD = { elite: 'elite', rare: 'rare', rareelite: 'rare elite', worldboss: 'world boss' };
@@ -21,7 +22,7 @@ const SANS = 'Inter, system-ui, sans-serif';
 const INK = '#ffffff';
 const INK2 = 'rgba(255, 255, 255, .78)';
 const BAR_BG = '#2a2418';
-const GREEN = '#79c07a';
+const GREEN = '#b5f542'; // a lime: the game's green sits too close to the chroma key
 
 // Race themes as overlay.css sets them (accent, its light, the panel's near-black).
 export const THEMES = {
@@ -564,7 +565,7 @@ export class OverlayScene {
         this.text(ctx, q.title || 'Quest', x + 14, y + 10 + 19, { font: tf, color: this.theme.gold2, maxWidth: w - 28 - (tagW ? tagW + 8 : 0) });
         if (tag) {
           const tx = x + 14 + Math.min(this.tw(ctx, q.title || 'Quest', tf), w - 28 - tagW - 8) + 8;
-          round(ctx, tx, y + 10 + 4, tagW, 16, 8); ctx.fillStyle = q.state === 'done' || q.state === 'complete' ? GREEN : this.theme.gold; ctx.fill();
+          round(ctx, tx, y + 10 + 4, tagW, 16, 8); ctx.fillStyle = this.theme.gold; ctx.fill();
           this.text(ctx, tag, tx + 8, y + 10 + 16, { font: this.font(800, 10), color: '#120c02', spacing: 2 });
         }
         let oy = y + 10 + 24;
@@ -650,7 +651,7 @@ export class OverlayScene {
     const kicks = { death: ['#ff5a5a', 72], rare: ['#ff6fb5', 72], streak: ['#ff9f43', 84], quest: [th.gold2, 56], zone: [th.gold2, 48], level: [th.gold2, 96], session: [th.gold2, 60], newitem: [th.gold2, 56], hunt: [th.gold2, 64] };
     let [color, size] = kicks[c.kind] || [th.gold2, 72];
     let kickerColor = INK2;
-    if (c.kind === 'newitem') color = { 2: '#1eff00', 3: '#4aa3ff', 4: '#c76bff', 5: '#ff8000' }[c.q] || th.gold2;
+    if (c.kind === 'newitem') color = { 2: '#b5f542', 3: '#4aa3ff', 4: '#c76bff', 5: '#ff8000' }[c.q] || th.gold2;
     if (c.kind === 'hunt') {
       if (c.rank === 'elite') { color = '#ffd35a'; kickerColor = '#ffd35a'; }
       else if (c.rank === 'rare' || c.rank === 'rareelite') { color = '#ff6fb5'; kickerColor = '#ff6fb5'; size = 80; }

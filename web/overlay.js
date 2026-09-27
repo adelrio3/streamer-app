@@ -40,6 +40,8 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const QUALITY = ['Poor', 'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Artifact'];
 const QCOLOR = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80'];
+// Under a chroma key the uncommon green is too close to the key colour (its particles would vanish): a lime instead.
+if (/^[0-9a-f]{6}$/i.test(new URLSearchParams(location.search).get('bg') || '')) QCOLOR[2] = '#b5f542';
 const STREAKS = [[30, 'LEGENDARY', 'thirty kills without a pause'], [20, 'UNSTOPPABLE', 'twenty in a row'], [10, 'RAMPAGE', 'ten in a row'], [5, 'KILLING SPREE', 'five in a row']];
 
 // Widgets that share a position live in one slot and stack; the timer
