@@ -640,9 +640,10 @@ export class Machine {
   // time and length: QuickTime/MP4 files say both, ProRes included); its end
   // from the last-modified date. Files that carry no time at all are left
   // alone.
-  async scanRec() {
+  async scanRec({ adopt = false } = {}) {
     if (this.rec.state !== 'ok') return;
     const videos = await folders.listVideos(this.recRoot);
+    const old = []; // files from before "delete everything", left out unless adopted
     const before = [...(this.rec.videos?.keys() || [])].sort().join('\n');
     this.rec.videos = new Map(videos.map((v) => [v.name.toLowerCase(), v]));
     this.rec.known = true;
@@ -674,8 +675,8 @@ export class Machine {
         }
         if (local == null || v.lastModified < local) continue;
         const start = this.toServer(local);
-        // Recordings from before "delete everything" stay deleted.
-        if (start < (this.state.settings.resetAt || 0) * 1000) continue;
+        // Recordings from before "delete everything" stay out, unless taken in by hand.
+        if (start < (this.state.settings.resetAt || 0) * 1000 && !adopt) { old.push(v.name); continue; }
         if (growing) {
           // Under way: no end yet. Only a game recording is a stream session, and only a fresh one.
           if (now - v.lastModified > 60000 || recordingRole(v.name, path) !== 'game') continue;
@@ -695,6 +696,9 @@ export class Machine {
         await this.putRow({ ...row, path });
       }
     }
+    const before = (this.rec.old || []).join('\n');
+    this.rec.old = old;
+    if (old.join('\n') !== before) this.changed('wow');
   }
 
   startObs() {
