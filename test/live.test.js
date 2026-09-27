@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseChatLine, parseItemLink, parseNativeLoot, parseProgress, decodeEvents, eventsFromChatLog, LiveState, counterValues, dropsBetween, pastLoot, randomToken } from '../web/lib/live.js';
+import { parseChatLine, parseItemLink, parseNativeLoot, parseProgress, decodeEvents, decodeLine, eventsFromChatLog, LiveState, counterValues, dropsBetween, pastLoot, randomToken } from '../web/lib/live.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lua = ['lua5.1', 'luajit', 'lua'].find((bin) => spawnSync(bin, ['-v']).status === 0);
@@ -182,4 +182,21 @@ test('a reset keeps who is playing: the login line and the last heartbeat surviv
   assert.equal(live.character.zone, 'Durotar');
   assert.equal(live.kills, 1);
   assert.equal(live.snapshot(t0 + 400).character.name, 'Zelmera');
+});
+
+test('the quest log line retires quests the tracker still holds, and quiet accepts decode', () => {
+  assert.deepEqual(decodeLine('G~5,12,44'), { kind: 'questlog', ids: [5, 12, 44] });
+  assert.equal(decodeLine('Q~accept~5~Beating Them Back!~-~-~1').quiet, true);
+  assert.equal(decodeLine('Q~accept~5~Beating Them Back!').quiet, undefined);
+  const s = new LiveState(0);
+  s.apply({ at: 1000, kind: 'quest', action: 'accept', qid: 5, title: 'A', quiet: true });
+  s.apply({ at: 2000, kind: 'quest', action: 'accept', qid: 12, title: 'B' });
+  s.apply({ at: 3000, kind: 'quest', action: 'turnin', qid: 12, title: 'B' });
+  const seq = s.seq;
+  s.apply({ at: 4000, kind: 'questlog', ids: [44] }); // neither is in the log any more
+  assert.equal(s.quests.get('q5').state, 'gone', 'an active quest missing from the log has gone');
+  assert.equal(s.quests.get('q12').state, 'done', 'a turned-in quest stays done');
+  assert.equal(s.questsDone, 1);
+  assert.ok(s.seq > seq, 'the overlay hears about it');
+  assert.ok(!s.snapshot(5000).quests.some((q) => q.state === 'active'));
 });

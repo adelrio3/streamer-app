@@ -57,7 +57,8 @@ export function decodeLine(line) {
   const kind = f[0];
   switch (kind) {
     case 'L': return { kind: 'loot', id: num(f[1]), name: str(f[2]), q: num(f[3]), n: num(f[4]) ?? 1, source: str(f[5]), sourceId: num(f[6]) };
-    case 'Q': return { kind: 'quest', action: str(f[1]), qid: num(f[2]), title: f[1] === 'progress' ? null : str(f[3]), text: f[1] === 'progress' ? str(f[3]) : null, xp: num(f[4]), money: num(f[5]) };
+    case 'Q': return { kind: 'quest', action: str(f[1]), qid: num(f[2]), title: f[1] === 'progress' ? null : str(f[3]), text: f[1] === 'progress' ? str(f[3]) : null, xp: num(f[4]), money: num(f[5]), ...(f[6] === '1' ? { quiet: true } : {}) };
+    case 'G': return { kind: 'questlog', ids: String(f[1] ?? '').split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0) };
     case 'K': return { kind: 'kill', npcId: num(f[1]), name: str(f[2]), rank: str(f[3]) };
     case 'D': return { kind: 'death', killer: str(f[1]), killerId: num(f[2]) };
     case 'V': return { kind: 'level', level: num(f[1]) };
@@ -203,6 +204,12 @@ export class LiveState {
       }
       case 'death': this.deaths++; this.streak = 0; break;
       case 'level': c.level = e.level; break;
+      case 'questlog': {
+        // The log as the game has it: anything the tracker still holds that is not in it has gone (turned in or abandoned unseen).
+        const inLog = new Set(e.ids || []);
+        for (const q of this.quests.values()) if ((q.state === 'active' || q.state === 'complete') && q.qid && !inLog.has(q.qid)) { q.state = 'gone'; q.at = e.at; }
+        break;
+      }
       case 'zone': c.zone = e.zone; c.sub = e.sub; break;
       case 'rare': this.rares.push({ at: e.at, npcId: e.npcId, name: e.name, level: e.level, rank: e.rank }); break;
       case 'money': this.money += e.delta || 0; if (e.total != null) c.gold = e.total; break;
@@ -237,7 +244,7 @@ export class LiveState {
       }
       default: break;
     }
-    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp', 'test', 'session'].includes(e.kind)) {
+    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'questlog', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp', 'test', 'session'].includes(e.kind)) {
       this.seq++;
       this.events.push({ seq: this.seq, ...e });
       if (this.events.length > 80) this.events.shift();

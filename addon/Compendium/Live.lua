@@ -133,6 +133,30 @@ local function heartbeat(level)
 	lastBeat = GetTime()
 end
 
+-- The quest log as it stands, so the overlay's tracker never keeps a quest
+-- that a missed event left behind: "G~id,id,id" with every heartbeat and
+-- once the log is readable after login. Quests in the log the overlay was
+-- never told about (accepted before this login) are announced quietly.
+local announced = {}
+local function questLogIds()
+	local n = (C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetNumQuestLogEntries()) or (GetNumQuestLogEntries and GetNumQuestLogEntries()) or 0
+	local ids, titles = {}, {}
+	for i = 1, n do
+		local title, _, _, isHeader, _, _, _, qid = GetQuestLogTitle(i)
+		if not isHeader and qid and qid > 0 then ids[#ids + 1] = qid; titles[qid] = title end
+	end
+	return ids, titles
+end
+local function syncQuestLog()
+	if not GetQuestLogTitle then return end
+	local ids, titles = questLogIds()
+	for _, qid in ipairs(ids) do
+		if not announced[qid] then announced[qid] = true; push("Q", "accept", qid, titles[qid], "-", "-", "1") end
+	end
+	push("G", table.concat(ids, ","))
+end
+ns.syncQuestLog = syncQuestLog
+
 -- Everything the addon records passes through here (see record() in
 -- Compendium.lua); the kinds the overlay cares about go out.
 ns.liveEvent = function(kind, data)
@@ -142,7 +166,7 @@ ns.liveEvent = function(kind, data)
 		if data.src == "created" then return end
 		local src = ns.lastLoot and ns.lastLoot()
 		push("L", data.id, data.name, data.q, data.n, src and src.name, src and src.id)
-	elseif kind == "quest_accept" then push("Q", "accept", data.qid, data.title)
+	elseif kind == "quest_accept" then if data.qid then announced[data.qid] = true end push("Q", "accept", data.qid, data.title)
 	elseif kind == "quest_turnin" then push("Q", "turnin", data.qid, data.title, data.xp, data.money)
 	elseif kind == "quest_abandon" then push("Q", "abandon", data.qid, data.title)
 	elseif kind == "quest_complete" then push("Q", "complete", data.qid, data.title)
@@ -166,7 +190,7 @@ local function tick()
 	if not enabled() then return end
 	flush()
 	padTick()
-	if GetTime() - lastBeat > HEARTBEAT then heartbeat() end
+	if GetTime() - lastBeat > HEARTBEAT then heartbeat() syncQuestLog() end
 end
 
 ns.on("PLAYER_LOGIN", function()
@@ -177,6 +201,9 @@ ns.on("PLAYER_LOGIN", function()
 	local race, class = who()
 	push("B", (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")) or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?", name, realm, UnitLevel("player"), race, class)
 	if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(0.5, tick) end
+	-- The quest log is not readable at login yet; the first update after it is.
+	local synced = false
+	ns.on("QUEST_LOG_UPDATE", function() if synced or not enabled() then return end synced = true syncQuestLog() end)
 end)
 
 -- Whatever is still waiting goes out before the game closes (the game

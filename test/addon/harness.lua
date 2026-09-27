@@ -235,7 +235,12 @@ function GetQuestText() return state.quest.text end
 function GetObjectiveText() return state.quest.obj end
 function GetProgressText() return state.quest.progress end
 function GetRewardText() return state.quest.reward end
-function GetQuestLogTitle() return state.quest.title end
+state.questLog = {} -- { { id, title } }: what GetQuestLogTitle(i) lists
+function GetNumQuestLogEntries() return #state.questLog, #state.questLog end
+function GetQuestLogTitle(i)
+	if type(i) == "number" and state.questLog[i] then local q = state.questLog[i]; return q.title, 1, 0, false, false, false, 0, q.id end
+	return state.quest.title
+end
 function GetNumQuestRewards() return 1 end
 function GetNumQuestChoices() return 0 end
 function GetQuestItemLink(kind, i) return "|cffffffff|Hitem:1372::::|h[Ragged Leather Vest]|h|r" end
@@ -358,9 +363,11 @@ assert(loadfile(addonDir .. "/Live.lua"))("Compendium", ns)
 -- Scenario ------------------------------------------------------------------
 assert(SlashCmdList.COMPENDIUM ~= bootSlash, "main file should replace the boot fallback")
 fire("ADDON_LOADED", "Compendium")
+state.questLog = { { id = 5, title = "Beating Them Back!" } } -- accepted before this login
 fire("PLAYER_LOGIN")
 frameTick(0.8) -- 0.25 + 0.8 crosses a whole second, so the clock calibrates
 frameTick(0.1)
+fire("QUEST_LOG_UPDATE") -- the log becomes readable: the overlay hears what is in it
 
 state.units.npc = { name = "Deputy Willem", guid = "Creature-0-4372-0-17-823-000015A2B3", level = 10, react = 5, hp = 500, faction = "Alliance" }
 state.quest = {
@@ -624,6 +631,20 @@ assert(#chat.pad > 0 and #chat.pad[1] >= 990, "filler lines went out (about 1 KB
 assert(chat.written > 0, "the game's 64 KB buffer was filled, so the file got written")
 -- The test line goes out at once, even between ticks; its filler follows.
 state.level = 2 -- the ticks below may send a heartbeat; keep it at the fixture's last level
+-- The quest log went out: the older quest quietly, and the list of ids.
+local sawQuiet, sawLog = false, false
+for _, m in ipairs(chat.sent) do
+	if m.msg:find("~Q~accept~5~Beating Them Back!~-~-~1", 1, true) then sawQuiet = true end
+	if m.msg:find("~G~5", 1, true) then sawLog = true end
+end
+assert(sawQuiet, "a quest already in the log at login is announced quietly")
+assert(sawLog, "the quest log's ids go out")
+-- The quest drops out of the log without an event; the next heartbeat's list says so.
+state.questLog = {}
+for _ = 1, 40 do trackTick() end
+local last
+for _, m in ipairs(chat.sent) do if m.msg:find("~G~", 1, true) then last = m.msg end end
+assert(last and not last:find("~G~5", 1, true), "a later quest log line no longer lists it: " .. tostring(last))
 local before, padBefore, writtenBefore = #chat.sent, #chat.pad, chat.written
 SlashCmdList.COMPENDIUM("live test")
 assert(#chat.sent == before + 1 and chat.sent[#chat.sent].msg:find("~T~", 1, true), "/comp live test writes a test line")

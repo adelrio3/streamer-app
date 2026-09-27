@@ -2,7 +2,7 @@
 ## Title: Compendium
 ## Notes: Logs quests, lore, NPCs, loot, items, vendors, fights, gear and your route with precise timestamps so the Compendium web app can line them up with your recordings.
 ## Author: Compendium
-## Version: 1.0.3
+## Version: 1.0.4
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## SavedVariables: CompendiumDB
 

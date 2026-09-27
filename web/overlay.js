@@ -422,7 +422,7 @@ function onEvent(e) {
     case 'rare': callout('rare', e.name || 'Rare', `rare spotted${e.level ? ` · level ${e.level}` : ''}`, 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.28, color: '#ff6fb5', n: 70, speed: 7, life: 1200 }); break;
     case 'quest':
       if (e.action === 'turnin') { callout('quest', 'QUEST COMPLETE', e.title || '', 3200); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 80, speed: 7, life: 1300 }); }
-      else if (e.action === 'accept') callout('quest', 'NEW QUEST', e.title || '', 2400);
+      else if (e.action === 'accept' && !e.quiet) callout('quest', 'NEW QUEST', e.title || '', 2400);
       break;
     case 'zone': if (e.zone) callout('zone', e.zone, e.sub || 'entering', 2600); break;
     case 'session':
