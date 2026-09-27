@@ -699,7 +699,8 @@ main.enter .entry { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; 
 /* The glow that spills out of an open chest, and a slow drift of light across the whole hero. */
 .lore-light { position: absolute; left: 50%; bottom: 18%; width: 520px; height: 260px; transform: translateX(-50%); pointer-events: none; z-index: 0;
   background: radial-gradient(ellipse at 50% 100%, rgba(255, 214, 122, .55), rgba(255, 176, 74, .18) 40%, transparent 70%); filter: blur(18px); animation: chestlight 4s ease-in-out infinite; }
-.lore-hero::after { content: ""; position: absolute; inset: -40%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: screen;
+.lore-hero::after { content: ""; position: absolute; left: 50%; top: 50%; width: 300vw; height: 300vw; margin: -150vw 0 0 -150vw; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: screen; border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, #000 20%, transparent 46%); mask: radial-gradient(circle, #000 20%, transparent 46%);
   background: conic-gradient(from 0deg at 50% 50%, transparent 0 22%, rgba(var(--ally-rgb), .18) 26%, rgba(255, 222, 150, .22) 32%, rgba(var(--horde-rgb), .16) 38%, transparent 44%, transparent 60%, rgba(180, 220, 255, .14) 66%, transparent 72%);
   animation: opal 18s linear infinite; }
 /* Sparks that rise out of the chest. */
