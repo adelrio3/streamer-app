@@ -29,6 +29,7 @@ import { assembleEpisode, toEpisodeXML, episodeChapters } from './lib/episode.js
 import { planReplay, drawReplayFrame, easeProgress } from './lib/replay.js';
 import { OverlayScene, overlayEvents, firstTimes, renderOverlayVideo } from './lib/overlayvideo.js';
 import { Mp4Writer, memorySink, fileSink } from './lib/mp4.js';
+import { parseRoster, rosterText, mergeRoster, rosterCoverage, RACE_NAMES, className as classWord } from './lib/roster.js';
 
 const main = document.getElementById('main');
 const statusEl = document.getElementById('status');
@@ -1270,6 +1271,55 @@ function liveCharacterCard(characters) {
     <div class="lbl"><span class="dot live" style="display:inline-block"></span> playing now${c.zone ? ` in ${esc(c.zone)}` : ''} · the entry is written at logout</div></a>`;
 }
 
+// The roster: who the account plays or plans to, and what that set of
+// race, class and profession combinations can never reach in Classic.
+function plannedCard(c) {
+  return `<div class="card charcard planned" style="--class:${CLASS_COLORS[c.cls] ?? 'var(--gold)'}"><div class="num">${esc(c.name)}</div>
+    <div class="lbl">${esc(RACE_NAMES[c.race] ?? '')} ${esc(classWord(c.cls))}${c.professions?.length ? ` · ${esc(c.professions.join(', '))}` : ''}</div>
+    <div class="lbl muted">planned · not logged in yet</div></div>`;
+}
+async function rosterPanel(characters) {
+  const text = state.settings.roster || '';
+  const roster = mergeRoster(characters, parseRoster(text));
+  const db = await questDB();
+  setTimeout(() => {
+    document.getElementById('rosterForm')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      state.settings = { ...state.settings, roster: String(new FormData(ev.target).get('roster') || '') };
+      await state.store.saveSettings(state.settings).catch((err) => toast(err.message));
+      route({ keepScroll: true });
+    });
+  });
+  const form = `<form id="rosterForm" class="panel"><h3>Roster</h3>
+    <p class="small">One character per line: name, sex, race, class and professions, in any order after the name (<code>Daire  Female  Human  Mage  Herbalism  Enchanting</code>). Characters that have logged in fill themselves in from the addon; add the ones still to come so the gaps show before you roll them.</p>
+    <textarea name="roster" rows="${Math.max(4, text.split('\n').length + 1)}" style="width:100%;font-family:var(--mono, monospace)" placeholder="Daire  Female  Human  Mage  Herbalism  Enchanting">${esc(text)}</textarea>
+    <p><button class="primary" type="submit">Save roster</button></p></form>`;
+  if (!db || !roster.some((c) => c.race && c.cls)) return `${form}${db ? '' : '<p class="muted small">The quest database is not available, so the gaps cannot be measured.</p>'}`;
+  const cov = rosterCoverage(db, roster);
+  const zoneName = (q) => db.zones[q.zone]?.n ?? '';
+  const qlink = (q) => `<a href="#/quest/q${q.id}">${esc(q.n)}</a> <span class="muted small">${esc(zoneName(q))}${q.l ? ` · level ${q.l}` : ''}</span>`;
+  const REASONS = { race: 'No character of the right race', class: 'No character of the right class', profession: 'No character with the profession', 'race & class': 'Neither the race nor the class', 'race & profession': 'Neither the race nor the profession', 'class & profession': 'Neither the class nor the profession', combination: 'The right race and class, but never on the same character' };
+  const reasonBlocks = [...cov.byReason.entries()].sort((a, b) => b[1].length - a[1].length).map(([reason, list]) => {
+    const byNeed = new Map();
+    for (const e of list) { if (!byNeed.has(e.need)) byNeed.set(e.need, []); byNeed.get(e.need).push(e.q); }
+    return `<details class="pack"><summary><b>${list.length}</b> ${esc(REASONS[reason] || reason)}</summary>
+      ${[...byNeed.entries()].sort((a, b) => b[1].length - a[1].length).map(([need, qs]) => `<div class="wiki-sec"><h3>${esc(need || 'requirement')} <span class="muted">${qs.length}</span></h3><ul class="small">${qs.sort((a, b) => (a.l || 0) - (b.l || 0)).map((q) => `<li>${qlink(q)}</li>`).join('')}</ul></div>`).join('')}
+    </details>`;
+  }).join('');
+  const choices = cov.choices.map((g) => {
+    const names = new Map();
+    for (const q of g.quests) names.set(q.n, (names.get(q.n) || 0) + 1);
+    return `<li><b>${g.coverable} of ${g.quests.length}</b>: ${[...names.entries()].map(([n, k]) => `${esc(n)}${k > 1 ? ` <span class="muted">×${k}</span>` : ''}`).join(' · ')} <span class="muted small">— ${esc(g.characters.join(', ') || 'nobody')}</span></li>`;
+  }).join('');
+  const pct = Math.round((cov.reachable / cov.total) * 1000) / 10;
+  return `${form}
+    <div class="panel"><h3>What this roster can reach</h3>
+      <p><span class="num">${cov.reachable.toLocaleString()}</span> of ${cov.total.toLocaleString()} Classic quests (<span class="num">${pct}%</span>) can be taken by at least one of these ${cov.characters} characters. <b>${cov.unreachable.length}</b> can never be, as the roster stands. Sex plays no part; professions count where a quest asks for one (secondary skills excepted).</p>
+      ${reasonBlocks || '<p class="muted small">Nothing out of reach.</p>'}
+      ${choices ? `<h3 style="margin-top:14px">Choices the roster forces</h3><p class="small muted">Groups of quests that shut each other out on one character (a profession specialization, one branch of a chain): only as many can be done as there are different characters to take them.</p><ul class="small">${choices}</ul>` : ''}
+    </div>`;
+}
+
 pages.characters = async () => {
   const { characters } = derived();
   // On a computer that is not feeding the live link, the live row says who is playing.
@@ -1277,8 +1327,10 @@ pages.characters = async () => {
   if (m && !(m.liveEnabled?.() && m.wow.state === 'ok') && !(state.live?.updated_at && Date.now() - Date.parse(state.live.updated_at) < 10000)) {
     try { const row = await state.store.loadLive(); if (row) state.live = row; } catch { /* offline */ }
   }
+  const planned = parseRoster(state.settings.roster || '').filter((p) => !characters.some((c) => c.name.toLowerCase() === p.name.toLowerCase()) && state.live?.state?.character?.name?.toLowerCase() !== p.name.toLowerCase());
   return `${pageHead('Chronicle', 'Characters', '')}
-    <div class="cards">${liveCharacterCard(characters)}${characters.map(charCard).join('') || (state.live?.state?.character?.name ? '' : '<p class="muted">No characters yet.</p>')}</div>`;
+    <div class="cards">${liveCharacterCard(characters)}${characters.map(charCard).join('')}${planned.map(plannedCard).join('')}${characters.length || planned.length || state.live?.state?.character?.name ? '' : '<p class="muted">No characters yet.</p>'}</div>
+    ${await rosterPanel(characters)}`;
 };
 
 pages.character = async (key, params = new URLSearchParams()) => {
@@ -3713,7 +3765,7 @@ function wireSetup() {
       // Data goes; this account's set-up stays: maps, the recording size, and the
       // live overlay's token (the OBS sources carry it), layout, counters and pad.
       const s0 = state.settings;
-      const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack, sessionPack: s0.sessionPack };
+      const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack, sessionPack: s0.sessionPack, roster: s0.roster };
       state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
       await state.store.saveSettings(state.settings);
       for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.') || k === PACKS_KEY || k === 'chronicler.notes.seen') localStorage.removeItem(k);
