@@ -2555,7 +2555,7 @@ pages.marks = async () => {
 
 const OVERLAY_WIDGETS = [['toasts', 'Drop toasts'], ['effects', 'Full-screen effects (flashes, particle storms and shakes for epic and legendary drops)'], ['tracker', 'Quest tracker'], ['counters', 'Item counters'], ['kills', 'Kills & streaks'], ['timer', 'Session timer & XP'], ['callouts', 'Callouts (levels, deaths, rares, quests)']];
 const OVERLAY_POSITIONS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['ml', 'Middle left'], ['mr', 'Middle right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
-const DEFAULT_OVERLAY = { show: ['toasts', 'effects', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc', bg: '', theme: 'auto' };
+const DEFAULT_OVERLAY = { show: ['toasts', 'effects', 'tracker', 'counters', 'kills', 'timer', 'callouts'], scale: 1, toasts: 'br', tracker: 'ml', counters: 'tc', kills: 'bl', timer: 'tc', bg: '', theme: 'auto' };
 const OVERLAY_RACES = [['Human', 'Human: royal blue and gold'], ['Dwarf', 'Dwarf: bronze and stone'], ['NightElf', 'Night Elf: moonlit violet'], ['Gnome', 'Gnome: pink and clockwork'], ['Orc', 'Orc: blood red and iron'], ['Scourge', 'Undead: plague green'], ['Tauren', 'Tauren: earth and sun'], ['Troll', 'Troll: jungle teal and bone']];
 // One window per widget: the size to give the OBS browser source. The toast
 // window is roomy on purpose: legendary rays and bursts reach far past the card.
@@ -2585,6 +2585,9 @@ const LIVE_TESTS = {
 
 function overlayConfig() {
   const c = { ...DEFAULT_OVERLAY, ...(state.settings.overlay || {}) };
+  // Settings saved with the pre-1.0.2 layout (which sat on top of the game's HUD) take the new one.
+  const OLD_POS = { toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
+  if (Object.keys(OLD_POS).every((k) => c[k] === OLD_POS[k])) for (const k of Object.keys(OLD_POS)) c[k] = DEFAULT_OVERLAY[k];
   c.show = Array.isArray(c.show) ? c.show : DEFAULT_OVERLAY.show;
   return c;
 }
@@ -2682,6 +2685,7 @@ pages.live = async () => {
           <h3 style="margin-top:18px">Everything in one window</h3>
           <div class="widgets">${OVERLAY_WIDGETS.map(([k, label]) => `<label><input type="checkbox" name="show" value="${k}" ${cfg.show.includes(k) ? 'checked' : ''}><span>${esc(label)}</span>${DEFAULT_OVERLAY[k] ? `<select name="${k}">${OVERLAY_POSITIONS.map(([p, pl]) => `<option value="${p}" ${cfg[k] === p ? 'selected' : ''}>${pl}</option>`).join('')}</select>` : ''}</label>`).join('')}</div>
           <label class="row" style="margin-top:10px"><span>Colours</span><select name="theme">${[['auto', 'Follow the character (by race)'], ...OVERLAY_RACES].map(([k, l]) => `<option value="${k}" ${k === (cfg.theme || 'auto') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <p class="small muted">The positions keep clear of the game's default HUD: the player frame, minimap, objectives, chat and action bars. Two widgets in one position stack there. Out of the box the timer and counters sit top centre, the tracker under the player frame, kills above the action bars and the drops bottom right, inside the right bars.</p>
           <p class="small muted">Each race has its own palette: the accent, its glow and the panels change the moment a different character logs in. Pick one here to pin it instead.</p>
           <label style="margin-top:10px"><span>Size <b id="scaleOut">${Number(cfg.scale).toFixed(2)}×</b></span><input type="range" name="scale" min="0.6" max="1.8" step="0.05" value="${cfg.scale}"></label>
           <p class="overlay-url" id="overlayUrl">${token ? esc(overlayUrl(cfg, token)) : 'The address appears once Compendium has run on the gaming PC.'}</p>

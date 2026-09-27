@@ -15,7 +15,7 @@ const demo = params.get('demo') === '1';
 const show = new Set((params.get('show') || 'toasts,tracker,counters,kills,timer,callouts,effects').split(',').filter(Boolean));
 const replay = params.get('replay') === '1';
 const debug = params.get('debug') === '1';
-const POS = { toasts: 'br', tracker: 'tl', counters: 'tr', kills: 'bl', timer: 'bc' };
+const POS = { toasts: 'br', tracker: 'ml', counters: 'tc', kills: 'bl', timer: 'tc' };
 for (const k of Object.keys(POS)) POS[k] = params.get(k) || POS[k];
 document.documentElement.style.setProperty('--scale', String(Number(params.get('scale')) || 1));
 // One widget on its own (?widget=toasts): it fills this window, so OBS can place the window anywhere.
@@ -42,9 +42,16 @@ const QUALITY = ['Poor', 'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Art
 const QCOLOR = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80'];
 const STREAKS = [[30, 'LEGENDARY', 'thirty kills without a pause'], [20, 'UNSTOPPABLE', 'twenty in a row'], [10, 'RAMPAGE', 'ten in a row'], [5, 'KILLING SPREE', 'five in a row']];
 
-for (const [k, el] of Object.entries({ toasts: $('toasts'), tracker: $('tracker'), counters: $('counters'), kills: $('kills'), timer: $('timer') })) {
-  el.className = widget ? `widget pos-fill fill-${k}` : `widget pos-${POS[k]}`;
+// Widgets that share a position live in one slot and stack; the timer
+// comes first at the top centre so the counters sit beside it.
+const slots = new Map();
+for (const [k, el] of Object.entries({ timer: $('timer'), toasts: $('toasts'), tracker: $('tracker'), counters: $('counters'), kills: $('kills') })) {
   el.hidden = !show.has(k);
+  if (widget) { el.className = `widget pos-fill fill-${k}`; continue; }
+  el.className = `widget fill-none w-${k}`;
+  let slot = slots.get(POS[k]);
+  if (!slot) { slot = document.createElement('div'); slot.className = `slot pos-${POS[k]}`; document.body.append(slot); slots.set(POS[k], slot); }
+  slot.append(el);
 }
 $('callouts').hidden = !show.has('callouts');
 if (!show.has('effects')) { $('fx').hidden = true; $('flash').hidden = true; }

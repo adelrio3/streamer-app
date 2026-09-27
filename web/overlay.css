@@ -34,17 +34,27 @@ body.shake.big { animation-name: shakebig; animation-duration: .8s; }
 @keyframes shake { 10%, 90% { transform: translate(-2px, 0); } 20%, 80% { transform: translate(4px, 0); } 30%, 50%, 70% { transform: translate(-6px, 0); } 40%, 60% { transform: translate(6px, 0); } }
 @keyframes shakebig { 10%, 90% { transform: translate(-3px, 2px); } 20%, 80% { transform: translate(6px, -2px); } 30%, 50%, 70% { transform: translate(-10px, 3px); } 40%, 60% { transform: translate(10px, -3px); } }
 
-/* Placement */
+/* Placement. In the all-in-one window the eight positions keep clear of the
+   game's default HUD (in percent of the frame, so they hold at any size):
+   the player frame top-left (to 14% × 11%), the minimap top-right (from 88%,
+   to 20% down), the objectives under it (24% to 40%), the right action bars
+   (from 94%), the chat window bottom-left (to 33% wide, from 62% down) and
+   the action bars along the bottom (from 88% down). Widgets given the same
+   position stack in one slot. */
+.slot { position: fixed; z-index: 2; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
+.slot > .widget { position: static; }
 .widget { position: fixed; z-index: 2; display: flex; flex-direction: column; gap: 10px; }
 .widget[hidden] { display: none; }
-.pos-tl { top: 28px; left: 28px; }
-.pos-tc { top: 28px; left: 50%; transform: translateX(-50%); align-items: center; }
-.pos-tr { top: 28px; right: 28px; align-items: flex-end; }
-.pos-ml { top: 50%; left: 28px; transform: translateY(-50%); }
-.pos-mr { top: 50%; right: 28px; transform: translateY(-50%); align-items: flex-end; }
-.pos-bl { bottom: 28px; left: 28px; flex-direction: column-reverse; }
-.pos-bc { bottom: 28px; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; align-items: center; }
-.pos-br { bottom: 28px; right: 28px; flex-direction: column-reverse; align-items: flex-end; }
+.pos-tl { top: 12.5%; left: 1.5%; }
+.pos-tc { top: 1.5%; left: 50%; transform: translateX(-50%); align-items: flex-start; flex-direction: row; gap: 16px; }
+.pos-tr { top: 21%; right: 6.5%; align-items: flex-end; }
+.pos-ml { top: 13%; left: 1.5%; }
+.pos-mr { top: 42%; right: 6.5%; align-items: flex-end; }
+.pos-bl { bottom: 13%; left: 34%; flex-direction: column-reverse; }
+.pos-bc { bottom: 13%; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; align-items: center; }
+.pos-br { bottom: 13%; right: 6.5%; flex-direction: column-reverse; align-items: flex-end; }
+.slot.pos-tc > .widget { flex-direction: column; }
+.slot.pos-bl > .widget, .slot.pos-bc > .widget, .slot.pos-br > .widget { flex-direction: column-reverse; }
 /* A widget on its own in its own window */
 .pos-fill { top: 12px; left: 12px; right: 12px; bottom: 12px; align-items: stretch; }
 /* The drop toasts get room around them for their rings, rays and bursts. */
