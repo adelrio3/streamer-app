@@ -2332,7 +2332,6 @@ pages.lore = async (kind, params) => {
   setTimeout(() => {
     document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
   });
-  const chaptersLived = all.reduce((n, t) => n + t.done, 0);
   const sparks = Array.from({ length: 18 }, (_, i) => `<i class="spark" style="--x:${(i * 53) % 100}%;--y:${(i * 37) % 100}%;--d:${(i % 7) * 0.9}s;--s:${3 + (i % 4)}px"></i>`).join('');
   return `<div class="lore-hero treasure">
       <div class="lore-light"></div>
@@ -2341,8 +2340,6 @@ pages.lore = async (kind, params) => {
       <h1 class="lore-title">Lore</h1>
       <div class="lore-stats">
         <div><b>${told.length}</b><small>tales told</small></div>
-        <div><b>${living.length}</b><small>being lived</small></div>
-        <div><b>${chaptersLived.toLocaleString()}</b><small>chapters lived</small></div>
       </div>
     </div>
     ${tabs}

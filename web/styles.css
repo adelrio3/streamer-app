@@ -714,7 +714,7 @@ main.enter .entry { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; 
   background: linear-gradient(90deg, #8fbaff 0%, #fff4d0 25%, #f2c364 45%, #fff4d0 60%, #ff8f88 80%, #8fbaff 100%); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .6)) drop-shadow(0 0 22px rgba(255, 214, 122, .35)); animation: opaltext 9s linear infinite; }
 .lore-stats { position: relative; z-index: 2; display: flex; justify-content: center; gap: 12px; margin: 4px 0 0; flex-wrap: wrap; }
-.lore-stats div { display: flex; flex-direction: column; align-items: center; min-width: 132px; padding: 12px 18px; border-radius: 12px;
+.lore-stats div { display: flex; flex-direction: column; align-items: center; min-width: 180px; padding: 14px 28px; border-radius: 12px;
   background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02)); border: 1px solid rgba(255, 214, 122, .28); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 10px 26px -18px rgba(255, 196, 92, .6); position: relative; overflow: hidden; }
 .lore-stats div::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .18) 50%, transparent 65%); transform: translateX(-120%); animation: coinsheen 6s ease-in-out infinite; }
 .lore-stats div:nth-child(2)::after { animation-delay: 2s; } .lore-stats div:nth-child(3)::after { animation-delay: 4s; }
