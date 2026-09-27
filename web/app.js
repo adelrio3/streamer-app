@@ -2850,7 +2850,7 @@ pages.recordings = async () => {
   const list = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [] }));
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.')}
     ${table(list, [
-      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip" title="${esc(c.name)}">${c.role === 'cam' ? 'camera' : 'overlay'}</span>`).join('')}` },
+      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).length ? `<br><span class="muted small">with ${r.companions.map((c) => `${c.role === 'cam' ? 'camera' : 'overlay'} sidecar <span title="${esc(c.name)}">${esc(c.name)}</span>`).join(', ')}</span>` : ''}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },
@@ -2877,7 +2877,7 @@ pages.recording = async (id, params) => {
       <div>
         <video id="video" controls preload="metadata"></video>
         <p class="muted small" id="videoNote"></p>
-        ${(r.companions || []).length ? `<p class="small muted">Recorded alongside: ${r.companions.map((c) => `<span class="chip">${c.role === 'cam' ? 'camera' : 'overlay'}</span> ${esc(c.name)}${Math.abs(c.offset) >= 0.05 ? ` <span class="muted">(${c.offset > 0 ? '+' : ''}${c.offset.toFixed(2)} s)</span>` : ''}`).join(' · ')}. The Premiere export lays them on their own tracks, lined up.</p>` : ''}
+        ${(r.companions || []).length ? `<div class="panel"><h3>Sidecar files</h3><p class="small">${r.companions.map((c) => `<b>${c.role === 'cam' ? 'Camera' : 'Overlay'}</b>: ${esc(c.name)}${Math.abs(c.offset) >= 0.05 ? ` <span class="muted">(started ${Math.abs(c.offset).toFixed(2)} s ${c.offset > 0 ? 'after' : 'before'} the gameplay)</span>` : ''}`).join('<br>')}</p><p class="small muted">Recorded alongside this gameplay file. They are not played here (a ProRes camera file only plays in Premiere), but the session package and the Premiere export put each on its own track, lined up to the frame.</p></div>` : ''}
         ${syncPanel(r)}
         <div class="panel">
           <h3>Export for editing</h3>
