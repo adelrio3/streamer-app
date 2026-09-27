@@ -37,6 +37,35 @@ export function journalEntries({ character, sessions = [], world = null, codex =
   return { title: `The journal of ${name}`, character: name, entries };
 }
 
+// Outings are recordings: the events of a session that fall inside a
+// recording become one outing per recording (id "<session>@<recording>");
+// what happened off camera stays an outing of its own only when something
+// was handed in, or a level or a death came of it. A session that no
+// recording touches is kept whole. toMs(session, event) -> shared-clock ms.
+export function cutByRecordings(sessions, recordings = [], toMs = (s, e) => e.t * 1000) {
+  const recs = (recordings || []).filter((r) => r && Number.isFinite(r.start) && Number.isFinite(r.end) && (r.role ?? 'game') === 'game');
+  if (!recs.length) return sessions;
+  const out = [];
+  for (const s of sessions) {
+    const events = (s.events || []).filter((e) => e && Number.isFinite(e.t));
+    if (!events.length) { out.push(s); continue; }
+    const first = toMs(s, events[0]); const last = toMs(s, events.at(-1));
+    const touching = recs.filter((r) => r.start <= last && r.end >= first).sort((a, b) => a.start - b.start);
+    if (!touching.length) { out.push(s); continue; }
+    const taken = new Set();
+    for (const r of touching) {
+      const mine = events.filter((e) => { const ms = toMs(s, e); return ms >= r.start && ms <= r.end && !taken.has(e); });
+      if (!mine.length) continue;
+      for (const e of mine) taken.add(e);
+      out.push({ ...s, id: `${s.id}@${r.id}`, recording: r.id, started: mine[0].t, events: mine });
+    }
+    const rest = events.filter((e) => !taken.has(e));
+    const notable = rest.find((e) => e.e === 'quest_turnin' || e.e === 'death' || e.e === 'level');
+    if (notable) out.push({ ...s, id: `${s.id}@off`, recording: null, started: notable.t, events: rest });
+  }
+  return out.sort((a, b) => (a.started || 0) - (b.started || 0));
+}
+
 // The whole journal as Markdown: a heading, then a heading and text per entry.
 export function narrativeText(result) {
   const lines = [`# ${result?.title ?? 'Journal'}`, ''];

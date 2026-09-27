@@ -154,3 +154,18 @@ test('what the real addon sends decodes end to end', { skip: !lua && 'no Lua int
   assert.ok(live.lastTestAt > 0, 'the test line is noted');
   assert.equal(events.filter((e) => e.fromGame).length, 1, 'the game\'s own loot line counts only hours after the last link line');
 });
+
+test('a live session reset to an earlier moment replays what happened since (OBS started before the PC heard)', () => {
+  const t0 = 1_790_000_000_000;
+  const live = new LiveState(t0);
+  live.apply({ at: t0 + 1000, kind: 'kill', npcId: 6, name: 'Kobold Vermin' });
+  live.apply({ at: t0 + 5000, kind: 'kill', npcId: 6, name: 'Kobold Vermin' });
+  live.apply({ at: t0 + 9000, kind: 'loot', id: 2589, name: 'Linen Cloth', q: 1, n: 1 });
+  assert.equal(live.kills, 2);
+  live.reset(t0 + 4000); // the recording began here
+  assert.equal(live.kills, 1, 'the kill before the recording is gone, the one after stays');
+  assert.equal(live.drops.get(2589)?.n, 1);
+  assert.equal(live.since, t0 + 4000);
+  live.apply({ at: t0 + 12000, kind: 'session', action: 'stop', name: 'x', seconds: 8, kills: live.kills });
+  assert.equal(live.events.at(-1).kind, 'session', 'session events reach the overlay');
+});

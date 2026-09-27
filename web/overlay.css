@@ -150,6 +150,7 @@ body.single .callout .ctitle { font-size: 64px; }
 .callout.quest .ctitle { font-size: 56px; }
 .callout.zone .ctitle { font-size: 48px; font-weight: 600; }
 .callout.level .ctitle { font-size: 96px; }
+.callout.session .ctitle { font-size: 60px; letter-spacing: .08em; }
 /* New item and hunt callouts: a kicker line above the name, the item's art beside it. */
 .callout .ckicker { font-size: 20px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
 .callout.newitem .ctitle { font-size: 56px; }

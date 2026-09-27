@@ -415,6 +415,10 @@ function onEvent(e) {
       else if (e.action === 'accept') callout('quest', 'NEW QUEST', e.title || '', 2400);
       break;
     case 'zone': if (e.zone) callout('zone', e.zone, e.sub || 'entering', 2600); break;
+    case 'session':
+      if (e.action === 'start') { callout('session', 'SESSION START', 'recording', 2600); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 70, speed: 6, life: 1100 }); }
+      else if (e.action === 'stop') { callout('session', 'SESSION COMPLETE', `${e.kills ?? 0} kills · ${e.questsDone ?? 0} quests · ${clock(e.seconds || 0)}`, 4200); flash(accent()); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 120, speed: 8, life: 1500, sizeMax: 5 }); }
+      break;
     case 'explore': callout('zone', e.area || 'Discovered', 'discovered', 2400); break;
     case 'test': callout('quest', 'LIVE LINK OK', 'the game reaches the overlay', 3000); burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: '#5fd3ff', n: 60, speed: 6, life: 1100 }); break;
     case 'skill': break;
@@ -449,6 +453,11 @@ function hunted(e) {
   } else {
     burst({ x: innerWidth / 2, y: innerHeight * 0.3, color: accent(), n: 50, speed: 6, life: 1100 });
   }
+}
+
+function clock(sec) {
+  const s = Math.max(0, Math.round(sec)); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`;
 }
 
 function handle(snap) {
@@ -570,6 +579,8 @@ function runDemo() {
     { kind: 'zone', zone: 'Westfall', sub: 'Sentinel Hill' },
     { kind: 'quest', action: 'accept', qid: 11, title: 'Riverpaw Gnoll Bounty' },
     { kind: 'death', killer: 'Hogger', killerId: 448 },
+    { kind: 'session', action: 'stop', name: 'demo', seconds: 754, kills: 21, questsDone: 1 },
+    { kind: 'session', action: 'start', name: 'demo' },
   ];
   let i = 0;
   const push = () => {

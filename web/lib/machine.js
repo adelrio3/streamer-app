@@ -24,6 +24,7 @@ const LIVE_EVERY = 1000;
 const LIVE_PUSH_GAP = 1500;
 const LIVE_HEARTBEAT = 60000; // a touch of updated_at when nothing changed
 const LIVE_SINCE_KEY = 'chronicler.live.since';
+const LIVE_FOLLOW_KEY = 'chronicler.live.follow'; // the recording the stream session follows
 const LIVE_PURGE_MIN = 1024 * 1024; // empty the chat log once it is over 1 MB...
 const LIVE_PURGE_QUIET = 3 * 60 * 1000; // ...and the game has not written it for 3 minutes (logged out)
 const LIVE_PURGE_RETRY = 60 * 1000; // try again a minute later if the game still had it open
@@ -83,7 +84,9 @@ export class Machine {
   async start() {
     await this.clockTick();
     this.every(CLOCK_EVERY, () => this.clockTick());
-    this.every(REFRESH_EVERY, () => this.refresh());
+    // The gaming PC looks more often, so a recording started on the other
+    // computer opens a stream session within seconds.
+    this.every(this.liveEnabled() ? 10000 : REFRESH_EVERY, () => this.refresh());
     if (this.config.plays) {
       await this.initWow();
       this.every(WOW_EVERY, () => this.pollWow());
@@ -274,8 +277,8 @@ export class Machine {
   }
 
   // A new stream session: the overlay's counters start from now.
-  async resetLive() {
-    const since = Date.now();
+  async resetLive(sinceLocal = Date.now()) {
+    const since = sinceLocal;
     try { localStorage.setItem(LIVE_SINCE_KEY, String(since)); } catch { /* storage off */ }
     this.live.state.reset(this.toServer(since));
     this.markUploaded();
@@ -646,6 +649,41 @@ export class Machine {
       n++;
     }
     if (n) this.changed('data');
+    await this.followRecordings();
+  }
+
+  // A stream session is a recording: when OBS on the recording computer
+  // starts one, the live counters start from that moment; when it stops,
+  // the session is complete and the overlay says so. Only the gaming PC
+  // (which owns the live row) does this.
+  async followRecordings() {
+    if (!this.liveEnabled()) return;
+    const rows = this.state.rows.filter((r) => r.source === 'obs' && Number.isFinite(r.start_ms) && !/^(cam|camera|face|overlay|ui)[\s_-]/i.test(r.name));
+    const newest = rows.sort((a, b) => b.start_ms - a.start_ms)[0];
+    if (!newest) return;
+    let f = this.live.follow;
+    if (!f) { try { f = JSON.parse(localStorage.getItem(LIVE_FOLLOW_KEY) || 'null'); } catch { f = null; } f ??= { name: null, start: 0, ended: true }; this.live.follow = f; }
+    const save = () => { try { localStorage.setItem(LIVE_FOLLOW_KEY, JSON.stringify(f)); } catch { /* storage off */ } };
+    const nowServer = this.toServer(Date.now());
+    if (newest.start_ms > (f.start || 0) && nowServer - newest.start_ms < 6 * 3600 * 1000) {
+      Object.assign(f, { name: newest.name, start: newest.start_ms, ended: false });
+      save();
+      await this.resetLive(newest.start_ms - (this.offset ?? 0));
+      this.live.state.apply({ at: newest.start_ms, kind: 'session', action: 'start', name: newest.name });
+      await this.pushLive(true);
+      this.changed('live');
+      this.notify('Recording started on the recording computer: a new stream session.');
+      return;
+    }
+    if (f.name === newest.name && !f.ended && newest.duration > 0) {
+      f.ended = true;
+      save();
+      const s = this.live.state;
+      s.apply({ at: nowServer, kind: 'session', action: 'stop', name: newest.name, seconds: newest.duration, kills: s.kills, questsDone: s.questsDone, deaths: s.deaths });
+      await this.pushLive(true);
+      this.changed('live');
+      this.notify('Recording stopped: the stream session is complete.');
+    }
   }
 }
 

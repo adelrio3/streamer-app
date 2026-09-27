@@ -129,3 +129,29 @@ test('journal: markdown export', () => {
   }
   assert.equal(narrativeText({ entries: [] }), '# Journal\n');
 });
+
+test('journal: outings are recordings; off-camera stretches count only when something came of them', async () => {
+  const { cutByRecordings } = await import('../web/lib/narrative.js');
+  const day = 1790000000;
+  const ev = (t, extra) => ({ t: day + t, z: 'Durotar', ...extra });
+  const s = { id: 'a', started: day, char: { name: 'Vesch', realm: 'Mankrik' }, events: [
+    ev(0, { e: 'session_start', sz: 'Valley of Trials' }),
+    ev(10, { e: 'kill', name: 'Mottled Boar' }),
+    ev(100, { e: 'quest_turnin', qid: 788, title: 'Cutting Teeth' }),
+    ev(400, { e: 'kill', name: 'Scorpid Worker' }),
+    ev(700, { e: 'quest_turnin', qid: 789, title: 'Sting of the Scorpid' }),
+    ev(900, { e: 'vendor', npc: 'Duokna' }),
+  ] };
+  const toMs = (sess, e) => e.t * 1000;
+  const recs = [{ id: 'r1', start: (day + 5) * 1000, end: (day + 200) * 1000, role: 'game' }, { id: 'r2', start: (day + 600) * 1000, end: (day + 800) * 1000, role: 'game' }, { id: 'c', start: (day + 5) * 1000, end: (day + 200) * 1000, role: 'cam' }];
+  const outings = cutByRecordings([s], recs, toMs);
+  assert.deepEqual(outings.map((o) => o.id), ['a@r1', 'a@r2'], 'one outing per recording; the off-camera vendor visit is not an outing');
+  assert.deepEqual(outings[0].events.map((e) => e.e), ['kill', 'quest_turnin']);
+  assert.equal(outings[1].recording, 'r2');
+  // An off-camera turn-in keeps its own outing.
+  const withOff = cutByRecordings([s], [recs[0]], toMs);
+  assert.deepEqual(withOff.map((o) => o.id), ['a@r1', 'a@off']);
+  assert.ok(withOff[1].events.some((e) => e.qid === 789));
+  // No recordings: the session stays whole.
+  assert.equal(cutByRecordings([s], [], toMs)[0], s);
+});

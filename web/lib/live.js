@@ -125,7 +125,17 @@ export class LiveState {
     this.reset(since);
   }
 
+  // A session can start before the PC hears of it (the recording computer's
+  // OBS started it): resetting to that earlier moment replays what happened
+  // since, so the counters are exact from the first frame.
   reset(since) {
+    const keep = (this.history || []).filter((e) => e.at >= since);
+    this.history = [];
+    this.wipe(since);
+    for (const e of keep) this.apply({ ...e, first: undefined, novel: e.novel });
+  }
+
+  wipe(since) {
     this.since = since;
     this.uploadedUntil = 0;
     this.seq = 0;
@@ -151,6 +161,8 @@ export class LiveState {
 
   apply(e) {
     if (!e || !e.at) return false;
+    this.history ??= [];
+    if (e.kind !== 'heartbeat') { this.history.push(e); if (this.history.length > 6000) this.history.shift(); }
     if (e.at < this.since && e.kind !== 'begin' && e.kind !== 'heartbeat') return false;
     this.lastEventAt = Math.max(this.lastEventAt, e.at);
     const c = this.character;
@@ -216,7 +228,7 @@ export class LiveState {
       }
       default: break;
     }
-    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp', 'test'].includes(e.kind)) {
+    if (['loot', 'kill', 'death', 'level', 'zone', 'rare', 'quest', 'explore', 'mark', 'screenshot', 'skill', 'money', 'xp', 'test', 'session'].includes(e.kind)) {
       this.seq++;
       this.events.push({ seq: this.seq, ...e });
       if (this.events.length > 80) this.events.shift();

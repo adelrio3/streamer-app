@@ -22,7 +22,7 @@ import { pastLoot, dropsBetween } from './lib/live.js';
 import { planOverlays, drawStill, toOverlayXML, packReadme, iconName, iconUrl, CORNERS } from './lib/overlaypack.js';
 import { makeZip } from './lib/zip.js';
 import { storylines, storylineOutline } from './lib/story.js';
-import { journalEntries, narrativeText } from './lib/narrative.js';
+import { journalEntries, narrativeText, cutByRecordings } from './lib/narrative.js';
 import { tales, tellTale, taleText } from './lib/tales.js';
 import { findShorts, toShortXML, shortsCSV } from './lib/shorts.js';
 import { assembleEpisode, toEpisodeXML, episodeChapters } from './lib/episode.js';
@@ -1350,7 +1350,10 @@ async function characterJournal(c) {
   const db = await questDB();
   const sessions = d.sessions.filter((sess) => c.sessions.includes(sess.id));
   let out;
-  try { out = journalEntries({ character: c, sessions, world: d.world, codex: d.codex, db, moment: d.moment }); } catch (err) { console.warn('journal', err); out = { entries: [] }; }
+  // An outing is a recording: what happened while OBS was recording is one
+  // entry, whatever the game's own login sessions were.
+  const outings = cutByRecordings(sessions, d.recordings, (sess, e) => eventMs(sess, e, d.clock));
+  try { out = journalEntries({ character: c, sessions: outings, world: d.world, codex: d.codex, db, moment: d.moment }); } catch (err) { console.warn('journal', err); out = { entries: [] }; }
   setTimeout(() => document.getElementById('journalDl')?.addEventListener('click', () => download(`${c.name.toLowerCase()}-journal.md`, 'text/markdown', narrativeText(out))));
   if (!out.entries.length) return '<p class="muted">Nothing written yet. The journal fills in as the story unfolds.</p>';
   return `<div class="journal">
@@ -2576,6 +2579,8 @@ const LIVE_TESTS = {
   rare: ['Rare spotted', { kind: 'rare', npcId: 471, name: 'Mother Fang', level: 10, rank: 'rareelite' }],
   death: ['Death', { kind: 'death', killer: 'Hogger', killerId: 448 }],
   zone: ['Zone change', { kind: 'zone', zone: 'Westfall', sub: 'Sentinel Hill' }],
+  'session:start': ['Session start', { kind: 'session', action: 'start', name: 'test' }],
+  'session:stop': ['Session complete', { kind: 'session', action: 'stop', name: 'test', seconds: 3720, kills: 84, questsDone: 6 }],
 };
 
 function overlayConfig() {
@@ -2644,7 +2649,7 @@ pages.live = async () => {
             ${card(snap?.kills ?? 0, 'kills', '#/drops')}${card(snap?.deaths ?? 0, 'deaths', '#/drops')}${card(snap?.drops?.reduce((n, d) => n + d.n, 0) ?? 0, 'items dropped', '#/drops?range=session')}${card(snap?.questsDone ?? 0, 'quests turned in', '#/quests')}${card(snap?.seq ?? 0, 'events', '#/live')}
           </div>
           <p class="small muted">Since ${snap?.since ? esc(when(snap.since / 1000)) : '—'}${snap?.lastEventAt ? ` · last event ${esc(when(snap.lastEventAt / 1000))}` : ''}${snap?.character?.name ? ` · ${esc(snap.character.name)} level ${snap.character.level ?? '?'}${snap.character.zone ? ` in ${esc(snap.character.zone)}` : ''}` : ''}</p>
-          <div class="row">${here ? '<button data-live="reset">Start a new stream session (counters from now)</button>' : '<span class="muted small">Counters restart from the gaming PC: open this page there.</span>'}<a class="btn ghost" href="#/drops?range=session">Drops this session</a></div>
+          <div class="row">${here ? '<button data-live="reset">Start a new stream session by hand (counters from now)</button><span class="muted small">A session starts on its own when OBS starts recording on the recording computer, and is complete when it stops.</span>' : '<span class="muted small">Counters restart from the gaming PC: open this page there.</span>'}<a class="btn ghost" href="#/drops?range=session">Drops this session</a></div>
         </div>
         <div class="panel"><h3>Link check</h3>
           <p class="small muted">The chain is: addon → hidden lines in the chat log → <code>Logs\\WoWChatLog.txt</code> → this app on the gaming PC → the cloud → the overlay. In game, type <code>/comp live test</code>: a line goes down the whole chain, this page shows it below, and the overlay shows <b>LIVE LINK OK</b>. <code>/comp live</code> on its own prints the addon's side of things.</p>
