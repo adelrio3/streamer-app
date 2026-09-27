@@ -21,6 +21,7 @@ const CONFIG_KEY = 'chronicler.machine';
 const CLOCK_EVERY = 10 * 60 * 1000;
 const WOW_EVERY = 5000;
 const REC_EVERY = 20000;
+const REC_FILES_KEY = 'chronicler.rec.files'; // the recordings folder's video names, as last read
 const GROWING_FOR = 45000; // ms since a video's last write within which it counts as still being recorded
 const REFRESH_EVERY = 60000;
 const LIVE_EVERY = 1000;
@@ -61,6 +62,8 @@ export class Machine {
     this.rtt = null;
     this.wow = { state: 'off', files: [], installs: [], lastIngest: null, error: null, addonVersion: null };
     this.rec = { state: 'off', videos: new Map(), error: null };
+    // The last folder listing, so pages can use it before the folder is read again.
+    try { const names = JSON.parse(localStorage.getItem(REC_FILES_KEY) || 'null'); if (Array.isArray(names)) { this.rec.videos = new Map(names.map((n) => [String(n).toLowerCase(), { name: n, cached: true }])); this.rec.known = true; } } catch { /* storage off */ }
     this.obsStatus = { state: 'off' };
     this.seen = new Map(); // SavedVariables file -> lastModified already handled
     this.timers = [];
@@ -629,6 +632,8 @@ export class Machine {
     const videos = await folders.listVideos(this.recRoot);
     const before = [...(this.rec.videos?.keys() || [])].sort().join('\n');
     this.rec.videos = new Map(videos.map((v) => [v.name.toLowerCase(), v]));
+    this.rec.known = true;
+    try { localStorage.setItem(REC_FILES_KEY, JSON.stringify(videos.map((v) => v.name))); } catch { /* storage off */ }
     if (before !== [...this.rec.videos.keys()].sort().join('\n')) this.changed('wow');
     const now = Date.now();
     // A file replaced by another with the same name and a new extension (the

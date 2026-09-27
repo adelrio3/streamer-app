@@ -2849,7 +2849,7 @@ pages.recordings = async (_, params) => {
   const { recChars } = derived();
   const m = state.machine;
   // On the recording computer the folder decides: entries whose files are gone are kept out of sight until removed.
-  const folder = m?.config?.records && m.rec?.state === 'ok' ? m.rec.videos : null;
+  const folder = m?.config?.records && m.rec?.known && m.rec.videos ? m.rec.videos : null;
   const present = (name) => !folder || folder.has(String(name).toLowerCase());
   const all = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [], gone: !present(r.name) }));
   const gone = all.filter((r) => r.gone);
@@ -2868,8 +2868,9 @@ pages.recordings = async (_, params) => {
     });
   });
   const reading = Boolean(m?.config?.records) && !folder && m.rec?.state !== 'none' && m.rec?.state !== 'needs-permission';
+  const stale = Boolean(folder) && m.rec.state !== 'ok';
   const outstanding = folder ? outstandingPackages() : [];
-  const batchHtml = !folder ? (reading ? '<p class="small muted">Reading the recordings folder…</p>' : '') : batch
+  const batchHtml = !folder ? (reading ? '<p class="small muted">Reading the recordings folder…</p>' : '') : stale ? '<p class="small muted">As the folder was last read; reading it again…</p>' : batch
     ? `<p class="small"><span class="dot live" style="display:inline-block"></span> <b>Batch running</b> · <span id="batchStatus">${esc(batch.status)}</span> <button id="batchStop" class="ghost" ${batch.stop ? 'disabled' : ''}>Stop after this one</button></p>`
     : `<p class="small"><button id="batchRun" class="primary" ${outstanding.length ? '' : 'disabled'}>Process ${outstanding.length ? `${outstanding.length} outstanding session${outstanding.length === 1 ? '' : 's'}` : 'outstanding sessions'} (overnight)</button> <span class="muted">Shrinks the camera files${(settings().sessionPack || {}).shrinkCam ? '' : ' (once the shrinker is set up on This computer)'} and builds each session's overlay video and Premiere sequence, one after another. Press it when you are done for the night and keep this tab open; nothing heavy runs on its own.</span></p>`;
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `${batchHtml}<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
@@ -3054,9 +3055,15 @@ async function wirePlayer(r, start) {
   const note = document.getElementById('videoNote');
   const local = state.machine.rec.videos.get(r.name.toLowerCase());
   if (videoURL) { URL.revokeObjectURL(videoURL); videoURL = null; }
-  if (local) {
+  if (local?.handle) {
     videoURL = URL.createObjectURL(await local.handle.getFile());
     video.src = videoURL;
+  } else if (local?.cached) {
+    // The folder listing is from last time and is being read again: try once more when it has been.
+    video.hidden = true;
+    const again = () => { if (state.machine.rec.state === 'ok') wirePlayer(r, start); else setTimeout(again, 1000); };
+    setTimeout(again, 1000);
+    return;
   } else {
     video.hidden = true;
     note.textContent = state.machine.config.records
