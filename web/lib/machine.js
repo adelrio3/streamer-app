@@ -21,7 +21,8 @@ const WOW_EVERY = 5000;
 const REC_EVERY = 30000;
 const REFRESH_EVERY = 60000;
 const LIVE_EVERY = 1000;
-const LIVE_PUSH_GAP = 1500;
+const LIVE_PUSH_GAP = 1500; // between pushes while nothing is being recorded...
+const LIVE_PUSH_GAP_LIVE = 200; // ...and while a session is on: every change goes up at once
 const LIVE_HEARTBEAT = 60000; // a touch of updated_at when nothing changed
 const LIVE_SINCE_KEY = 'chronicler.live.since';
 const LIVE_FOLLOW_KEY = 'chronicler.live.follow'; // the recording the stream session follows
@@ -277,8 +278,19 @@ export class Machine {
   }
 
   // A new stream session: the overlay's counters start from now.
-  async resetLive(sinceLocal = Date.now()) {
+  // While a stream session is on (a recording the PC follows, or one started
+  // by hand in the last four hours) the link is as quick as it can be:
+  // changes push at once and the overlay polls every second. Otherwise the
+  // thrifty cadence holds.
+  sessionActive() {
+    const f = this.live.follow;
+    if (f && f.start && !f.ended) return true;
+    return Boolean(this.live.manualSince && Date.now() - this.live.manualSince < 4 * 3600 * 1000);
+  }
+
+  async resetLive(sinceLocal = Date.now(), { manual = false } = {}) {
     const since = sinceLocal;
+    if (manual) this.live.manualSince = Date.now();
     try { localStorage.setItem(LIVE_SINCE_KEY, String(since)); } catch { /* storage off */ }
     this.live.state.reset(this.toServer(since));
     this.markUploaded();
@@ -361,7 +373,8 @@ export class Machine {
     const live = this.live;
     const now = Date.now();
     const changed = live.state.seq !== live.pushedSeq;
-    const due = force || (changed && now - live.lastPush > LIVE_PUSH_GAP) || now - live.lastPush > LIVE_HEARTBEAT;
+    const gap = this.sessionActive() ? LIVE_PUSH_GAP_LIVE : LIVE_PUSH_GAP;
+    const due = force || (changed && now - live.lastPush > gap) || now - live.lastPush > LIVE_HEARTBEAT;
     if (!due) return;
     live.lastPush = now;
     try {
@@ -376,6 +389,7 @@ export class Machine {
       const snap = live.state.snapshot(this.toServer(now));
       snap.counters = this.counterValues();
       snap.machine = this.name;
+      snap.recording = this.sessionActive(); // the overlay polls faster while it is
       snap.link = { status: live.status, purgedAt: live.purgedAt ? this.toServer(live.purgedAt) : 0, purgedBytes: live.purgedBytes || 0, flavor: live.flavor, changedAt: live.changedAt ? this.toServer(live.changedAt) : 0, linkSeenAt: live.linkSeenAt ? this.toServer(live.linkSeenAt) : 0, fileSize: live.fileSize, fileModified: live.fileModified ? this.toServer(live.fileModified) : 0, lines: live.lines, decoded: live.decoded };
       await this.store.saveLive(token, this.name, snap);
       live.pushedSeq = live.state.seq;

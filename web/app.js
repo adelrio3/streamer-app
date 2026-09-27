@@ -2777,7 +2777,7 @@ function wireLive(cfg, token) {
   }
   document.querySelector('[data-live="reset"]')?.addEventListener('click', async () => {
     if (!window.confirm('Start a new stream session? The overlay\'s kills, drops and session counters start again from now.')) return;
-    try { await m.resetLive(); toast('New stream session started.'); route({ keepScroll: true }); } catch (err) { toast(err.message); }
+    try { await m.resetLive(Date.now(), { manual: true }); toast('New stream session started.'); route({ keepScroll: true }); } catch (err) { toast(err.message); }
   });
   const cform = document.getElementById('countersForm');
   const saveCounters = async (list) => {

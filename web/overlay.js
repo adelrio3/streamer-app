@@ -510,7 +510,8 @@ function status(text) {
 // seq alone when nothing changed). Several overlay windows on one computer
 // share one poller: the leader posts what it gets on a BroadcastChannel, the
 // others listen, and one of them takes over if the leader goes quiet.
-const POLL_EVERY = 2000;
+const POLL_EVERY = 2000; // while nothing is being recorded
+const POLL_LIVE = 1000; // while a stream session is on (the gaming PC says so in the snapshot)
 const LEADER_QUIET = 6500;
 let bus = null;
 try { bus = new BroadcastChannel(`chronicler-live-${token}`); } catch { /* no channel: poll alone */ }
@@ -547,7 +548,7 @@ async function poll(cfg) {
     status(out.status);
     if (bus) bus.postMessage(out);
   }
-  pollTimer = setTimeout(() => poll(cfg), POLL_EVERY);
+  pollTimer = setTimeout(() => poll(cfg), lastSnap?.recording ? POLL_LIVE : POLL_EVERY);
 }
 
 // Demo: a script of fake events, so the overlay can be laid out without playing.
