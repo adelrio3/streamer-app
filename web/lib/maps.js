@@ -59,7 +59,7 @@ export function buildMaps(sessions, world, codex, moment) {
         case 'speech': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.speaker ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=speech', key: `sp${e.npcId ?? e.speaker}|${e.text.slice(0, 40)}` }); break;
         case 'gossip': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.npc ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=gossip', key: `g${e.npcId ?? e.npc}` }); break;
         case 'mark': add(e.m, { ...base, layer: 'mark', label: `${e.kind ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`, href: '#/marks' }); break;
-        case 'screenshot': add(e.m, { ...base, layer: 'mark', label: `Screenshot (${e.reason ?? 'manual'})`, href: '#/screenshots' }); break;
+        case 'screenshot': add(e.m, { ...base, layer: 'mark', label: `Screenshot (${e.reason ?? 'manual'})`, href: '#/marks' }); break;
         case 'loot_window': {
           const what = (e.items || []).map((i) => i.name).filter(Boolean).slice(0, 4).join(', ');
           if (what) add(e.m, { ...base, layer: 'loot', label: `Loot: ${what}`, href: '#/items' });

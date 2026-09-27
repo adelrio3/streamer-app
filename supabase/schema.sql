@@ -239,3 +239,12 @@ as $$
   limit 1
 $$;
 grant execute on function public.live_state(text, integer) to anon, authenticated;
+
+-- Version 5 ------------------------------------------------------------------
+-- Screenshots are no longer uploaded: the table goes, and every image in the
+-- bucket except your own map images (under <user>/maps/) is removed. The
+-- bucket stays for the map images.
+drop policy if exists "own screenshots" on public.screenshots;
+drop table if exists public.screenshots;
+delete from storage.objects
+  where bucket_id = 'screenshots' and (storage.foldername(name))[2] is distinct from 'maps';

@@ -43,7 +43,7 @@ const WOWHEAD = { classic: 'https://www.wowhead.com/classic', tbc: 'https://www.
 // sessions: from the addon; rows: recording rows; clock: clock samples.
 const state = {
   client: null, store: null, user: null, machine: null, sessions: [], rows: [], clock: [], settings: {}, cache: null,
-  items: [], screenshots: [], schema2: true, tracks: null, shotUrls: new Map(),
+  items: [], schema2: true, tracks: null, shotUrls: new Map(),
   // The Classic quest database, loaded the first time a page needs it.
   db: undefined, dbLoading: null, spawns: null, coverageWho: null,
 };
@@ -1269,8 +1269,6 @@ pages.character = async (key, params = new URLSearchParams()) => {
   const i = c.info;
   const tabs = (c.talents?.tabs || []).map((t) => `<div class="panel"><h3>${esc(t.name)} <span class="muted">${t.spent ?? 0}</span></h3>${(t.talents || []).map((x) => `<div>${esc(x.name)} <span class="muted">${x.rank}/${x.max}</span></div>`).join('') || '<span class="muted">none</span>'}</div>`).join('');
   const statRow = (st) => ['str', 'agi', 'sta', 'int', 'spi', 'armor', 'hp', 'power', 'ap', 'crit', 'dodge'].map((k) => `<td class="num">${st[k] ?? ''}</td>`).join('');
-  const shots = state.screenshots.filter((sh) => c.sessions.some((sid) => sessionCovers(sid, sh)));
-  if (shots.length) setTimeout(() => loadShots(shots));
   const moneyNow = c.money.at(-1)?.total ?? i.money;
   const color = CLASS_COLORS[i.classToken] ?? 'var(--gold)';
   const xpPct = i.xpMax ? Math.min(1, (i.xp ?? 0) / i.xpMax) : 0;
@@ -1323,7 +1321,6 @@ pages.character = async (key, params = new URLSearchParams()) => {
     ${c.skills.length ? `<h2>Skills</h2>${table(c.skills, [
       { label: 'Skill', value: (k) => k.name }, { label: 'Rank', value: (k) => k.rank, html: (k) => `${k.rank} / ${k.max}`, num: true },
     ], { sort: 1, desc: true })}` : ''}
-    ${shots.length ? `<h2>Screenshots</h2><div class="shots">${shots.slice(-40).reverse().map(shotTile).join('')}</div>` : ''}
     <h2>Quests completed</h2>
     ${table(c.quests, [
       { label: 'Quest', value: (q) => q.title, html: (q) => `<a href="#/quest/${enc(q.qid ? `q${q.qid}` : `t${q.title}`)}">${esc(q.title ?? `Quest ${q.qid}`)}</a>` },
@@ -1338,7 +1335,7 @@ pages.character = async (key, params = new URLSearchParams()) => {
       { label: 'Events', value: (r) => r.events, num: true },
     ], { sort: 0, desc: true, empty: 'No footage of this character yet.' })}
     <div class="panel danger"><h3>Delete ${esc(c.name)}</h3>
-      <p class="small">Removes this character's ${c.sessions.length} session${c.sessions.length === 1 ? '' : 's'} and their routes from the chronicle, on every computer. Recordings and screenshots stay. The addon's own log on the gaming PC is not changed, and these sessions will not be uploaded again. Type the character's name to confirm.</p>
+      <p class="small">Removes this character's ${c.sessions.length} session${c.sessions.length === 1 ? '' : 's'} and their routes from the chronicle, on every computer. Recordings stay. The addon's own log on the gaming PC is not changed, and these sessions will not be uploaded again. Type the character's name to confirm.</p>
       <div class="row"><input type="text" id="delCharName" placeholder="${esc(c.name)}" autocomplete="off"><button id="delChar" class="danger">Delete character</button></div>
     </div>`}`;
 };
@@ -1497,43 +1494,6 @@ function journeyRows(c) {
   for (const q of c.quests) rows.push({ ...q, label: `Completed ${q.title}`, html: `Completed <a href="#/quest/${enc(q.qid ? `q${q.qid}` : `t${q.title}`)}">${esc(q.title)}</a>` });
   return rows;
 }
-
-// Screenshots ---------------------------------------------------------------
-
-function sessionCovers(sessionId, shot) {
-  const s = state.sessions.find((x) => x.id === sessionId);
-  if (!s || !s.events.length || !shot.taken_ms) return false;
-  const clock = derived().clock;
-  const a = eventMs(s, s.events[0], clock) - 60000;
-  const b = eventMs(s, s.events.at(-1), clock) + 60000;
-  return shot.taken_ms >= a && shot.taken_ms <= b;
-}
-
-function shotTile(sh) {
-  return `<a class="shot" data-shot="${esc(sh.path)}" target="_blank" rel="noopener"><img alt="${esc(sh.name)}" loading="lazy"><span class="muted small">${esc(new Date(sh.taken_ms).toLocaleString())}</span></a>`;
-}
-
-// Screenshots are private: ask Supabase for temporary links, then show them.
-async function loadShots(shots) {
-  const need = shots.map((s) => s.path).filter((p) => !state.shotUrls.has(p));
-  if (need.length) {
-    try {
-      for (const [p, url] of await state.store.screenshotUrls(need)) state.shotUrls.set(p, url);
-    } catch (err) { console.warn(err); }
-  }
-  for (const el of document.querySelectorAll('[data-shot]')) {
-    const url = state.shotUrls.get(el.dataset.shot);
-    if (url) { el.href = url; el.querySelector('img').src = url; }
-  }
-}
-
-pages.screenshots = async () => {
-  const shots = [...state.screenshots].sort((a, b) => (b.taken_ms ?? 0) - (a.taken_ms ?? 0));
-  if (shots.length) setTimeout(() => loadShots(shots.slice(0, 120)));
-  return `${pageHead('Footage', 'Screenshots', 'Taken in game while the addon was logging: your own, and automatic ones at rares, level-ups, discoveries and deaths once you turn those on (<code>/comp shots on</code>; off by default because each one freezes the game for a moment), and whenever you press Print Screen. Your gaming PC uploads them, shrunk, while the app is open.')}
-    ${state.schema2 ? '' : schemaNotice()}
-    <div class="shots">${shots.slice(0, 120).map(shotTile).join('') || '<p class="muted">None yet.</p>'}</div>`;
-};
 
 // Footage finder -------------------------------------------------------------
 
@@ -2306,7 +2266,7 @@ pages.search = async (_, params) => {
 };
 
 function schemaNotice() {
-  return `<div class="notice">Your database needs the version 2 update for items, routes and screenshots. Copy the setup file again from <a href="https://github.com/adelrio3/streamer-app/blob/claude/wow-lore-youtube-concept-311j74/supabase/schema.sql" target="_blank" rel="noopener">supabase/schema.sql</a> (the two-squares <b>Copy raw file</b> button), paste it into <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> and click <b>Run</b>. Then reload this page.</div>`;
+  return `<div class="notice">Your database needs the version 2 update for items and routes. Copy the setup file again from <a href="https://github.com/adelrio3/streamer-app/blob/claude/wow-lore-youtube-concept-311j74/supabase/schema.sql" target="_blank" rel="noopener">supabase/schema.sql</a> (the two-squares <b>Copy raw file</b> button), paste it into <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> and click <b>Run</b>. Then reload this page.</div>`;
 }
 
 // Lore: the heart of it. Every storyline finished becomes a tale told in
@@ -3503,7 +3463,7 @@ function wireSetup() {
       state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
       await state.store.saveSettings(state.settings);
       for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
-      Object.assign(state, { sessions: [], rows: [], clock: [], items: [], screenshots: [], tracks: new Map(), shotUrls: new Map() });
+      Object.assign(state, { sessions: [], rows: [], clock: [], items: [], tracks: new Map(), shotUrls: new Map() });
       invalidate();
       toast('Everything deleted. Type /comp clear confirm in game to empty the addon too.');
       m.restart();
@@ -3785,7 +3745,7 @@ async function startApp(user) {
   const all = await state.store.loadAll();
   Object.assign(state, {
     sessions: all.sessions, rows: all.recordings, clock: all.clock, settings: all.settings,
-    items: all.items, screenshots: all.screenshots, schema2: all.schema2, voice: all.voice ?? [], schema3: all.schema3,
+    items: all.items, schema2: all.schema2, voice: all.voice ?? [], schema3: all.schema3,
   });
   state.machine = new Machine({ store: state.store, state, changed, notify: toast });
   document.getElementById('nav').hidden = false;

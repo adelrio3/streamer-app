@@ -82,22 +82,22 @@ test('config function turns any Supabase URL form into the project URL', () => {
   assert.equal(projectUrl(undefined), null);
 });
 
-test('item catalog, tracks and screenshots', async () => {
+test('item catalog and tracks', async () => {
   const client = fakeClient();
   const store = new CloudStore(client, 'u1');
   await store.saveItems(Array.from({ length: 450 }, (_, i) => ({ item_id: i + 1, data: { name: `Item ${i + 1}` } })));
   await store.saveItems([{ item_id: 1, data: { name: 'Item 1 again' } }]);
   await store.saveTrack('s1', 1, ['3,b'], 'Gaming PC');
   await store.saveTrack('s1', 0, ['1,a', '2,a'], 'Gaming PC');
-  await store.saveScreenshot({ name: 'WoWScrnShot_092526_201500.jpg', taken_ms: 5 }, 'jpegbytes');
   const all = await store.loadAll();
   assert.equal(all.items.length, 450);
   assert.equal(all.items.find((i) => i.item_id === 1).data.name, 'Item 1 again');
   assert.equal(all.schema2, true);
   assert.deepEqual((await store.loadTracks()).get('s1'), ['1,a', '2,a', '3,b'], 'chunks in order');
-  assert.equal(all.screenshots[0].path, 'u1/WoWScrnShot_092526_201500.jpg');
-  const urls = await store.screenshotUrls([all.screenshots[0].path]);
-  assert.equal(urls.get('u1/WoWScrnShot_092526_201500.jpg'), 'https://signed/u1/WoWScrnShot_092526_201500.jpg');
+  assert.equal(all.screenshots, undefined, 'screenshots are not uploaded any more');
+  const mapPath = await store.saveMapImage(1429, 'jpegbytes');
+  const urls = await store.screenshotUrls([mapPath]);
+  assert.equal(urls.get(mapPath), `https://signed/${mapPath}`, 'map images still get signed links');
 });
 
 test('works before the version 2 tables exist', async () => {

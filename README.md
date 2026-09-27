@@ -12,7 +12,7 @@ A companion for playing through World of Warcraft on camera. You play once, reco
   - **fights**: duration, damage dealt and taken, abilities, enemies, close calls, and who killed you
   - **your character over time**: gear and every change, talents, stats per level, reputation, gold with where it came from, XP, skills and bags
   - **position and state every 2 seconds** (mounted, flight path, UI hidden, indoors, swimming, in-game time of day) for the footage finder
-  - **screenshots**: your own, plus automatic ones at rares, level-ups, discoveries and deaths if you turn them on
+  - **screenshots** stay on the gaming PC (the addon can take them at rares, level-ups, discoveries and deaths if you turn that on); they are logged as moments, never uploaded
   - optional group, duel and chat logging (`/comp social on`)
   - **marks** (lore beat, beautiful shot, funny, redo) and the **sync flash**
   - the **live link**: the addon writes what happens into the game's chat log as hidden lines, so the file carries it out as you play; `/comp live off` stops it

@@ -49,7 +49,7 @@ export function defaultMachineConfig(platform = globalThis.navigator?.platform ?
 export class Machine {
   // state: { sessions, rows, clock } shared with the UI.
   // changed(topic): the UI should recompute and redraw the pages that show
-  // that topic: 'data' (sessions, items, screenshots, recordings), 'live'
+  // that topic: 'data' (sessions, items, recordings), 'live'
   // (the live link), 'voice', 'obs', 'clock', 'wow' (folder and addon state).
   constructor({ store, state, changed = () => {}, notify = () => {} }) {
     Object.assign(this, { store, state, changed, notify });
@@ -243,7 +243,6 @@ export class Machine {
       await this.collectErrors(log.errors || [], f.flavor);
       this.seen.set(key, file.lastModified);
     }
-    if (this.state.schema2) await this.uploadScreenshots();
     if (uploaded) {
       this.wow.lastIngest = { at: Date.now(), sessions: uploaded };
       this.state.sessions.sort((a, b) => a.started - b.started);
@@ -510,38 +509,6 @@ export class Machine {
     this.changed('data');
   }
 
-  // Screenshots taken while Compendium was logging, shrunk and uploaded a few
-  // at a time. WoW names them WoWScrnShot_MMDDYY_HHMMSS.jpg in local time.
-  async uploadScreenshots() {
-    this.skipShots ??= new Set();
-    const have = new Set(this.state.screenshots.map((r) => r.name));
-    const windows = this.state.sessions.filter((s) => s.machine === this.name && s.events.length)
-      .map((s) => [s.events[0].t - 60, s.events.at(-1).t + 60]);
-    let budget = 3;
-    for (const inst of this.wow.installs) {
-      for (const shot of await folders.listScreenshots(inst.dir)) {
-        if (budget <= 0) return;
-        if (have.has(shot.name) || this.skipShots.has(shot.name)) continue;
-        const local = screenshotTime(shot.name);
-        const sec = local / 1000;
-        if (local == null || !windows.some(([a, b]) => sec >= a && sec <= b)) {
-          this.skipShots.add(shot.name);
-          continue;
-        }
-        budget--;
-        try {
-          const { blob, width, height } = await shrink(await shot.handle.getFile());
-          const row = await this.store.saveScreenshot({ name: shot.name, flavor: inst.flavor, machine: this.name, taken_ms: Math.round(this.toServer(local)), width, height }, blob);
-          this.state.screenshots.push(row);
-          this.changed('data');
-        } catch (err) {
-          this.skipShots.add(shot.name);
-          console.warn('screenshot', shot.name, err);
-        }
-      }
-    }
-  }
-
   async installAddon(install) {
     const manifest = await (await fetch('addon/manifest.json', { cache: 'no-store' })).json();
     const files = [];
@@ -685,9 +652,9 @@ export class Machine {
   // Picks up what the other computer uploaded.
   async refresh() {
     // A couple of minutes of overlap covers uploads that were in flight.
-    const newest = latest([...this.state.sessions, ...this.state.rows, ...this.state.items, ...this.state.screenshots]);
+    const newest = latest([...this.state.sessions, ...this.state.rows, ...this.state.items]);
     const since = new Date(Date.parse(newest) - 120000).toISOString();
-    const { sessions, recordings, items, screenshots, voice } = await this.store.changedSince(since);
+    const { sessions, recordings, items, voice } = await this.store.changedSince(since);
     let n = 0;
     this.state.voice ??= [];
     for (const v of voice) {
@@ -701,9 +668,6 @@ export class Machine {
       for (const r of items) byId.set(r.item_id, r);
       this.state.items = [...byId.values()];
       n++;
-    }
-    for (const r of screenshots) {
-      if (!this.state.screenshots.some((x) => x.name === r.name)) { this.state.screenshots.push(r); n++; }
     }
     if (sessions.length) this.state.tracks = null; // reload routes when next needed
     const deleted = new Set(this.state.settings.deletedSessions || []);
@@ -764,24 +728,6 @@ function mergeMore(base, saved) {
   return out;
 }
 
-export function screenshotTime(name) {
-  const m = /WoWScrnShot_(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/.exec(name);
-  if (!m) return null;
-  const [, mo, d, y, h, mi, sec] = m.map(Number);
-  return new Date(2000 + y, mo - 1, d, h, mi, sec).getTime();
-}
-
-// Shrinks a screenshot to at most 1280 px wide as a JPEG.
-async function shrink(file, maxWidth = 1280) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxWidth / bitmap.width);
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
-  const canvas = Object.assign(document.createElement('canvas'), { width, height });
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-  return { blob, width, height };
-}
 
 function latest(rows) {
   let max = '1970-01-01T00:00:00Z';

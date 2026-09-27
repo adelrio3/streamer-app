@@ -32,20 +32,19 @@ export class CloudStore {
   }
 
   async loadAll() {
-    const [sessions, recordings, clock, settings, items, screenshots, voice] = await Promise.all([
+    const [sessions, recordings, clock, settings, items, voice] = await Promise.all([
       all(() => this.client.from('sessions').select('*').order('started', { ascending: true })),
       all(() => this.client.from('recordings').select('*').order('start_ms', { ascending: true })),
       all(() => this.client.from('clock_samples').select('machine,offset_ms,rtt_ms,measured_at').order('measured_at', { ascending: true })),
       this.client.from('settings').select('data').maybeSingle(),
       // Tables added in schema version 2 may not exist yet.
       optional(() => all(() => this.client.from('items').select('item_id,data,updated_at'))),
-      optional(() => all(() => this.client.from('screenshots').select('*').order('taken_ms', { ascending: true }))),
       optional(() => all(() => this.client.from('voice').select('*').order('start_ms', { ascending: true }))),
     ]);
     check(settings);
     return {
       sessions: sessions.map(fromRow), recordings, clock, settings: settings.data?.data ?? {},
-      items: items ?? [], screenshots: screenshots ?? [], schema2: items !== null, voice: voice ?? [], schema3: voice !== null,
+      items: items ?? [], schema2: items !== null, voice: voice ?? [], schema3: voice !== null,
     };
   }
 
@@ -76,18 +75,8 @@ export class CloudStore {
     }
   }
 
-  // Uploads a screenshot image (a Blob) and records it.
-  async saveScreenshot(row, blob) {
-    const path = `${this.userId}/${row.name}`;
-    const { error } = await this.client.storage.from('screenshots').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-    if (error) throw new Error(error.message);
-    const full = { ...row, path, user_id: this.userId, updated_at: this.nowIso() };
-    check(await this.client.from('screenshots').upsert(full, { onConflict: 'user_id,name' }));
-    return full;
-  }
-
   // Your own map image for a zone (a cropped screenshot of the in-game map),
-  // kept next to the screenshots. Returns the storage path.
+  // kept in the storage bucket under maps/. Returns the storage path.
   async saveMapImage(mapId, blob) {
     const path = `${this.userId}/maps/${mapId}.jpg`;
     const { error } = await this.client.storage.from('screenshots').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
@@ -95,7 +84,7 @@ export class CloudStore {
     return path;
   }
 
-  // Temporary links to private screenshot images: Map<path, url>.
+  // Temporary links to private images in the bucket (your map images): Map<path, url>.
   async screenshotUrls(paths) {
     const out = new Map();
     for (let i = 0; i < paths.length; i += 100) {
@@ -109,14 +98,13 @@ export class CloudStore {
   // Rows changed since a time (ISO string), for picking up what the other
   // computer uploaded.
   async changedSince(iso) {
-    const [sessions, recordings, items, screenshots, voice] = await Promise.all([
+    const [sessions, recordings, items, voice] = await Promise.all([
       all(() => this.client.from('sessions').select('*').gt('updated_at', iso)),
       all(() => this.client.from('recordings').select('*').gt('updated_at', iso)),
       optional(() => all(() => this.client.from('items').select('item_id,data,updated_at').gt('updated_at', iso))),
-      optional(() => all(() => this.client.from('screenshots').select('*').gt('updated_at', iso))),
       optional(() => all(() => this.client.from('voice').select('*').gt('updated_at', iso))),
     ]);
-    return { sessions: sessions.map(fromRow), recordings, items: items ?? [], screenshots: screenshots ?? [], voice: voice ?? [] };
+    return { sessions: sessions.map(fromRow), recordings, items: items ?? [], voice: voice ?? [] };
   }
 
   async saveSession(session, machine) {
@@ -157,11 +145,11 @@ export class CloudStore {
     check(await this.client.from('settings').upsert({ user_id: this.userId, data, updated_at: this.nowIso() }, { onConflict: 'user_id' }));
   }
 
-  // Deletes everything of yours: every table row and every uploaded file
-  // (screenshots and, unless keepMaps, your map images). Settings keep only
+  // Deletes everything of yours: every table row and, unless keepMaps, your
+  // uploaded map images. Settings keep only
   // what is passed in `keepSettings`.
   async deleteAll({ keepMaps = true } = {}) {
-    for (const table of ['voice', 'tracks', 'screenshots', 'items', 'clock_samples', 'recordings', 'sessions']) {
+    for (const table of ['voice', 'tracks', 'items', 'clock_samples', 'recordings', 'sessions']) {
       const { error } = await this.client.from(table).delete().eq('user_id', this.userId);
       if (error && !/does not exist|schema cache/i.test(error.message)) throw new Error(error.message);
     }
