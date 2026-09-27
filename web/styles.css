@@ -325,6 +325,9 @@ ol.steps li { margin-bottom: 6px; }
 .map .pin.layer-unfound.killed, .map .pin.layer-rares.killed { opacity: .45; }
 .cov { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
 .cov .bar { flex: 1; height: 10px; }
+.batch .cov { margin: 6px 0; max-width: 640px; }
+.batch .cov b { min-width: 3.5em; text-align: right; }
+.batch p { margin: 4px 0; }
 .cov .bar > div { background: linear-gradient(90deg, var(--gold), var(--gold-2)); box-shadow: 0 0 12px rgba(var(--gold2-rgb), .45); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
 .cov b { font-family: var(--num); font-weight: 700; font-size: 1rem; color: var(--gold-2); min-width: 3.2em; text-align: right; }
 select.inline { display: inline-block; width: auto; margin: 0 4px; padding: 2px 8px; font-size: .9rem; }

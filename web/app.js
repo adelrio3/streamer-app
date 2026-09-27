@@ -2930,7 +2930,9 @@ pages.recordings = async (_, params) => {
   const stale = Boolean(folder) && m.rec.state !== 'ok';
   const outstanding = folder ? outstandingPackages() : [];
   const batchHtml = !folder ? (reading ? '<p class="small muted">Reading the recordings folder…</p>' : '') : stale ? '<p class="small muted">As the folder was last read; reading it again…</p>' : batch
-    ? `<p class="small"><span class="dot live" style="display:inline-block"></span> <b>Batch running</b> · <span id="batchStatus">${esc(batch.status)}</span> <button id="batchStop" class="ghost" ${batch.stop ? 'disabled' : ''}>Stop after this one</button></p>`
+    ? `<div class="batch small"><p><span class="dot live" style="display:inline-block"></span> <b>Batch running</b> · <span id="batchStatus">${esc(batch.status)}</span> <button id="batchStop" class="ghost" ${batch.stop ? 'disabled' : ''}>Stop after this one</button></p>
+      <div class="cov"><div class="bar"><div id="batchBar" style="width:${Math.round((batch.frac ?? 0) * 100)}%"></div></div><b id="batchPct">${batch.frac == null ? '' : `${Math.round(batch.frac * 100)}%`}</b></div>
+      <p class="muted" id="batchDetail">${esc(batch.detail || '')}</p></div>`
     : `<p class="small"><button id="batchRun" class="primary" ${outstanding.length ? '' : 'disabled'}>Process ${outstanding.length ? `${outstanding.length} outstanding session${outstanding.length === 1 ? '' : 's'}` : 'outstanding sessions'} (overnight)</button> <span class="muted">Shrinks the camera files${(settings().sessionPack || {}).shrinkCam ? '' : ' (once the shrinker is set up on This computer)'} and builds each session's overlay video and Premiere sequence, one after another. Press it when you are done for the night and keep this tab open; nothing heavy runs on its own.</span></p>`;
   const old = folder ? (m.rec.old || []) : [];
   setTimeout(() => document.getElementById('recAdopt')?.addEventListener('click', async (ev) => { ev.currentTarget.disabled = true; try { await m.scanRec({ adopt: true }); } catch (err) { toast(err.message); } invalidate(); route(); }));
@@ -3297,7 +3299,7 @@ async function buildSessionPackage(r, { fps = null, size = null, say = () => {} 
     const ids = [...new Set([...events.filter((e) => e.kind === 'loot' && e.id).map((e) => e.id), ...counters.map((k) => k.id)])].slice(0, 400);
     const icons = new Map();
     for (let i = 0; i < ids.length; i++) {
-      say(`Fetching item art ${i + 1} of ${ids.length}…`);
+      say(`Fetching item art ${i + 1} of ${ids.length}…`, { frac: 0.05 * (i / ids.length) });
       const name = await iconName(ids[i]);
       const img = name ? await loadImage(iconUrl(name)) : null;
       if (img && untainted(img)) icons.set(ids[i], img);
@@ -3310,8 +3312,11 @@ async function buildSessionPackage(r, { fps = null, size = null, say = () => {} 
     const xmlName = `${stem(r.name)}.session.xml`;
     const writable = m ? await m.recFile(overlayName, r.name).catch(() => null) : null;
     const sink = writable ? fileSink(writable) : memorySink();
-    say('Rendering the overlay…');
-    await renderOverlayVideo({ scene, fps: sp.fps, seconds: r.duration, sink, canvas: document.createElement('canvas'), Mp4Writer, onProgress: (p) => say(`Rendering the overlay: ${duration(p.seconds)} of ${duration(r.duration)}${p.elapsed > 2 ? ` · ${(p.seconds / p.elapsed).toFixed(1)}× real time` : ''}`) });
+    say('Rendering the overlay…', { frac: 0.05 });
+    await renderOverlayVideo({ scene, fps: sp.fps, seconds: r.duration, sink, canvas: document.createElement('canvas'), Mp4Writer, onProgress: (p) => {
+      const rate = p.elapsed > 2 ? p.seconds / p.elapsed : null;
+      say(`Rendering the overlay: ${duration(p.seconds)} of ${duration(r.duration)}${rate ? ` · ${rate.toFixed(1)}× real time` : ''}`, { frac: 0.05 + 0.93 * (p.seconds / r.duration), left: rate ? (r.duration - p.seconds) / rate : null });
+    } });
     if (!writable) downloadBlob(overlayName, sink.blob());
     const dir = r.path ? r.path.replace(/[^\\/]*$/, '') : '';
     const overlay = { role: 'overlay', name: overlayName, path: dir + overlayName, duration: r.duration, offset: 0, width, height };
@@ -3323,7 +3328,7 @@ async function buildSessionPackage(r, { fps = null, size = null, say = () => {} 
     packs[r.name] = { at: Date.now(), overlay: overlayName, xml: xmlName, where: writable ? 'folder' : 'downloads', fps: sp.fps, width, height };
     savePacks(packs);
     const msg = `Session package ready: ${overlayName} and ${xmlName} ${writable ? 'are next to the recording' : 'went to Downloads'}.`;
-    say(msg);
+    say(msg, { frac: 1 });
     toast(msg);
     return packs[r.name];
   } catch (err) {
@@ -3351,11 +3356,34 @@ function outstandingPackages() {
     .filter((r) => r.role === 'game' && r.machine === m?.name && r.duration > 30 && !packs[r.name]?.overlay && !building.has(r.id) && now - r.end > 60000 && (derived().timelines.get(r.id) || []).length > 0)
     .sort((a, b) => a.start - b.start);
 }
-function batchSay(text) {
-  if (batch) batch.status = text;
+// The batch's status line, its bar (frac 0..1, or null for no bar) and a
+// detail line under it, updated in place so the page never redraws.
+function batchSay(text, frac = null, detail = null) {
+  if (batch) { batch.status = text; batch.frac = frac; if (detail != null) batch.detail = detail; }
   const el = document.getElementById('batchStatus');
   if (el) el.textContent = text;
+  const bar = document.getElementById('batchBar');
+  if (bar) bar.style.width = `${Math.round((frac ?? 0) * 100)}%`;
+  const pct = document.getElementById('batchPct');
+  if (pct) pct.textContent = frac == null ? '' : `${Math.round(frac * 100)}%`;
+  const det = document.getElementById('batchDetail');
+  if (det && detail != null) det.textContent = detail;
 }
+// What ffmpeg says about the file it is shrinking: seconds done and its speed.
+function parseShrinkProgress(text) {
+  if (!text) return null;
+  const last = (key) => { const m = [...text.matchAll(new RegExp(`^${key}=(.*)$`, 'gm'))].at(-1); return m ? m[1].trim() : null; };
+  const t = last('out_time');
+  if (!t) return null;
+  const [h, mnt, sec] = t.split(':').map(Number);
+  const seconds = h * 3600 + mnt * 60 + sec;
+  const speed = parseFloat(last('speed') || '') || null;
+  return Number.isFinite(seconds) ? { seconds, speed, done: last('progress') === 'end' } : null;
+}
+const SHRINK_PROGRESS = '.compendium-shrink-progress';
+const ago = (ms) => (ms < 60000 ? `${Math.round(ms / 1000)} s` : ms < 3600000 ? `${Math.round(ms / 60000)} min` : `${(ms / 3600000).toFixed(1)} h`);
+// The camera files of an outstanding recording still to be shrunk (ProRes .mov).
+const camMovs = (r) => (r.companions || []).filter((c) => c.role === 'cam').flatMap((c) => (c.parts?.length ? c.parts : [c])).filter((f) => /\.mov$/i.test(f.name));
 async function runBatch() {
   const m = state.machine;
   if (!m?.config?.records || batch) return;
@@ -3363,39 +3391,63 @@ async function runBatch() {
   // Chrome asks about writing to the recordings folder here, on the click, once per visit.
   const writable = await m.ensureRecWrite();
   if (!writable) toast('Chrome did not grant writing to the recordings folder: the shrinker cannot be started and the files will download instead. Try Allow on This computer › Session package.');
-  batch = { stop: false, status: 'Starting…', done: 0, total: outstandingPackages().length };
+  const startedAt = Date.now();
+  const camsAtStart = sp.shrinkCam ? outstandingPackages().reduce((n, r) => n + camMovs(r).length, 0) : 0;
+  batch = { stop: false, status: 'Starting…', frac: null, detail: '', done: 0, total: outstandingPackages().length };
   route();
   try {
     if (sp.shrinkCam && writable) {
       await m.writeRecText(SHRINK_FLAG, `go ${new Date().toISOString()}\n`);
     }
-    let lastShrink = null; let lastShrinkAt = Date.now();
+    let lastShrink = null; let lastShrinkAt = Date.now(); let lastProgress = null; let lastProgressAt = Date.now();
+    const running = () => `running for ${ago(Date.now() - startedAt)}`;
     while (!batch.stop) {
       await m.scanRec().catch(() => {});
       invalidate();
       const left = outstandingPackages();
-      const camMov = (r) => (r.companions || []).some((c) => c.role === 'cam' && /\.mov$/i.test(c.name));
-      const ready = left.find((r) => !(sp.shrinkCam && camMov(r)));
+      const ready = left.find((r) => !(sp.shrinkCam && camMovs(r).length));
       if (ready) {
         const r = { ...recSummary(ready), timeline: derived().timelines.get(ready.id) || [] };
-        batchSay(`${batch.done + 1} of ${batch.total}: ${r.name} — starting`);
-        try { await buildSessionPackage(r, { say: (t) => batchSay(`${batch.done + 1} of ${batch.total}: ${r.name} — ${t}`) }); }
-        catch (err) { toast(`${r.name}: ${err.message}`); }
+        const head = `Package ${batch.done + 1} of ${batch.total}: ${r.name}`;
+        const detail = () => `${batch.done} built · ${left.length - 1} to go after this one · ${running()}`;
+        batchSay(`${head} — starting`, 0, detail());
+        try {
+          await buildSessionPackage(r, { say: (t, p = null) => batchSay(`${head} — ${t}`, p == null ? null : p.frac, p?.left != null ? `${detail()} · about ${ago(p.left * 1000)} left on this one` : detail()) });
+        } catch (err) { toast(`${r.name}: ${err.message}`); batchSay(`${head} — failed: ${err.message}`, null, detail()); await sleep(3000); }
         batch.done++;
         continue;
       }
       if (!left.length) break;
-      // Everything left waits on the shrinker.
+      // Everything left waits on the shrinker: say which file it is on, how
+      // far it is, and what comes after, so a long wait is never a blank one.
       const status = (await m.readRecText(SHRINK_STATUS)) || '';
       if (status !== lastShrink) { lastShrink = status; lastShrinkAt = Date.now(); }
       const flag = await m.readRecText(SHRINK_FLAG);
-      const word = status.startsWith('shrinking') ? `the shrinker is on ${status.split(' ').slice(1, -1).join(' ')}` : status.startsWith('done') ? `the shrinker finished ${status.split(' ').slice(1, -1).join(' ')}` : 'waiting for the camera shrinker';
-      batchSay(`${left.length} package${left.length === 1 ? '' : 's'} waiting for ${left.length === 1 ? 'its' : 'their'} camera file: ${word}…`);
-      if (!flag && !status.startsWith('shrinking')) {
+      const camsLeft = left.reduce((n, r) => n + camMovs(r).length, 0);
+      const camsDone = Math.max(0, camsAtStart - camsLeft);
+      const queue = `${camsDone} of ${camsAtStart} camera file${camsAtStart === 1 ? '' : 's'} shrunk · then ${left.length} package${left.length === 1 ? '' : 's'} to build · ${running()}`;
+      const shrinking = status.startsWith('shrinking');
+      if (shrinking) {
+        const name = status.split(' ').slice(1, -1).join(' ');
+        const file = left.flatMap(camMovs).find((f) => f.name.toLowerCase() === name.toLowerCase());
+        const prog = parseShrinkProgress(await m.readRecText(SHRINK_PROGRESS));
+        if (prog && prog.seconds !== lastProgress) { lastProgress = prog.seconds; lastProgressAt = Date.now(); lastShrinkAt = Date.now(); }
+        const total = file?.duration || null;
+        const frac = prog && total ? Math.min(1, prog.seconds / total) : null;
+        const leftSec = prog && total && prog.speed ? Math.max(0, (total - prog.seconds) / prog.speed) : null;
+        const stalled = Date.now() - lastProgressAt > 3 * 60 * 1000;
+        batchSay(`Shrinking ${name}${prog ? `: ${duration(prog.seconds)}${total ? ` of ${duration(total)}` : ''}${prog.speed ? ` · ${prog.speed.toFixed(1)}× real time` : ''}${leftSec != null ? ` · about ${ago(leftSec * 1000)} left` : ''}` : ' (no word from ffmpeg yet)'}${stalled ? ` · no progress for ${ago(Date.now() - lastProgressAt)}` : ''}`, frac, queue);
+      } else if (status.startsWith('done')) {
+        batchSay(`The shrinker finished ${status.split(' ').slice(1, -1).join(' ')}; waiting for it to pick up the next file (it looks every 3 minutes)…`, camsAtStart ? camsDone / camsAtStart : null, queue);
+      } else {
+        const silent = Date.now() - lastShrinkAt;
+        batchSay(`Waiting for the camera shrinker to start${flag ? '' : ' (its go-flag is gone)'}: no word for ${ago(silent)}. It checks the folder every 3 minutes; ${flag ? 'this batch gives up after 3 hours of silence' : 'this batch gives up after 20 minutes'}.`, camsAtStart ? camsDone / camsAtStart : null, queue);
+      }
+      if (!flag && !shrinking) {
         // The helper cleared its flag with camera files still ProRes: it is not installed, or it gave up. Do not wait forever.
         if (Date.now() - lastShrinkAt > 20 * 60 * 1000) { toast('The camera shrinker did not run (is it installed on this Mac?). The remaining packages were left for next time.'); break; }
       } else if (Date.now() - lastShrinkAt > 3 * 3600 * 1000) { toast('The camera shrinker has been silent for three hours; the remaining packages were left for next time.'); break; }
-      await sleep(30000);
+      await sleep(shrinking ? 5000 : 20000);
     }
   } finally {
     const stopped = batch.stop;

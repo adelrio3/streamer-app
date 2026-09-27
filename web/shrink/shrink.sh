@@ -19,6 +19,7 @@ FFPROBE="$(command -v ffprobe || ls /opt/homebrew/bin/ffprobe /usr/local/bin/ffp
 # file changed in the last 2 minutes. Progress goes to the status file.
 FLAG="$DIR/.compendium-shrink-now"
 STATUS="$DIR/.compendium-shrink-status"
+PROGRESS="$DIR/.compendium-shrink-progress" # ffmpeg's own progress (out_time, speed), for the batch page's bar
 [ "${3:-}" = "now" ] && touch "$FLAG"
 [ -e "$FLAG" ] || exit 0
 LOCK="/tmp/compendium-shrink.lock"
@@ -31,7 +32,8 @@ find "$DIR" -maxdepth 2 -type f \( -iname 'cam *.mov' -o -iname 'camera *.mov' -
   [ -e "$OUT" ] && continue
   TMP="${SRC%.*}.shrinking.mp4"
   echo "$(date '+%F %T') shrinking: $SRC" >> "$LOG"
-  if "$FFMPEG" -nostdin -hide_banner -loglevel error -y -i "$SRC" -c:v hevc_videotoolbox -b:v "$RATE" -tag:v hvc1 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$TMP" >> "$LOG" 2>&1; then
+  rm -f "$PROGRESS"
+  if "$FFMPEG" -nostdin -hide_banner -loglevel error -y -progress "$PROGRESS" -stats_period 2 -i "$SRC" -c:v hevc_videotoolbox -b:v "$RATE" -tag:v hvc1 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$TMP" >> "$LOG" 2>&1; then
     A="$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$SRC")"
     B="$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$TMP")"
     if awk -v a="$A" -v b="$B" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(a > 0 && d < 1.5) }'; then
@@ -49,5 +51,5 @@ find "$DIR" -maxdepth 2 -type f \( -iname 'cam *.mov' -o -iname 'camera *.mov' -
   fi
 done
 # All finished (or stopped): the flag goes, so the next run does nothing.
-rm -f "$FLAG"
+rm -f "$FLAG" "$PROGRESS"
 echo "idle $(date '+%s')" > "$STATUS"
