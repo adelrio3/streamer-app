@@ -660,42 +660,61 @@ export class Machine {
       this.state.rows = this.state.rows.filter((r) => !names.includes(r.name));
       this.changed('data');
     }
+    // Every file gets a verdict (shown on This computer), and one file's
+    // trouble never stops the others from being read.
+    const report = [];
     for (const v of videos) {
-      const row = this.row(v.name);
-      const growing = now - v.lastModified < GROWING_FOR;
-      const path = this.fullPath(v.name, v.dir);
-      // A failed attempt (an encoder that never wrote a frame) is not a recording.
-      if (!row && !growing && v.size < 4096) continue;
-      if (!row) {
-        let local = startFromName(v.name, this.config.pattern);
-        let duration = null;
-        if (local == null && isMovieFile(v.name)) {
-          const info = await readMovieInfo(v.file).catch(() => null);
-          if (info?.created) { local = info.created; duration = info.duration; }
+      const verdict = (status, why = '') => report.push({ name: v.name, dir: v.dir, size: v.size, modified: v.lastModified, status, why });
+      try {
+        const row = this.row(v.name);
+        const growing = now - v.lastModified < GROWING_FOR;
+        const path = this.fullPath(v.name, v.dir);
+        // A failed attempt (an encoder that never wrote a frame) is not a recording.
+        if (!row && !growing && v.size < 4096) { verdict('skipped', 'under 4 KB'); continue; }
+        if (!row) {
+          let local = startFromName(v.name, this.config.pattern);
+          let duration = null;
+          let from = 'name';
+          if (local == null && isMovieFile(v.name)) {
+            const info = await readMovieInfo(v.file).catch((err) => ({ error: err.message }));
+            if (info?.created) { local = info.created; duration = info.duration; from = 'movie header'; }
+            else if (info?.error) { verdict('skipped', `could not read the movie header: ${info.error}`); continue; }
+          }
+          if (local == null) { verdict('skipped', 'no start time: the name has no timestamp and the file has no readable movie header'); continue; }
+          if (v.lastModified < local) { verdict('skipped', `its start (${new Date(local).toLocaleString()}, from the ${from}) is after its last write (${new Date(v.lastModified).toLocaleString()})`); continue; }
+          const start = this.toServer(local);
+          // Recordings from before "delete everything" stay out, unless taken in by hand.
+          if (start < (this.state.settings.resetAt || 0) * 1000 && !adopt) { old.push(v.name); verdict('old', 'from before the last reset'); continue; }
+          if (growing) {
+            // Under way: no end yet. Only a game recording is a stream session.
+            if (recordingRole(v.name, path) !== 'game') { verdict('growing', 'still being written; listed once it stops'); continue; }
+            await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: null, duration: null, source: 'file', sync: null });
+            this.notify(`Recording under way: ${v.name}`);
+            verdict('listed', 'under way');
+            continue;
+          }
+          const end = duration ? start + duration * 1000 : this.toServer(v.lastModified);
+          if (end <= start) { verdict('skipped', 'ends before it starts'); continue; }
+          await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: duration ? 'file' : 'filename', sync: null });
+          verdict('listed', `timed from the ${from}`);
+        } else if (!row.duration && row.start_ms && v.lastModified && !growing) {
+          // It was under way (OBS said so, or the file was growing); now it has stopped.
+          let end = this.toServer(v.lastModified);
+          if (isMovieFile(v.name)) { const info = await readMovieInfo(v.file).catch(() => null); if (info?.duration) end = row.start_ms + info.duration * 1000; }
+          if (end > row.start_ms) { await this.putRow({ ...row, path: row.path || path, end_ms: Math.round(end), duration: (end - row.start_ms) / 1000 }); if (row.source === 'file') this.notify(`Recording saved: ${v.name}`); }
+          verdict('listed', 'finished');
+        } else {
+          if (!row.path && path) await this.putRow({ ...row, path });
+          verdict('listed', row.duration ? '' : 'under way');
         }
-        if (local == null || v.lastModified < local) continue;
-        const start = this.toServer(local);
-        // Recordings from before "delete everything" stay out, unless taken in by hand.
-        if (start < (this.state.settings.resetAt || 0) * 1000 && !adopt) { old.push(v.name); continue; }
-        if (growing) {
-          // Under way: no end yet. Only a game recording is a stream session, and only a fresh one.
-          if (now - v.lastModified > 60000 || recordingRole(v.name, path) !== 'game') continue;
-          await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: null, duration: null, source: 'file', sync: null });
-          this.notify(`Recording under way: ${v.name}`);
-          continue;
-        }
-        const end = duration ? start + duration * 1000 : this.toServer(v.lastModified);
-        if (end <= start) continue;
-        await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: duration ? 'file' : 'filename', sync: null });
-      } else if (!row.duration && row.start_ms && v.lastModified && !growing) {
-        // It was under way (OBS said so, or the file was growing); now it has stopped.
-        let end = this.toServer(v.lastModified);
-        if (isMovieFile(v.name)) { const info = await readMovieInfo(v.file).catch(() => null); if (info?.duration) end = row.start_ms + info.duration * 1000; }
-        if (end > row.start_ms) { await this.putRow({ ...row, path: row.path || path, end_ms: Math.round(end), duration: (end - row.start_ms) / 1000 }); if (row.source === 'file') this.notify(`Recording saved: ${v.name}`); }
-      } else if (!row.path && path) {
-        await this.putRow({ ...row, path });
+      } catch (err) {
+        verdict('error', err.message);
+        console.warn('recordings folder', v.name, err);
       }
     }
+    const reportBefore = JSON.stringify((this.rec.report || []).map((r) => [r.name, r.status, r.why]));
+    this.rec.report = report;
+    if (JSON.stringify(report.map((r) => [r.name, r.status, r.why])) !== reportBefore) this.changed('wow');
     const oldBefore = (this.rec.old || []).join('\n');
     this.rec.old = old;
     if (old.join('\n') !== oldBefore) this.changed('wow');
