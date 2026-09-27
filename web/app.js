@@ -2857,6 +2857,8 @@ pages.recordings = async (_, params) => {
   const showAll = params?.get('show') === 'all';
   const list = showAll ? all : all.filter((r) => !r.gone);
   setTimeout(() => {
+    document.getElementById('batchRun')?.addEventListener('click', () => { runBatch().catch((err) => toast(err.message)); });
+    document.getElementById('batchStop')?.addEventListener('click', (ev) => { if (batch) { batch.stop = true; ev.currentTarget.disabled = true; batchSay('Stopping after the current one…'); } });
     document.getElementById('recRefresh')?.addEventListener('click', async (ev) => { ev.currentTarget.disabled = true; try { await m.scanRec(); await m.refresh(); } catch (err) { toast(err.message); } invalidate(); route(); });
     document.getElementById('recForget')?.addEventListener('click', async (ev) => {
       if (!confirm(`Remove ${goneNames.length} recording entr${goneNames.length === 1 ? 'y' : 'ies'} whose files are no longer in the folder? The events they held stay in their play sessions.`)) return;
@@ -2865,7 +2867,11 @@ pages.recordings = async (_, params) => {
       invalidate(); route();
     });
   });
-  return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
+  const outstanding = folder ? outstandingPackages() : [];
+  const batchHtml = !folder ? '' : batch
+    ? `<p class="small"><span class="dot live" style="display:inline-block"></span> <b>Batch running</b> · <span id="batchStatus">${esc(batch.status)}</span> <button id="batchStop" class="ghost" ${batch.stop ? 'disabled' : ''}>Stop after this one</button></p>`
+    : `<p class="small"><button id="batchRun" class="primary" ${outstanding.length ? '' : 'disabled'}>Process ${outstanding.length ? `${outstanding.length} outstanding session${outstanding.length === 1 ? '' : 's'}` : 'outstanding sessions'} (overnight)</button> <span class="muted">Shrinks the camera files${(settings().sessionPack || {}).shrinkCam ? '' : ' (once the shrinker is set up on This computer)'} and builds each session's overlay video and Premiere sequence, one after another. Press it when you are done for the night and keep this tab open; nothing heavy runs on its own.</span></p>`;
+  return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `${batchHtml}<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
     ${table(list, [
       { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}</span>`).join('')}${r.gone ? ' <span class="chip">file gone</span>' : ''}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
@@ -3217,13 +3223,83 @@ async function buildSessionPackage(r, { fps = null, size = null, say = () => {} 
   } finally { building.delete(r.id); }
 }
 
+// The overnight batch: every outstanding session package on this computer,
+// oldest first, with the camera shrinker running alongside (its "go" flag in
+// the recordings folder) and each package waiting for its shrunk camera
+// file. Pressed by hand on the Recordings page, so heavy work never runs
+// while a recording might start.
+let batch = null; // { stop, status, done, total }
+const SHRINK_FLAG = '.compendium-shrink-now';
+const SHRINK_STATUS = '.compendium-shrink-status';
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+function outstandingPackages() {
+  const m = state.machine;
+  const packs = readPacks();
+  const now = Date.now() + (m?.offset ?? 0);
+  return derived().recordings
+    .filter((r) => r.role === 'game' && r.machine === m?.name && r.duration > 30 && !packs[r.name]?.overlay && !building.has(r.id) && now - r.end > 60000 && (derived().timelines.get(r.id) || []).length > 0)
+    .sort((a, b) => a.start - b.start);
+}
+function batchSay(text) {
+  if (batch) batch.status = text;
+  const el = document.getElementById('batchStatus');
+  if (el) el.textContent = text;
+}
+async function runBatch() {
+  const m = state.machine;
+  if (!m?.config?.records || batch) return;
+  const sp = settings().sessionPack || {};
+  batch = { stop: false, status: 'Starting…', done: 0, total: outstandingPackages().length };
+  route();
+  try {
+    if (sp.shrinkCam) {
+      if (!(await m.writeRecText(SHRINK_FLAG, `go ${new Date().toISOString()}\n`))) toast('The recordings folder is not writable, so the camera shrinker cannot be started: allow writing on This computer.');
+    }
+    let lastShrink = null; let lastShrinkAt = Date.now();
+    while (!batch.stop) {
+      await m.scanRec().catch(() => {});
+      invalidate();
+      const left = outstandingPackages();
+      const camMov = (r) => (r.companions || []).some((c) => c.role === 'cam' && /\.mov$/i.test(c.name));
+      const ready = left.find((r) => !(sp.shrinkCam && camMov(r)));
+      if (ready) {
+        const r = { ...recSummary(ready), timeline: derived().timelines.get(ready.id) || [] };
+        batchSay(`${batch.done + 1} of ${batch.total}: ${r.name} — starting`);
+        try { await buildSessionPackage(r, { say: (t) => batchSay(`${batch.done + 1} of ${batch.total}: ${r.name} — ${t}`) }); }
+        catch (err) { toast(`${r.name}: ${err.message}`); }
+        batch.done++;
+        continue;
+      }
+      if (!left.length) break;
+      // Everything left waits on the shrinker.
+      const status = (await m.readRecText(SHRINK_STATUS)) || '';
+      if (status !== lastShrink) { lastShrink = status; lastShrinkAt = Date.now(); }
+      const flag = await m.readRecText(SHRINK_FLAG);
+      const word = status.startsWith('shrinking') ? `the shrinker is on ${status.split(' ').slice(1, -1).join(' ')}` : status.startsWith('done') ? `the shrinker finished ${status.split(' ').slice(1, -1).join(' ')}` : 'waiting for the camera shrinker';
+      batchSay(`${left.length} package${left.length === 1 ? '' : 's'} waiting for ${left.length === 1 ? 'its' : 'their'} camera file: ${word}…`);
+      if (!flag && !status.startsWith('shrinking')) {
+        // The helper cleared its flag with camera files still ProRes: it is not installed, or it gave up. Do not wait forever.
+        if (Date.now() - lastShrinkAt > 20 * 60 * 1000) { toast('The camera shrinker did not run (is it installed on this Mac?). The remaining packages were left for next time.'); break; }
+      } else if (Date.now() - lastShrinkAt > 3 * 3600 * 1000) { toast('The camera shrinker has been silent for three hours; the remaining packages were left for next time.'); break; }
+      await sleep(30000);
+    }
+  } finally {
+    const stopped = batch.stop;
+    if (stopped && sp.shrinkCam) await m.removeRecFile(SHRINK_FLAG);
+    const done = batch.done;
+    batch = null;
+    toast(stopped ? `Batch stopped after ${done} package${done === 1 ? '' : 's'}.` : `Batch finished: ${done} package${done === 1 ? '' : 's'} built.`);
+    route();
+  }
+}
+
 // On the recording computer, once a recording has ended and its play session
 // has arrived, the package builds on its own (one at a time, newest first).
 let autoPacking = false;
 async function autoPack() {
   const m = state.machine;
   const sp = settings().sessionPack;
-  if (!m?.config?.records || !sp?.auto || autoPacking || !state.sessions) return;
+  if (!m?.config?.records || !sp?.auto || autoPacking || batch || !state.sessions) return;
   const packs = readPacks();
   const now = Date.now() + (m.offset ?? 0);
   // With the shrinker installed, a ProRes camera file (.mov) is about to be replaced by its .mp4: wait for it, up to three hours.
@@ -3472,17 +3548,17 @@ pages.setup = async () => {
       <p class="small">Status: <b>${esc(obs.state)}</b>${obs.recording ? ' · recording now' : ''}${obs.error ? ` · <span style="color:var(--red)">${esc(obs.error)}</span>` : ''}</p>
       <h3 style="margin-top:18px">Session package</h3>
       <p class="small">Recording the overlay costs too much next to the game capture, so it is not recorded at all: once a recording ends and its play session has been uploaded (the addon writes it at logout), this computer draws the overlay again from the events, frame by frame over the chroma colour, and writes it next to the recording as an .mp4 with a Premiere sequence (.xml): game footage, camera and overlay each on their own track, a marker per event. Import the .xml, key the overlay track with Ultra Key, and edit.</p>
-      <label class="check"><input type="checkbox" name="pack_auto" ${(settings().sessionPack || {}).auto ? 'checked' : ''}><span>Build the session package on its own when a session closes (keep this app open on this computer)</span></label>
+      <label class="check"><input type="checkbox" name="pack_auto" ${(settings().sessionPack || {}).auto ? 'checked' : ''}><span>Also build a package on its own as soon as a session closes (off is safer: a render could overlap the next recording; the batch button on Recordings does them all when you are done)</span></label>
       <div class="grid2">
         <label><span>Overlay frame rate</span><select name="pack_fps"><option value="30" ${(settings().sessionPack || {}).fps !== 60 ? 'selected' : ''}>30 fps (renders faster; the overlay's motion is simple)</option><option value="60" ${(settings().sessionPack || {}).fps === 60 ? 'selected' : ''}>60 fps</option></select></label>
         <label><span>Overlay size</span><select name="pack_size"><option value="recording" ${(settings().sessionPack || {}).size !== '1080' ? 'selected' : ''}>${settings().width}×${settings().height} (the recording)</option><option value="1080" ${(settings().sessionPack || {}).size === '1080' ? 'selected' : ''}>1920×1080 (scaled up in Premiere)</option></select></label>
       </div>
       <p class="small">Writing next to the recordings: <b id="recWriteState">checking…</b> <button type="button" id="recWrite" class="ghost">Allow</button> <span class="muted">Chrome asks once per visit; without it the files go to this computer's Downloads folder.</span></p>
       <h3 style="margin-top:18px">Camera files</h3>
-      <p class="small">A ProRes camera file is the only kind the second encoder rail makes, and it is huge. This app cannot decode ProRes, so a small helper on this Mac does the shrinking: a few minutes after a <code>cam …mov</code> finishes, it turns it into an HEVC .mp4 on the hardware encoder (about 7 GB an hour at 16 Mbps), checks the length, and moves the ProRes to the Trash. The .mp4 keeps the name, so it pairs with the gameplay the same way. One-time set-up: paste this in Terminal (it installs ffmpeg with Homebrew if needed and a launchd job that runs every 3 minutes).</p>
+      <p class="small">A ProRes camera file is the only kind the second encoder rail makes, and it is huge. This app cannot decode ProRes, so a small helper on this Mac does the shrinking: a few minutes after a <code>cam …mov</code> finishes, it turns it into an HEVC .mp4 on the hardware encoder (about 7 GB an hour at 16 Mbps), checks the length, and moves the ProRes to the Trash. The .mp4 keeps the name, so it pairs with the gameplay the same way. It never runs on its own: the batch button on Recordings starts it, and it stops when the batch does. One-time set-up: paste this in Terminal (it installs ffmpeg with Homebrew if needed and a launchd job that checks for the batch's go-ahead every 3 minutes).</p>
       <label><span>Recordings folder on this Mac</span><input type="text" name="pack_folder" id="packFolder" value="${esc((settings().sessionPack || {}).folder || m.obs?.recordDirectory || '')}" placeholder="/Users/you/Movies"></label>
       <pre class="small" id="shrinkCmd" style="white-space:pre-wrap;user-select:all"></pre>
-      <label class="check"><input type="checkbox" name="pack_shrink" ${(settings().sessionPack || {}).shrinkCam ? 'checked' : ''}><span>The shrinker is installed: wait for the shrunk camera file (up to three hours) before building the session package, so the sequence points at the .mp4</span></label>
+      <label class="check"><input type="checkbox" name="pack_shrink" ${(settings().sessionPack || {}).shrinkCam ? 'checked' : ''}><span>The shrinker is installed: the batch starts it and waits for each shrunk camera file before building that session's package, so the sequence points at the .mp4</span></label>
       <p class="small muted">Its log is <code>~/Library/Logs/compendium-shrink.log</code>. To remove it: <code>launchctl unload ~/Library/LaunchAgents/com.compendium.shrink.plist && rm ~/Library/LaunchAgents/com.compendium.shrink.plist</code>.</p>
       <h3 style="margin-top:18px">Two captures: gameplay and camera</h3>
       <p class="small">Any video that appears in the recordings folder (or one of its subfolders) and keeps growing is a recording under way, whoever writes it: OBS's own recording, a <b>Source Record</b> filter, or QuickTime Player. Its start comes from the file name (the pattern above) or, failing that, from the file's own movie header, so nothing needs renaming; its end from when the file stops growing. A file in a folder named <code>cam</code> (or named <code>cam …</code>) is the camera; it pairs with every gameplay recording it overlaps in time, so a camera left recording all evening serves each session, trimmed to fit on its own track. Keep the gameplay file H.264 or HEVC (Apple VT, 8-bit) so it plays in this app; the camera can be ProRes, which plays in Premiere only.</p>

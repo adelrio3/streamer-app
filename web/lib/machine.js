@@ -576,6 +576,27 @@ export class Machine {
     return handle.createWritable();
   }
 
+  // Small files at the top of the recordings folder, for the shrinker helper:
+  // the "go" flag the batch writes, the status line it reads back.
+  async writeRecText(name, text) {
+    if (!(await this.recWritable())) return false;
+    const handle = await this.recRoot.getFileHandle(name, { create: true });
+    const w = await handle.createWritable();
+    await w.write(text);
+    await w.close();
+    return true;
+  }
+
+  async removeRecFile(name) {
+    if (!(await this.recWritable())) return false;
+    try { await this.recRoot.removeEntry(name); return true; } catch { return false; }
+  }
+
+  async readRecText(name) {
+    if (!this.recRoot) return null;
+    try { const h = await this.recRoot.getFileHandle(name); return await (await h.getFile()).text(); } catch { return null; }
+  }
+
   row(name) {
     return this.state.rows.find((r) => r.name.toLowerCase() === name.toLowerCase());
   }

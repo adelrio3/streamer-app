@@ -34,5 +34,5 @@ cat > "$PLIST" <<PL
 PL
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
-echo "Installed. Camera files in $DIR (and its subfolders) are shrunk to HEVC at $RATE within a few minutes of finishing; the ProRes originals go to the Trash. Log: ~/Library/Logs/compendium-shrink.log"
+echo "Installed. Nothing runs until you press the batch button on Compendium's Recordings page (or run: bash \"$APP/shrink.sh\" \"$DIR\" $RATE now); then the camera files in $DIR (and its subfolders) are shrunk to HEVC at $RATE, one after another, and the ProRes originals go to the Trash. Log: ~/Library/Logs/compendium-shrink.log"
 echo "To remove: launchctl unload \"$PLIST\" && rm \"$PLIST\""
