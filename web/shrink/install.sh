@@ -12,8 +12,17 @@ BASE="$(dirname "${BASH_SOURCE[0]:-x}")"
 APP="$HOME/Library/Application Support/Compendium"
 mkdir -p "$APP" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 if ! command -v ffmpeg >/dev/null 2>&1 && [ ! -x /opt/homebrew/bin/ffmpeg ] && [ ! -x /usr/local/bin/ffmpeg ]; then
-  command -v brew >/dev/null 2>&1 || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   BREW="$(command -v brew || ls /opt/homebrew/bin/brew /usr/local/bin/brew 2>/dev/null | head -1)"
+  if [ -z "$BREW" ]; then
+    # Homebrew's installer needs a real terminal for the password prompt, which a piped run cannot give it.
+    echo "Homebrew is not installed yet. Paste this in Terminal first (it asks for your Mac password, then press Return when told):"
+    echo
+    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    echo
+    echo "When it finishes it prints two 'Next steps' lines starting with echo and eval: paste those too. Then run the Compendium command again."
+    exit 1
+  fi
+  echo "Installing ffmpeg with Homebrew (a few minutes)…"
   "$BREW" install ffmpeg
 fi
 SRC_URL="${COMPENDIUM_SHRINK_URL:-}"
