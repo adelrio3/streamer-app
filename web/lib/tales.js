@@ -750,7 +750,7 @@ function namedParagraph(b, arc, voice, v) {
   if (b.said) s.push(`"${b.said}," ${giver || 'the word'} ${v(2) ? 'said' : 'put it'}.`);
   else if (giver) s.push(head ? [`${giver} wanted ${who} dead, and wanted ${proof} as proof.`, `${giver} had a price on ${who}, and ${proof} would settle it.`][v(2)]
     : carried ? `${giver} wanted ${who} dead, and wanted whatever ${who} was carrying.`
-      : [`${giver} wanted ${who} dead, and wanted to hear it from someone who had seen it.`, `${giver} had a price on ${who}, and was not fussy about who collected.`][v(2)]);
+      : [`${giver} wanted ${who} dead, and wanted to hear it from someone who had watched it happen.`, `${giver} had a price on ${who}, and was not fussy about who collected.`][v(2)]);
   s.push([`${voice.He} found ${who} where such people are found, at the edge of everything.`, `${voice.He} went looking. It is a short story from there.`, `It ended the way those things end, without ceremony.`][v(3)]);
   if (proof && !b.said) s.push(`${cap(proof)} went back to ${b.ender || giver || 'the one who had asked'}.`);
   if (b.thanks) s.push(`"${b.thanks}," was all ${b.ender || giver || 'anyone'} said.`);
@@ -765,9 +765,9 @@ function exploreParagraph(g, arc, voice, v) {
   else s.push(`Somebody had to go and see ${places[0]}.`);
   if (b.said) s.push(`"${b.said}."`);
   s.push(places.length > 1 ? `${voice.He} went into ${places[0]}, and after that ${places.slice(1).join(', then ')}, as far as each went.` : `${voice.He} went in, as far as it went, and came back with the shape of it in ${voice.his} head.`);
-  s.push([`Dark places are mostly waiting. The rest is what the waiting is for.`, `What ${voice.he} saw in there ${voice.he} kept short in the telling, which told ${b.giver || 'them'} enough.`][v(2)]);
+  s.push([`Dark places are mostly waiting. The rest is what the waiting is for.`, `What ${voice.he} saw in there ${voice.he} kept short in the telling, which told ${b.giver || 'the one who had asked'} enough.`][v(2)]);
   const last = g.beats.at(-1);
-  if (last.thanks) s.push(`"${last.thanks}," ${last.ender || last.giver || 'they'} said.`);
+  if (last.thanks) s.push(`"${last.thanks}," ${last.ender || last.giver || 'the one who had asked'} said.`);
   return s.join(' ');
 }
 
@@ -820,7 +820,7 @@ function rolledParagraph(e, arc, voice) {
   const teacher = voice.craft && e.errand ? e.errand : null;
   return [
     `${giver} kept a ${thing} for every newcomer who came through, each one sealed for a different teacher, each one saying much the same thing: come and be taught.`,
-    `${giver} had one more thing, and it was not a task. Every newcomer got a sealed ${thing}, written for whichever teacher would take them.`,
+    `${giver} had one more thing, and it was not a task. Every newcomer got a sealed ${thing}, written for whichever teacher would take a newcomer.`,
   ][v(2)] + ` ${voice.He} took ${voice.hers} and went to find ${teacher || 'the one it named'}${e.said ? `, who ${['did not waste words', 'had been expecting someone', 'had plenty to say'][v(3)]}. "${e.said}."` : '.'}`;
 }
 

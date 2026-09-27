@@ -9,7 +9,7 @@ export const ALLIANCE = 77;
 export const HORDE = 178;
 export const RANK_NAMES = { 0: '', 1: 'elite', 2: 'rare elite', 3: 'boss', 4: 'rare' };
 export const STATES = {
-  done: 'Done', active: 'In progress', ready: 'Ready to pick up', later: 'Later', other: 'Other faction or class',
+  done: 'Done', active: 'In progress', ready: 'Available', later: 'Later', other: 'Other faction or class',
   excluded: 'No longer offered', hidden: 'Not in the game',
 };
 export const STATE_ORDER = ['active', 'ready', 'later', 'done', 'excluded', 'other', 'hidden'];

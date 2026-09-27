@@ -66,6 +66,7 @@ ul { padding-left: 1.2em; }
 li { margin-bottom: .25em; }
 
 /* Figures everywhere: lining and tabular, never the serif's squat ones. */
+.wiki-sec h3 .muted, h2 .chip, h3 .chip { font-family: var(--num); }
 .card .num, .cov b, .hero-pct .big, .pring > span, .rpg-lvl, .rpg-pct, .count, #nav a .pct, .tab .n, .tabs .n, .chip .n, td.num, .rpg-stat b, .wiki-kv b, .ring-num, .recent-item small, .kind small { font-variant-numeric: lining-nums tabular-nums; }
 .tab .n, .tabs .n { font-family: var(--num); font-weight: 600; }
 td.num, th.num { font-family: var(--num); }
@@ -208,7 +209,7 @@ details > summary { cursor: pointer; color: var(--gold-2); }
 .lore i { color: var(--muted); }
 .quote { font-family: var(--serif); font-size: 1.08rem; color: var(--text-2); padding: 6px 0 6px 14px; border-left: 2px solid var(--line-2); margin: 4px 0 10px; white-space: pre-wrap; }
 
-.chip { font-size: .74rem; padding: 1px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; display: inline-block; line-height: 1.5; }
+.chip { font-family: var(--sans); font-variant-numeric: lining-nums tabular-nums; font-size: .74rem; padding: 1px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; display: inline-block; line-height: 1.5; }
 .chip.done { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .chip.active { color: var(--gold-2); border-color: color-mix(in srgb, var(--gold) 45%, transparent); box-shadow: 0 0 12px -4px rgba(var(--gold-rgb), .6); }
 .chip.abandoned, .chip.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
@@ -253,10 +254,6 @@ ol.steps li { margin-bottom: 6px; }
 .tooltip { background: #0b0d1a; border: 1px solid #3c4a6b; border-radius: 6px; padding: 10px 12px; max-width: 420px; margin: 10px 0 16px; font-size: .92rem; }
 .tt-line { display: flex; justify-content: space-between; gap: 16px; color: #fff; }
 .tt-line:first-child { font-size: 1.05rem; }
-.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.shot { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; color: inherit; }
-.shot:hover { text-decoration: none; border-color: var(--line-2); }
-.shot img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--panel-2); }
 .results { list-style: none; padding: 0; }
 .results li { padding: 6px 0; border-bottom: 1px solid var(--line); }
 
@@ -435,7 +432,7 @@ button.danger-btn:hover { filter: brightness(1.08); }
 .ring-fg { fill: none; stroke: var(--class); stroke-width: 6; stroke-linecap: round; stroke-dashoffset: var(--to); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--class) 60%, transparent)); }
 main.enter .ring-fg { animation: ringin 1.4s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes ringin { from { stroke-dashoffset: 999; } }
-.ring-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-weight: 700; font-size: 1.7rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.ring-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--num); font-weight: 700; font-size: 1.7rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.02em; color: var(--text); }
 
 /* Activity chart. */
 .activity svg { width: 100%; height: 72px; display: block; margin: 6px 0 4px; overflow: visible; }

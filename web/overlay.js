@@ -301,7 +301,7 @@ function renderTracker(quests, now) {
       el.dataset.state = q.state;
     }
     tag.hidden = !state;
-    tag.textContent = state === 'done' ? 'Complete' : state === 'ready' ? 'Ready to turn in' : 'New quest';
+    tag.textContent = state === 'done' ? 'Complete' : state === 'ready' ? 'Turn in' : 'New quest';
     const objs = el.querySelector('.objs');
     for (const o of q.objectives || []) {
       const key = o.label;
@@ -542,7 +542,7 @@ async function poll(cfg) {
       } else if (data?.seq == null) out.status = 'no live data for this token yet';
       if (data?.updated_at) {
         const age = Date.now() - Date.parse(data.updated_at);
-        out.status = age > 150000 ? `gaming PC last seen ${Math.round(age / 60000)} min ago` : out.status;
+        out.status = age > 150000 ? `gaming PC last heard from ${Math.round(age / 60000)} min ago` : out.status;
       }
       out.seq = knownSeq;
     } catch (err) {
