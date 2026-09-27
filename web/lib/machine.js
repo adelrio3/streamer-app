@@ -610,6 +610,8 @@ export class Machine {
       const row = this.row(v.name);
       const growing = now - v.lastModified < GROWING_FOR;
       const path = this.fullPath(v.name, v.dir);
+      // A failed attempt (an encoder that never wrote a frame) is not a recording.
+      if (!row && !growing && v.size < 100_000) continue;
       if (!row) {
         let local = startFromName(v.name, this.config.pattern);
         let duration = null;
