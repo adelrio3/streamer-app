@@ -13,7 +13,12 @@ LOG="$HOME/Library/Logs/compendium-shrink.log"
 # Every run leaves its mark, flag or no flag, so the app can tell "the
 # shrinker looked at this folder 2 minutes ago" from "it never ran".
 SEEN="$DIR/.compendium-shrink-seen"
-echo "seen $(date '+%s')" > "$SEEN" 2>/dev/null
+if ! echo "seen $(date '+%s')" > "$SEEN" 2>/dev/null; then
+  # macOS keeps background jobs out of external drives and some folders until
+  # /bin/bash is given Full Disk Access (System Settings › Privacy & Security).
+  echo "$(date '+%F %T') cannot write in $DIR (Operation not permitted?): give /bin/bash Full Disk Access in System Settings › Privacy & Security, then reload the job" >> "$LOG"
+  exit 1
+fi
 FFMPEG="$(command -v ffmpeg || ls /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg 2>/dev/null | head -1)"
 FFPROBE="$(command -v ffprobe || ls /opt/homebrew/bin/ffprobe /usr/local/bin/ffprobe 2>/dev/null | head -1)"
 # Nothing happens on its own: the job only works while the "go" flag is in

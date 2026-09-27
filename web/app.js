@@ -3445,7 +3445,7 @@ async function runBatch() {
       } else {
         // Nothing from the shrinker yet: say whether it is even looking at this folder.
         const seen = Number(((await m.readRecText('.compendium-shrink-seen')) || '').split(' ')[1]) * 1000;
-        const looked = seen ? `it last looked at this folder ${ago(Date.now() - seen)} ago` : 'it has never looked at this folder (installed on This computer › Session package › Camera files, and pointed at this folder?)';
+        const looked = seen ? `it last looked at this folder ${ago(Date.now() - seen)} ago` : 'it has never looked at this folder (installed from This computer › Session package › Camera files and pointed at this folder? On an external drive, /bin/bash needs Full Disk Access in System Settings › Privacy & Security)';
         const silent = Date.now() - lastShrinkAt;
         batchSay(silent < 4 * 60 * 1000 && flag
           ? `Asked the shrinker to start ${ago(silent)} ago; it checks the folder every 3 minutes, so the first word can take that long. So far ${looked}.`
@@ -3738,6 +3738,7 @@ pages.setup = async () => {
       <pre class="small" id="shrinkCmd" style="white-space:pre-wrap;user-select:all"></pre>
       <label class="check"><input type="checkbox" name="pack_shrink" ${(settings().sessionPack || {}).shrinkCam ? 'checked' : ''}><span>The shrinker is installed: the batch starts it and waits for each shrunk camera file before building that session's package, so the sequence points at the .mp4</span></label>
       <p class="small" id="shrinkState">Shrinker: checking the folder…</p>
+      <p class="small muted">If the folder is on an external drive (<code>/Volumes/…</code>), macOS blocks background jobs from it ("Operation not permitted") until <code>/bin/bash</code> is in System Settings › Privacy & Security › Full Disk Access: press +, then Cmd+Shift+G, type <code>/bin/bash</code>, Open, and switch it on. Then reload the job: <code>launchctl unload ~/Library/LaunchAgents/com.compendium.shrink.plist && launchctl load ~/Library/LaunchAgents/com.compendium.shrink.plist</code>.</p>
       <p class="small muted">Its log is <code>~/Library/Logs/compendium-shrink.log</code>. To remove it: <code>launchctl unload ~/Library/LaunchAgents/com.compendium.shrink.plist && rm ~/Library/LaunchAgents/com.compendium.shrink.plist</code>.</p>
       <h3 style="margin-top:18px">Two captures: gameplay and camera</h3>
       <p class="small">Any video that appears in the recordings folder (or one of its subfolders) and keeps growing is a recording under way, whoever writes it: OBS's own recording, a <b>Source Record</b> filter, or QuickTime Player. Its start comes from the file name (the pattern above) or, failing that, from the file's own movie header, so nothing needs renaming; its end from when the file stops growing. A file in a folder named <code>cam</code> (or named <code>cam …</code>) is the camera; it pairs with every gameplay recording it overlaps in time, so a camera left recording all evening serves each session, trimmed to fit on its own track. Keep the gameplay file H.264 or HEVC (Apple VT, 8-bit) so it plays in this app; the camera can be ProRes, which plays in Premiere only.</p>
@@ -3895,7 +3896,7 @@ function wireSetup() {
       const statusAt = Number(status.split(' ').at(-1)) * 1000;
       const word = status ? `last word "${status.replace(/\s+\d+$/, '')}"${statusAt ? ` ${when(statusAt)}` : ''}` : 'no status written yet';
       shrinkState.textContent = m.recRoot
-        ? `Shrinker: ${seen ? `last looked at this folder ${when(seen)}` : 'has never looked at this folder (a version from before today does not leave this mark: reinstall with the command above, then wait 3 minutes and reload)'} · ${word}${flag ? ' · go-flag present (a batch is asking it to run)' : ''}.`
+        ? `Shrinker: ${seen ? `last looked at this folder ${when(seen)}` : 'has never looked at this folder (on an external drive, macOS keeps it out until /bin/bash has Full Disk Access in System Settings › Privacy & Security; a version from before today leaves no mark: reinstall with the command above, wait 3 minutes and reload)'} · ${word}${flag ? ' · go-flag present (a batch is asking it to run)' : ''}.`
         : 'Shrinker: choose the recordings folder above first.';
     })().catch(() => { shrinkState.textContent = 'Shrinker: could not read the folder.'; });
   }
