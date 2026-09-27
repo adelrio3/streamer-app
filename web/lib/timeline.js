@@ -70,7 +70,9 @@ export function startFromName(fileName, pattern = '%CCYY-%MM-%DD %hh-%mm-%ss') {
       regex += '.*?';
       i += m ? m[0].length : 1;
     } else {
-      regex += pattern[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // OBS writes the pattern's spaces as underscores when it splits a
+      // recording ("gameplay_2026-09-27_15-06-30"): either separator matches.
+      regex += pattern[i] === ' ' || pattern[i] === '_' ? '[ _]' : pattern[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       i++;
     }
   }
@@ -124,7 +126,7 @@ export function recordingRole(name, path = null) {
 const COMPANION_SLACK = 5000; // ms a companion may start after a recording and still cover its start
 
 export function resolveRecordings(rows = []) {
-  const out = [];
+  let out = [];
   for (const row of rows) {
     // Skip macOS "._" companion files saved by earlier versions.
     if (!Number.isFinite(row.start_ms) || String(row.name).startsWith('.')) continue;
@@ -158,6 +160,30 @@ export function resolveRecordings(rows = []) {
     r.source = 'sync-inferred';
     r.syncedFrom = best.name;
   }
+  // A recording OBS split into files (every 45 minutes, say) is one
+  // recording: a file that begins the moment the previous one of the same
+  // kind ends continues it, as another part on the same track.
+  const CONTINUES = 3000; // ms of slack between one part's end and the next's start
+  const byKind = new Map();
+  for (const r of out) { const k = `${r.machine ?? ''}|${r.role}`; if (!byKind.has(k)) byKind.set(k, []); byKind.get(k).push(r); }
+  const absorbed = new Set();
+  for (const list of byKind.values()) {
+    list.sort((a, b) => a.rawStart - b.rawStart);
+    let head = null;
+    for (const r of list) {
+      const rawEnd = head ? head.rawStart + head.duration * 1000 : 0;
+      if (head && Math.abs(r.rawStart - rawEnd) <= CONTINUES) {
+        head.parts ??= [{ name: head.name, path: head.path, duration: head.duration, offset: 0 }];
+        const offset = (r.rawStart - head.rawStart) / 1000;
+        head.parts.push({ name: r.name, path: r.path, duration: r.duration, offset });
+        head.duration = offset + r.duration;
+        head.end = head.start + head.duration * 1000;
+        r.partOf = head.id;
+        absorbed.add(r);
+      } else head = r;
+    }
+  }
+  out = out.filter((r) => !absorbed.has(r));
   // A companion is any camera or overlay file from the same computer whose
   // time overlaps a game recording's (a camera left recording all evening
   // serves every game recording of the evening). It takes the recording's
@@ -178,7 +204,7 @@ export function resolveRecordings(rows = []) {
         c.end = c.start + c.duration * 1000;
         c.source = r.source;
       }
-      r.companions.push({ id: c.id, name: c.name, path: c.path, role: c.role, duration: c.duration, offset, covers: Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart) > 0 ? Math.min(1, (Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart)) / (r.duration * 1000)) : 0 });
+      r.companions.push({ id: c.id, name: c.name, path: c.path, role: c.role, duration: c.duration, offset, parts: c.parts, covers: Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart) > 0 ? Math.min(1, (Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart)) / (r.duration * 1000)) : 0 });
     }
     r.companions.sort((a, b) => (a.role === 'cam' ? 0 : 1) - (b.role === 'cam' ? 0 : 1) || a.offset - b.offset);
   }

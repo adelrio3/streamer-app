@@ -41,8 +41,8 @@ test('toFCPXML: a rendered overlay companion gets a video-only track at its own 
     { role: 'overlay', name: '2026-09-25 20-15-42.overlay.mp4', path: '/Users/me/Movies/2026-09-25 20-15-42.overlay.mp4', duration: 100, offset: 0, width: 1920, height: 1080 },
   ] };
   const xml = toFCPXML(rec, [], { fps: 60, width: 3840, height: 2160 });
-  const videoTracks = (xml.match(/<track><clipitem id="clipitem-(?:1|c\d+v)"/g) || []).length;
-  const audioTracks = (xml.match(/<track><clipitem id="clipitem-(?:2|c\d+a)"/g) || []).length;
+  const videoTracks = (xml.match(/<track><clipitem id="clipitem-(?:v1|c\d+v1)"/g) || []).length;
+  const audioTracks = (xml.match(/<track><clipitem id="clipitem-(?:a1|c\d+a1)"/g) || []).length;
   assert.equal(videoTracks, 3);
   assert.equal(audioTracks, 2, 'the overlay has no sound');
   assert.ok(xml.indexOf('overlay.mp4') > xml.indexOf('cam 2026'), 'the overlay is the top track');
@@ -76,4 +76,39 @@ test('a camera in a cam folder, or left recording all evening, serves every game
   assert.equal(cam.companionOf, g1.id);
   const xml = toFCPXML(g1, [], { fps: 60 });
   assert.ok(xml.includes('<in>36000</in>'), 'the camera clip starts 600 s in');
+});
+
+test('files OBS split off continue the recording: one video, in parts, its camera files likewise', () => {
+  const t0 = Date.UTC(2026, 8, 27, 14, 21, 29);
+  const m = (min, sec = 0) => t0 + (min * 60 + sec) * 1000;
+  const rows = [
+    { name: 'gameplay 2026-09-27 14-21-29.mp4', path: '/rec/gameplay 2026-09-27 14-21-29.mp4', machine: 'Mac', start_ms: m(0), duration: 2701, source: 'file' },
+    { name: 'gameplay_2026-09-27_15-06-30.mp4', path: '/rec/gameplay_2026-09-27_15-06-30.mp4', machine: 'Mac', start_ms: m(45, 1), duration: 2701, source: 'file' },
+    { name: 'gameplay_2026-09-27_15-51-31.mp4', path: '/rec/gameplay_2026-09-27_15-51-31.mp4', machine: 'Mac', start_ms: m(90, 2), duration: 2700, source: 'file' },
+    { name: 'gameplay_2026-09-27_16-36-31.mp4', path: '/rec/gameplay_2026-09-27_16-36-31.mp4', machine: 'Mac', start_ms: m(135, 2), duration: 1800, source: 'file' },
+    { name: 'cam 2026-09-27 14-21-29.mov', path: '/rec/cam 2026-09-27 14-21-29.mov', machine: 'Mac', start_ms: m(0), duration: 2700, source: 'file' },
+    { name: 'cam_2026-09-27_15-06-29.mov', path: '/rec/cam_2026-09-27_15-06-29.mov', machine: 'Mac', start_ms: m(45), duration: 2700, source: 'file' },
+    { name: 'cam_2026-09-27_15-51-29.mov', path: '/rec/cam_2026-09-27_15-51-29.mov', machine: 'Mac', start_ms: m(90), duration: 2700, source: 'file' },
+    { name: 'cam_2026-09-27_16-36-29.mov', path: '/rec/cam_2026-09-27_16-36-29.mov', machine: 'Mac', start_ms: m(135), duration: 1800, source: 'file' },
+    // An earlier recording that stopped nine seconds before the next began stays on its own.
+    { name: 'gameplay 2026-09-27 14-03-29.mp4', machine: 'Mac', start_ms: m(-18), duration: 18 * 60 - 9, source: 'file' },
+  ];
+  const all = resolveRecordings(rows);
+  const games = all.filter((r) => r.role === 'game');
+  assert.deepEqual(games.map((r) => r.name).sort(), ['gameplay 2026-09-27 14-03-29.mp4', 'gameplay 2026-09-27 14-21-29.mp4'], 'four files, one recording; the earlier one separate');
+  const g = games.find((r) => r.name.includes('14-21-29'));
+  assert.equal(g.parts.length, 4);
+  assert.deepEqual(g.parts.map((p) => p.offset), [0, 2701, 5402, 8102]);
+  assert.equal(g.duration, 8102 + 1800);
+  assert.equal(g.end, g.start + g.duration * 1000);
+  assert.equal(g.companions.length, 1, 'the four camera files are one companion');
+  assert.equal(g.companions[0].parts.length, 4);
+  assert.equal(g.companions[0].duration, 135 * 60 + 1800);
+  assert.equal(all.find((r) => r.name === 'cam_2026-09-27_15-51-29.mov'), undefined, 'absorbed parts are not listed on their own');
+  const xml = toFCPXML(g, [], { fps: 60 });
+  assert.equal((xml.match(/<track>/g) || []).length, 4, 'game video+audio, cam video+audio');
+  assert.equal((xml.match(/<clipitem id="clipitem-v\d"/g) || []).length, 4, 'one clip per gameplay part on the video track');
+  assert.ok(xml.includes(`<start>${2701 * 60}</start>`), 'the second part starts where the first ends');
+  assert.ok(xml.includes('gameplay_2026-09-27_16-36-31.mp4') && xml.includes('cam_2026-09-27_16-36-29.mov'));
+  assert.ok(xml.includes(`<duration>${(8102 + 1800) * 60}</duration>`), 'the sequence runs to the last part');
 });

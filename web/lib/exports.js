@@ -107,9 +107,7 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
   const timebase = Math.round(fps);
   const ntsc = Math.abs(fps - timebase) > 0.001 ? 'TRUE' : 'FALSE'; // 59.94 is timebase 60, NTSC
   const frames = (sec) => Math.round(sec * fps);
-  const duration = frames(recording.duration);
   const rate = `<rate><timebase>${timebase}</timebase><ntsc>${ntsc}</ntsc></rate>`;
-  const name = xml(recording.name);
   const markers = events.map((e) => [
     '<marker>',
     `<name>${xml(`[${e.cat}] ${e.label}`)}</name>`,
@@ -117,33 +115,38 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     `<in>${frames(e.offset)}</in><out>-1</out>`,
     '</marker>',
   ].join('')).join('\n      ');
-  const file = `<file id="file-1"><name>${name}</name><pathurl>${xml(fileURL(recording.path || recording.name))}</pathurl>${rate}<duration>${duration}</duration>`
-    + `<media><video><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></video>`
-    + '<audio><channelcount>2</channelcount></audio></media></file>';
-  const clip = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${name}</name><duration>${duration}</duration>${rate}`
-    + `<start>0</start><end>${duration}</end><in>0</in><out>${duration}</out>${mediaFile}${extra}</clipitem>`;
+  // A file (or the parts OBS split it into) laid on a track from `at`
+  // frames, trimmed at its head when it began before the sequence.
+  const fileXml = (fid, f, w, h, sound) => `<file id="${fid}"><name>${xml(f.name)}</name><pathurl>${xml(fileURL(f.path || f.name))}</pathurl>${rate}<duration>${frames(f.duration)}</duration>`
+    + `<media><video><samplecharacteristics>${rate}<width>${w}</width><height>${h}</height></samplecharacteristics></video>`
+    + (sound ? '<audio><channelcount>2</channelcount></audio>' : '') + '</media></file>';
+  const lay = (parts, at, idPrefix, w, h, sound) => {
+    const video = []; const audio = []; let end = 0;
+    parts.forEach((p, i) => {
+      const fid = `${idPrefix}f${i + 1}`;
+      const dur = frames(p.duration);
+      const off = at + frames(p.offset || 0);
+      const start = Math.max(0, off); const inF = Math.max(0, -off);
+      const clipEnd = start + (dur - inF);
+      if (clipEnd <= start) return;
+      end = Math.max(end, clipEnd);
+      const item = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${xml(p.name)}</name><duration>${dur}</duration>${rate}<start>${start}</start><end>${clipEnd}</end><in>${inF}</in><out>${dur}</out>${mediaFile}${extra}</clipitem>`;
+      video.push(item(`${idPrefix}v${i + 1}`, fileXml(fid, p, w, h, sound)));
+      if (sound) audio.push(item(`${idPrefix}a${i + 1}`, `<file id="${fid}"/>`, '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>'));
+    });
+    return { video: `<track>${video.join('')}</track>`, audio: audio.length ? `<track>${audio.join('')}</track>` : '', end };
+  };
+  const mainParts = recording.parts?.length ? recording.parts : [{ name: recording.name, path: recording.path, duration: recording.duration, offset: 0 }];
+  const main = lay(mainParts, 0, 'clipitem-', width, height, true);
   // Companions (the camera's OBS file, the overlay video drawn from the
   // events) as their own tracks, placed by their start offset: a file that
   // began later starts later on the sequence, one that began earlier is
   // trimmed at its head. The overlay goes on the top track.
   const companions = (recording.companions || []).map((c, i) => {
-    const fid = `file-c${i + 1}`;
-    const dur = frames(c.duration);
-    const off = frames(c.offset || 0);
-    const start = Math.max(0, off); const inF = Math.max(0, -off);
-    const end = start + (dur - inF);
-    const cname = xml(c.name);
-    const f = `<file id="${fid}"><name>${cname}</name><pathurl>${xml(fileURL(c.path || c.name))}</pathurl>${rate}<duration>${dur}</duration>`
-      + `<media><video><samplecharacteristics>${rate}<width>${c.width || width}</width><height>${c.height || height}</height></samplecharacteristics></video>`
-      + (c.role === 'overlay' ? '</media></file>' : '<audio><channelcount>2</channelcount></audio></media></file>');
-    const item = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${cname}</name><duration>${dur}</duration>${rate}<start>${start}</start><end>${end}</end><in>${inF}</in><out>${dur}</out>${mediaFile}${extra}</clipitem>`;
-    return {
-      role: c.role, end,
-      video: `<track>${item(`clipitem-c${i + 1}v`, f)}</track>`,
-      audio: c.role === 'cam' ? `<track>${item(`clipitem-c${i + 1}a`, `<file id="${fid}"/>`, '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>')}</track>` : '',
-    };
+    const parts = c.parts?.length ? c.parts : [{ name: c.name, path: c.path, duration: c.duration, offset: 0 }];
+    return { role: c.role, ...lay(parts, frames(c.offset || 0), `clipitem-c${i + 1}`, c.width || width, c.height || height, c.role === 'cam') };
   });
-  const seqDuration = Math.max(duration, ...companions.map((c) => c.end));
+  const seqDuration = Math.max(main.end, ...companions.map((c) => c.end));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="4">
@@ -155,11 +158,11 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     <media>
       <video>
         <format><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></format>
-        <track>${clip('clipitem-1', file)}</track>
+        ${main.video}
         ${companions.map((c) => c.video).join('\n        ')}
       </video>
       <audio>
-        <track>${clip('clipitem-2', '<file id="file-1"/>', '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>')}</track>
+        ${main.audio}
         ${companions.map((c) => c.audio).filter(Boolean).join('\n        ')}
       </audio>
     </media>

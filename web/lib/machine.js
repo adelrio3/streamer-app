@@ -24,6 +24,7 @@ const REC_EVERY = 20000;
 const SREC_NONE = 0; // Source Record's record modes
 const SREC_ALWAYS = 1;
 const REC_FILES_KEY = 'chronicler.rec.files'; // the recordings folder's video names, as last read
+const CONTINUES_MS = 3000; // a file starting within this of the previous one's end continues it
 const GROWING_FOR = 45000; // ms since a video's last write within which it counts as still being recorded
 const REFRESH_EVERY = 60000;
 const LIVE_EVERY = 1000;
@@ -675,10 +676,12 @@ export class Machine {
           let local = startFromName(v.name, this.config.pattern);
           let duration = null;
           let from = 'name';
-          if (local == null && isMovieFile(v.name)) {
+          if (isMovieFile(v.name) && !growing) {
+            // The movie header knows the exact length (and, when the writer set it, the start).
             const info = await readMovieInfo(v.file).catch((err) => ({ error: err.message }));
-            if (info?.created) { local = info.created; duration = info.duration; from = 'movie header'; }
-            else if (info?.error) { verdict('skipped', `could not read the movie header: ${info.error}`); continue; }
+            if (info?.duration) duration = info.duration;
+            if (local == null && info?.created) { local = info.created; from = 'movie header'; }
+            else if (local == null && info?.error) { verdict('skipped', `could not read the movie header: ${info.error}`); continue; }
           }
           if (local == null) { verdict('skipped', 'no start time: the name has no timestamp and the file has no readable movie header'); continue; }
           if (v.lastModified < local) { verdict('skipped', `its start (${new Date(local).toLocaleString()}, from the ${from}) is after its last write (${new Date(v.lastModified).toLocaleString()})`); continue; }
@@ -879,8 +882,20 @@ export class Machine {
   async followRecordings() {
     if (!this.liveEnabled()) return;
     const rows = this.state.rows.filter((r) => (r.source === 'obs' || r.source === 'file') && Number.isFinite(r.start_ms) && recordingRole(r.name, r.path) === 'game');
-    const newest = rows.sort((a, b) => b.start_ms - a.start_ms)[0];
-    if (!newest) return;
+    const tail = rows.sort((a, b) => b.start_ms - a.start_ms)[0];
+    if (!tail) return;
+    // A file OBS split off (every 45 minutes, say) continues the one before
+    // it: the session began with the first file of the chain and ends with
+    // the last. The next file begins the moment the previous one ends, or
+    // while the previous one is still being written.
+    const endOf = (r) => (Number.isFinite(r.end_ms) ? r.end_ms : r.duration > 0 ? r.start_ms + r.duration * 1000 : null);
+    let newest = tail;
+    for (let guard = 0; guard < 100; guard++) {
+      const prev = rows.find((p) => p !== newest && p.machine === newest.machine && p.start_ms < newest.start_ms
+        && (endOf(p) == null || Math.abs(newest.start_ms - endOf(p)) <= CONTINUES_MS));
+      if (!prev) break;
+      newest = prev;
+    }
     let f = this.live.follow;
     if (!f) { try { f = JSON.parse(localStorage.getItem(LIVE_FOLLOW_KEY) || 'null'); } catch { f = null; } f ??= { name: null, start: 0, ended: true }; this.live.follow = f; }
     const save = () => { try { localStorage.setItem(LIVE_FOLLOW_KEY, JSON.stringify(f)); } catch { /* storage off */ } };
@@ -895,11 +910,12 @@ export class Machine {
       this.notify('Recording started on the recording computer: a new stream session.');
       return;
     }
-    if (f.name === newest.name && !f.ended && newest.duration > 0) {
+    if (f.name === newest.name && !f.ended && tail.duration > 0) {
       f.ended = true;
       save();
       const s = this.live.state;
-      s.apply({ at: nowServer, kind: 'session', action: 'stop', name: newest.name, seconds: newest.duration, kills: s.kills, questsDone: s.questsDone, deaths: s.deaths });
+      const seconds = Math.max(tail.duration, ((endOf(tail) ?? 0) - newest.start_ms) / 1000);
+      s.apply({ at: nowServer, kind: 'session', action: 'stop', name: newest.name, seconds, kills: s.kills, questsDone: s.questsDone, deaths: s.deaths });
       await this.pushLive(true);
       this.changed('live');
       this.notify('Recording stopped: the stream session is complete.');

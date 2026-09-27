@@ -114,3 +114,10 @@ test('recordings still being recorded or missing times are skipped', () => {
   assert.equal(resolveRecordings([{ name: 'a.mp4', start_ms: 1000, duration: 5 }])[0].end, 6000);
   assert.equal(resolveRecordings([{ name: '._a.mp4', start_ms: 1000, duration: 5 }]).length, 0, 'macOS companion files');
 });
+
+test('startFromName: the underscores OBS writes when it splits a recording read as spaces', () => {
+  const spaced = startFromName('gameplay 2026-09-27 15-06-30.mp4');
+  assert.ok(spaced);
+  assert.equal(startFromName('gameplay_2026-09-27_15-06-30.mp4'), spaced);
+  assert.equal(startFromName('cam_2026-09-27_15-06-29.mov'), spaced - 1000);
+});

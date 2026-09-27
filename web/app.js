@@ -2910,7 +2910,7 @@ pages.recordings = async (_, params) => {
   // On the recording computer the folder decides: entries whose files are gone are kept out of sight until removed.
   const folder = m?.config?.records && m.rec?.known && m.rec.videos ? m.rec.videos : null;
   const present = (name) => !folder || folder.has(String(name).toLowerCase());
-  const all = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [], gone: !present(r.name) }));
+  const all = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [], gone: !(r.parts?.length ? r.parts.every((p) => present(p.name)) : present(r.name)) }));
   const gone = all.filter((r) => r.gone);
   const goneNames = [...new Set(derived().allRecordings.filter((r) => !present(r.name)).map((r) => r.name))];
   const showAll = params?.get('show') === 'all';
@@ -2937,7 +2937,7 @@ pages.recordings = async (_, params) => {
   const oldHtml = old.length ? `<p class="small muted">${old.length} video${old.length === 1 ? '' : 's'} in the folder ${old.length === 1 ? 'was' : 'were'} recorded before the last "delete everything" and ${old.length === 1 ? 'is' : 'are'} left out: ${old.map((n) => esc(n)).join(', ')}. <button id="recAdopt" class="ghost">Take ${old.length === 1 ? 'it' : 'them'} in</button> <span class="muted">(as footage only; their play sessions were deleted)</span></p>` : '';
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `${batchHtml}${oldHtml}<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
     ${table(list, [
-      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}</span>`).join('')}${r.gone ? ' <span class="chip">file gone</span>' : ''}` },
+      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${r.parts?.length > 1 ? ` <span class="chip" title="${esc(r.parts.map((p) => p.name).join('\n'))}">${r.parts.length} parts</span>` : ''}${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}${c.parts?.length > 1 ? ` ×${c.parts.length}` : ''}</span>`).join('')}${r.gone ? ' <span class="chip">file gone</span>' : ''}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },
@@ -2964,7 +2964,8 @@ pages.recording = async (id, params) => {
       <div>
         <video id="video" controls preload="metadata"></video>
         <p class="muted small" id="videoNote"></p>
-        ${(r.companions || []).length ? `<div class="panel"><h3>Sidecar files</h3><p class="small">${r.companions.map((c) => `<b>${c.role === 'cam' ? 'Camera' : 'Overlay'}</b>: ${esc(c.name)}${Math.abs(c.offset) >= 0.05 ? ` <span class="muted">(started ${Math.abs(c.offset).toFixed(2)} s ${c.offset > 0 ? 'after' : 'before'} the gameplay)</span>` : ''}`).join('<br>')}</p><p class="small muted">Recorded alongside this gameplay file. They are not played here (a ProRes camera file only plays in Premiere), but the session package and the Premiere export put each on its own track, lined up to the frame.</p></div>` : ''}
+        ${r.parts?.length > 1 ? `<div class="panel"><h3>Split into ${r.parts.length} files</h3><p class="small">${r.parts.map((p) => `${esc(p.name)} <span class="muted">${tc(p.offset)} – ${tc(p.offset + p.duration)}</span>`).join('<br>')}</p><p class="small muted">OBS started a new file the moment the previous one filled up; they play here as one video and go on one track in Premiere, end to end.</p></div>` : ''}
+        ${(r.companions || []).length ? `<div class="panel"><h3>Sidecar files</h3><p class="small">${r.companions.map((c) => `<b>${c.role === 'cam' ? 'Camera' : 'Overlay'}</b>: ${esc(c.parts?.length > 1 ? `${c.parts.length} files from ${c.name}` : c.name)}${Math.abs(c.offset) >= 0.05 ? ` <span class="muted">(started ${Math.abs(c.offset).toFixed(2)} s ${c.offset > 0 ? 'after' : 'before'} the gameplay)</span>` : ''}`).join('<br>')}</p><p class="small muted">Recorded alongside this gameplay file. They are not played here (a ProRes camera file only plays in Premiere), but the session package and the Premiere export put each on its own track, lined up to the frame.</p></div>` : ''}
         ${syncPanel(r)}
         <div class="panel">
           <h3>Export for editing</h3>
@@ -3062,14 +3063,15 @@ function rowFor(r) {
 function wireSync(r, video) {
   const input = document.getElementById('flashAt');
   const fmt = (sec) => `${tc(sec)}.${String(Math.round((sec % 1) * 1000)).padStart(3, '0')}`;
-  video.addEventListener('pause', () => { input.value = fmt(video.currentTime); });
-  video.addEventListener('seeked', () => { if (video.paused) input.value = fmt(video.currentTime); });
+  const pos = () => (player ? player.pos() : video.currentTime);
+  video.addEventListener('pause', () => { input.value = fmt(pos()); });
+  video.addEventListener('seeked', () => { if (video.paused) input.value = fmt(pos()); });
   for (const b of document.querySelectorAll('[data-step]')) {
     b.addEventListener('click', () => {
       video.pause();
       const fps = settings().fps;
       const step = b.dataset.step === 'f' ? 1 / fps : b.dataset.step === '-f' ? -1 / fps : Number(b.dataset.step);
-      video.currentTime = Math.max(0, video.currentTime + step);
+      if (player) player.seek(pos() + step); else video.currentTime = Math.max(0, video.currentTime + step);
     });
   }
   document.getElementById('clearSync')?.addEventListener('click', async () => {
@@ -3077,7 +3079,7 @@ function wireSync(r, video) {
     route();
   });
   document.getElementById('findSync').addEventListener('click', () => {
-    const at = parseTime(input.value || fmt(video.currentTime));
+    const at = parseTime(input.value || fmt(pos()));
     const box = document.getElementById('syncChoices');
     if (at == null || at < 0 || at > r.duration + 1) { box.innerHTML = '<p class="small" style="color:var(--red)">Type the flash time, within this recording, as seconds or h:mm:ss.ms.</p>'; return; }
     const clock = derived().clock;
@@ -3110,16 +3112,54 @@ function wireSync(r, video) {
   });
 }
 
+// The video element plays one file at a time; a recording split into parts
+// is one video to the page: `pos()` is the time within the recording and
+// `seek(sec)` loads whichever part holds it (a part's `offset` is where it
+// begins within the recording).
+let player = null;
 async function wirePlayer(r, start) {
   const video = document.getElementById('video');
   const tl = document.getElementById('timeline');
   if (!video || !tl) return;
   const note = document.getElementById('videoNote');
+  const parts = r.parts?.length ? r.parts : [{ name: r.name, path: r.path, duration: r.duration, offset: 0 }];
   const local = state.machine.rec.videos.get(r.name.toLowerCase());
   if (videoURL) { URL.revokeObjectURL(videoURL); videoURL = null; }
-  if (local?.handle) {
-    videoURL = URL.createObjectURL(await local.handle.getFile());
+  const cur = { part: parts[0] };
+  const load = async (part) => {
+    const file = state.machine.rec.videos.get(part.name.toLowerCase());
+    if (!file?.handle) return false;
+    if (videoURL) URL.revokeObjectURL(videoURL);
+    videoURL = URL.createObjectURL(await file.handle.getFile());
+    cur.part = part;
     video.src = videoURL;
+    return true;
+  };
+  player = {
+    r, parts,
+    pos: () => cur.part.offset + video.currentTime,
+    async seek(sec, play = false) {
+      const at = Math.max(0, Math.min(sec, r.duration));
+      const part = parts.find((p, i) => i === parts.length - 1 || at < p.offset + p.duration) || parts[0];
+      if (part !== cur.part) {
+        const wasPlaying = play || !video.paused;
+        if (!await load(part)) return;
+        video.addEventListener('loadedmetadata', () => { video.currentTime = at - part.offset; if (wasPlaying) video.play().catch(() => {}); }, { once: true });
+      } else {
+        video.currentTime = at - part.offset;
+        if (play) video.play().catch(() => {});
+      }
+    },
+  };
+  if (parts.length > 1) {
+    // One part ends: the next begins where it left off.
+    video.addEventListener('ended', () => {
+      const i = parts.indexOf(cur.part);
+      if (i >= 0 && i < parts.length - 1) player.seek(parts[i + 1].offset, true);
+    });
+  }
+  if (local?.handle) {
+    await load(parts[0]);
   } else if (local?.cached) {
     // The folder listing is from last time and is being read again: try once more when it has been.
     video.hidden = true;
@@ -3133,10 +3173,10 @@ async function wirePlayer(r, start) {
       : 'The video lives on your recording computer. Open this page there to watch it; events and exports work here too.';
   }
   video.addEventListener('loadedmetadata', () => {
-    if (start) video.currentTime = start;
-    // The video knows its real length; fix the stored one if it is off.
+    if (start) player.seek(start);
+    // The video knows its real length; fix the stored one if it is off (a split recording's length is the sum of its parts).
     const row = rowFor(r);
-    if (row && Number.isFinite(video.duration) && Math.abs(video.duration - r.duration) >= 1) state.machine.putRow({ ...row, duration: video.duration });
+    if (row && parts.length === 1 && Number.isFinite(video.duration) && Math.abs(video.duration - r.duration) >= 1) state.machine.putRow({ ...row, duration: video.duration });
   }, { once: true });
   video.addEventListener('error', () => {
     if (local) note.textContent = 'Chrome cannot play this file. Set OBS to record MP4 (Settings › Output › Recording Format), or remux it (File › Remux Recordings). Timestamps and exports still work.';
@@ -3154,18 +3194,19 @@ async function wirePlayer(r, start) {
   document.getElementById('tlCats').addEventListener('change', draw);
   tl.addEventListener('click', (ev) => {
     const row = ev.target.closest('.ev');
-    if (row && !video.hidden) { video.currentTime = Number(row.dataset.o); video.play().catch(() => {}); }
+    if (row && !video.hidden) player.seek(Number(row.dataset.o), true);
   });
   let lastNow = null;
   video.addEventListener('timeupdate', () => {
-    follow?.(video.currentTime);
-    let cur = null;
-    for (const row of tl.querySelectorAll('.ev')) { if (Number(row.dataset.o) <= video.currentTime + 0.25) cur = row; else break; }
-    if (cur !== lastNow) {
+    const at = player.pos();
+    follow?.(at);
+    let now = null;
+    for (const row of tl.querySelectorAll('.ev')) { if (Number(row.dataset.o) <= at + 0.25) now = row; else break; }
+    if (now !== lastNow) {
       lastNow?.classList.remove('now');
-      cur?.classList.add('now');
-      cur?.scrollIntoView({ block: 'nearest' });
-      lastNow = cur;
+      now?.classList.add('now');
+      now?.scrollIntoView({ block: 'nearest' });
+      lastNow = now;
     }
   });
   for (const b of document.querySelectorAll('[data-fmt]')) {
@@ -3529,7 +3570,7 @@ async function recordingMap(r, video) {
         const d = Math.hypot(p.x - x, (p.y - y) * 1.5);
         if (!best || d < best.d) best = { d, p };
       }
-      if (best && best.d < 6 && video) { video.currentTime = Math.max(0, best.p.offset); video.play().catch(() => {}); }
+      if (best && best.d < 6 && video) { if (player) player.seek(best.p.offset, true); else { video.currentTime = Math.max(0, best.p.offset); video.play().catch(() => {}); } }
     },
   });
   if (!api) return null;
