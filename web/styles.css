@@ -134,6 +134,9 @@ main { padding: 36px 44px 80px; max-width: 1240px; width: 100%; min-width: 0; }
 
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem; white-space: nowrap; color: var(--text-2); }
 a.pill:hover { text-decoration: none; border-color: var(--line-2); }
+button.pill.rec { cursor: pointer; color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 50%, transparent); font-weight: 600; }
+button.pill.rec.on { background: color-mix(in srgb, var(--cyan) 22%, var(--panel-2)); color: #fff; box-shadow: 0 0 14px -4px var(--cyan); }
+button.pill.rec:disabled { opacity: .5; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
 .dot.ok { background: var(--green); }
 .dot.bad { background: var(--red); }

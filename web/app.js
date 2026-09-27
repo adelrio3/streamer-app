@@ -513,9 +513,21 @@ function renderStatus() {
     const o = m.obsStatus;
     const dot = o.state === 'connected' ? (o.recording ? 'live' : 'ok') : 'bad';
     pills.push(`<a class="pill" href="#/setup" title="${esc(o.error || '')}"><span class="dot ${dot}"></span>OBS ${o.recording ? 'recording' : o.state === 'connected' ? '' : esc(o.state)}</a>`);
+    if (o.state === 'connected' && m.srec?.filters?.length) pills.push(`<button class="pill rec ${m.srec.on ? 'on' : ''}" data-act="srec" title="${m.srec.on ? 'Stop the Source Record filters' : `Start recording: ${esc(m.srec.filters.map((f) => f.source).join(' + '))} through their Source Record filters`}">${m.srec.on ? '■ Stop' : '● Record'}</button>`);
   }
   if (m.offset != null) pills.push(`<span class="pill" title="This computer's clock compared with the shared server clock">clock ${m.offset >= 0 ? '+' : '−'}${Math.abs(m.offset / 1000).toFixed(2)}s</span>`);
   statusEl.innerHTML = pills.join('');
+  statusEl.querySelector('[data-act=srec]')?.addEventListener('click', (ev) => toggleSourceRecord(ev.currentTarget));
+}
+
+async function toggleSourceRecord(btn) {
+  const m = state.machine;
+  if (!m?.srec) return;
+  const on = !m.srec.on;
+  if (!on && !confirm('Stop recording? Both Source Record files close and the session is complete.')) return;
+  if (btn) btn.disabled = true;
+  try { await m.setSourceRecord(on); } catch (err) { toast(err.message); }
+  renderStatus();
 }
 
 function toast(msg) {
@@ -3554,6 +3566,8 @@ pages.setup = async () => {
         <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"><small class="muted">Files in the same folder named <code>cam …</code> or <code>overlay …</code> with the same timestamp pair up with the main recording.</small></label>
       </div>
       <p class="small">Status: <b>${esc(obs.state)}</b>${obs.recording ? ' · recording now' : ''}${obs.error ? ` · <span style="color:var(--red)">${esc(obs.error)}</span>` : ''}</p>
+      <h3 style="margin-top:18px">One-click recording</h3>
+      <p class="small">The <b>● Record</b> button in the sidebar sets every Source Record filter in OBS to record mode <i>Always</i>, and <b>■ Stop</b> sets them back to <i>None</i>: OBS's own recording and the stream stay off. ${obs.state === 'connected' ? (m.srec?.filters?.length ? `Filters found: ${m.srec.filters.map((f) => `<b>${esc(f.source)}</b> › ${esc(f.filter)}`).join(', ')}${m.srec.on ? ' · <span class="dot live" style="display:inline-block"></span> recording' : ''}.` : 'No Source Record filter found yet (add one to the gameplay source and one to the camera source; they are found within ten seconds).') : 'Connect OBS above first.'}</p>
       <h3 style="margin-top:18px">Session package</h3>
       <p class="small">Recording the overlay costs too much next to the game capture, so it is not recorded at all: once a recording ends and its play session has been uploaded (the addon writes it at logout), this computer draws the overlay again from the events, frame by frame over the chroma colour, and writes it next to the recording as an .mp4 with a Premiere sequence (.xml): game footage, camera and overlay each on their own track, a marker per event. Import the .xml, key the overlay track with Ultra Key, and edit.</p>
       <label class="check"><input type="checkbox" name="pack_auto" ${(settings().sessionPack || {}).auto ? 'checked' : ''}><span>Also build a package on its own as soon as a session closes (off is safer: a render could overlap the next recording; the batch button on Recordings does them all when you are done)</span></label>

@@ -21,6 +21,8 @@ const CONFIG_KEY = 'chronicler.machine';
 const CLOCK_EVERY = 10 * 60 * 1000;
 const WOW_EVERY = 5000;
 const REC_EVERY = 20000;
+const SREC_NONE = 0; // Source Record's record modes
+const SREC_ALWAYS = 1;
 const REC_FILES_KEY = 'chronicler.rec.files'; // the recordings folder's video names, as last read
 const GROWING_FOR = 45000; // ms since a video's last write within which it counts as still being recorded
 const REFRESH_EVERY = 60000;
@@ -114,7 +116,7 @@ export class Machine {
     if (this.config.records) {
       await this.initRec();
       this.every(REC_EVERY, () => this.scanRec());
-      if (this.config.obs.enabled) this.startObs();
+      if (this.config.obs.enabled) { this.startObs(); this.every(10000, () => this.pollSourceRecord()); }
     }
   }
 
@@ -734,6 +736,47 @@ export class Machine {
         for (const c of this.obsMore || []) if (c.status?.state === 'connected' && c.status.recording) c.link.request('StopRecord').catch?.(() => {});
       }
     }
+  }
+
+  // One-click recording through Source Record filters: OBS's own recording
+  // and stream stay off; every Source Record filter in the scene collection
+  // (gameplay, camera) is set to record mode Always to start, None to stop.
+  async sourceRecordFilters() {
+    const link = this.obs;
+    if (!link || this.obsStatus?.state !== 'connected') return [];
+    const inputs = await link.request('GetInputList');
+    const out = [];
+    for (const i of inputs?.inputs || []) {
+      const fl = await link.request('GetSourceFilterList', { sourceName: i.inputName });
+      for (const f of fl?.filters || []) {
+        if (f.filterKind !== 'source_record_filter') continue;
+        out.push({ source: i.inputName, filter: f.filterName, enabled: f.filterEnabled !== false, mode: Number(f.filterSettings?.record_mode ?? 0) });
+      }
+    }
+    this.srec = { filters: out, on: out.some((f) => f.enabled && f.mode === SREC_ALWAYS), at: Date.now() };
+    return out;
+  }
+
+  async pollSourceRecord() {
+    if (this.obsStatus?.state !== 'connected') { if (this.srec) { this.srec = null; this.changed('obs'); } return; }
+    const before = this.srec ? `${this.srec.on}|${this.srec.filters.length}` : '';
+    await this.sourceRecordFilters().catch(() => {});
+    if ((this.srec ? `${this.srec.on}|${this.srec.filters.length}` : '') !== before) this.changed('obs');
+  }
+
+  async setSourceRecord(on) {
+    const filters = await this.sourceRecordFilters();
+    if (!filters.length) throw new Error('No Source Record filter found in OBS (add one to the gameplay and camera sources).');
+    for (const f of filters) {
+      if (!f.enabled) await this.obs.request('SetSourceFilterEnabled', { sourceName: f.source, filterName: f.filter, filterEnabled: true });
+      await this.obs.request('SetSourceFilterSettings', { sourceName: f.source, filterName: f.filter, filterSettings: { record_mode: on ? SREC_ALWAYS : SREC_NONE }, overlay: true });
+    }
+    this.srec = { ...this.srec, on, at: Date.now() };
+    this.changed('obs');
+    this.notify(on ? `Recording: ${filters.map((f) => f.source).join(' + ')}.` : 'Recording stopped.');
+    // The folder scan turns the new files into recordings (and the stream session) within its next pass.
+    setTimeout(() => this.scanRec().catch(() => {}), on ? 25000 : 5000);
+    return filters;
   }
 
   // Both computers ----------------------------------------------------------
