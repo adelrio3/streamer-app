@@ -9,7 +9,7 @@ import { clockModel, resolveRecordings, buildTimelines, eventMs } from './lib/ti
 import { toSRT, toCSV, toChapters, toKillsCSV, toFCPXML, lifetimeKillsBefore, stem } from './lib/exports.js';
 import { foldersSupported } from './lib/folders.js';
 import { buildWorld } from './lib/world.js';
-import { buildCharacters, recordingCharacters } from './lib/journey.js';
+import { buildCharacters, recordingCharacters, charKey } from './lib/journey.js';
 import { findSegments, findHighlights, HIGHLIGHT_KINDS, timeOfDay, parsePoint } from './lib/footage.js';
 import { buildIndex, search } from './lib/search.js';
 import { tooltipLine } from './lib/sessions.js';
@@ -544,7 +544,7 @@ pages[''] = async () => {
     <div class="cards">
       ${card(t.quests, 'quests completed', '#/quests')}
       ${db ? card(progressSets(c.quests).done.size, `of ${db.countable.toLocaleString()} Classic quests done`, '#/quests?show=db') : ''}
-      ${card(t.kills, 'creatures slain', '#/bestiary')}
+      ${card(t.kills, 'hunts', '#/bestiary')}
       ${card(d.world.creatures.length, 'creatures met', '#/bestiary')}
       ${card(d.world.people.length, 'people met', '#/people')}
       ${card(d.world.items.length, 'items catalogued', '#/items')}
@@ -1288,7 +1288,7 @@ pages.character = async (key, params = new URLSearchParams()) => {
     </header>
     ${tabsHtml([['dashboard', 'Dashboard'], ['progress', 'Progress'], ['completion', 'Completion'], ['journal', 'Journal']], tab === 'places' ? 'completion' : tab, `#/character/${enc(c.key)}?tab=`)}
     ${tab === 'dashboard' ? await characterDashboard(c) : tab === 'journal' ? await characterJournal(c) : tab === 'completion' || tab === 'places' ? await characterCompletion(c) : `<div class="cards">
-      ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'kills', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
+      ${card(c.questsDone, 'quests completed', '#/quests')}${card(c.kills, 'hunts', '#/bestiary?show=killed')}${card(c.deaths.length, 'deaths', '#/highlights?kind=death')}
       ${card(c.zones.length, 'zones visited', '#/zones')}${card(c.recordings.length, 'recordings', '#/recordings')}${card(Math.round(c.playSeconds / 3600), 'hours logged', '#/sessions')}
     </div>
     <h2>Journey</h2>
@@ -1383,7 +1383,7 @@ async function characterDashboard(c) {
   return `<div class="dash">
     <div class="dash-grid">
       <div class="panel"><h3>Right now</h3>
-        ${facts([lastZone ? `In <b>${esc(lastZone)}</b>${lastSub ? `, ${esc(lastSub)}` : ''}` : '', lastT ? `last seen ${esc(when(lastT))}` : '', moneyNow != null ? money(moneyNow) : '', i.bind ? `hearth at ${esc(i.bind)}` : ''])}
+        ${facts([lastZone ? `In <b>${esc(lastZone)}</b>${lastSub ? `, ${esc(lastSub)}` : ''}` : '', lastT ? `last there ${esc(when(lastT))}` : '', moneyNow != null ? money(moneyNow) : '', i.bind ? `hearth at ${esc(i.bind)}` : ''])}
         ${zoneRow ? `<div class="muted small" style="margin-top:6px">${esc(zoneRow.name)}: ${zoneRow.done} of ${zoneRow.total} quests done</div>${covBar(zoneRow.done, zoneRow.total)}` : ''}
       </div>
       <div class="panel"><h3>Standing</h3>
@@ -1629,6 +1629,7 @@ function reqChip(q, cov) {
   if (who ? fits(q, who) : (text === 'Alliance' || text === 'Horde')) return '';
   return ` <span class="chip req">${esc(text)}</span>`;
 }
+const charKeyOf = (sess) => charKey(sess.char);
 const rpgRing = (done, total, size = 72) => `<span class="pring" style="--p:${pctOf(done, total)};--s:${size}px"><span>${pctOf(done, total)}<i>%</i></span></span>`;
 const rpgStat = (label, done, total, href = '') => `<${href ? `a href="${href}"` : 'div'} class="rpg-stat"><span class="muted small">${label}</span><b>${done.toLocaleString()}${total != null ? ` <span class="muted">/ ${total.toLocaleString()}</span>` : ''}</b>${total != null ? `<span class="bar"><span style="width:${pctOf(done, total)}%"></span></span>` : ''}</${href ? 'a' : 'div'}>`;
 // A name in the wiki: normal once done (killed, met, obtained), gray until then.
@@ -1787,7 +1788,7 @@ async function otherMaps(maps) {
   const seen = new Set(maps.map((m) => String(m.id)));
   const rest = Object.entries(CLASSIC_ZONE_IDS).filter(([id]) => !seen.has(id)).map(([id, area]) => ({ id: Number(id), name: db.zoneName(area), quests: (db.questsByZone.get(area) || []).filter((q) => !q.hidden).length })).sort((a, b) => a.name.localeCompare(b.name));
   return `<h2>Other maps</h2><p class="muted">Every Classic zone, with quest givers not found yet and rare spawns from the quest database.</p>
-    <p class="chips">${rest.map((z) => `<a class="chip" href="#/map/${z.id}?show=unfound,rares">${esc(z.name)} <span class="muted">${z.quests}</span></a>`).join(' ')}</p>`;
+    <p class="chips">${rest.map((z) => `<a class="chip" href="#/map/${z.id}">${esc(z.name)} <span class="muted">${z.quests}</span></a>`).join(' ')}</p>`;
 }
 
 // Storylines: quest chains from the database as chapters ----------------------
@@ -1958,12 +1959,16 @@ pages.map = async (id, params) => {
   const counts = {};
   for (const p of markers) counts[p.layer] = (counts[p.layer] || 0) + 1;
   const whoChar = who ? derived().characters.find((c) => c.key === who) : null;
+  // The time-spent heat is the whole account's; the route lines and the
+  // replay are one character's path, so they come only with ?who=.
   const timePoints = routesFor(m.id, derived().sessions, state.tracks).flatMap((r) => r.points.map(([x, y]) => ({ x, y })));
   const heat = { density: heatCells(m.markers.filter((mk) => mk.layer === 'creature'), 4), time: heatCells(timePoints, 3) };
+  const ownSessions = who ? derived().sessions.filter((s) => charKeyOf(s) === who) : [];
+  const ownRoutes = who ? routesFor(m.id, ownSessions, state.tracks) : [];
   const services = derived().world.people;
   setTimeout(() => {
     wireMap('zoneMap', m.id, markers, {
-      routes: true, hidden, heat,
+      routes: ownRoutes, hidden, heat,
       onBackground: (x, y) => {
         const near = nearestServices(services, m.id, x, y);
         const KIND = { repair: 'Repair', vendor: 'Vendor', trainer: 'Trainer', flight: 'Flight master', inn: 'Innkeeper', bank: 'Bank', quests: 'Quests' };
@@ -1984,22 +1989,22 @@ pages.map = async (id, params) => {
     document.getElementById('layersNone')?.addEventListener('click', () => setAll(false));
     document.getElementById('layersDefault')?.addEventListener('click', () => setAll(false, MAP_DEFAULT_LAYERS));
     document.getElementById('geojson')?.addEventListener('click', () => {
-      const routes = routesFor(m.id, derived().sessions, state.tracks);
+      const routes = ownRoutes;
       download(`${(m.zone ?? `map-${m.id}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.geojson`, 'application/geo+json', JSON.stringify(toGeoJSON({ name: m.zone ?? `Map ${m.id}`, mapId: m.id, zone: m.zone, markers: cluster(markers), routes }), null, 1));
     });
   });
-  const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : counts[k]);
+  const layers = Object.entries(LAYERS).filter(([k, l]) => (k === 'route' ? Boolean(who) : l.heat ? true : counts[k]));
   return `${whoChar ? crumb(`#/character/${enc(whoChar.key)}?tab=completion`, whoChar.name) : crumb('#/locations', 'Locations')}
     ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), `${esc(m.subzones.join(' · '))}${whoChar ? ` · ${esc(whoChar.name)}'s own moments (deaths, close calls, level-ups, marks, screenshots) are on this map too` : ''}`, `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
     <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}<span class="row" style="margin-left:auto"><button class="ghost small" id="layersDefault" title="Quests and your route">Default</button><button class="ghost small" id="layersAll">All</button><button class="ghost small" id="layersNone">None</button></span></div>
     <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>
-    ${replayPanel(m)}`;
+    ${who ? replayPanel(m, ownSessions) : ''}`;
 };
 
 // Route replay: the route walked on this map, drawn in over a few seconds,
 // recorded to a WebM (quick B-roll) or a PNG sequence (for Premiere).
-function replayPanel(m) {
-  const routes = routesFor(m.id, derived().sessions, state.tracks);
+function replayPanel(m, sessions = derived().sessions) {
+  const routes = routesFor(m.id, sessions, state.tracks);
   if (!routes.length) return '';
   setTimeout(() => wireReplay(m, routes));
   return `<div class="panel replay" id="replayPanel">
@@ -2423,7 +2428,7 @@ async function oldJournalPage() {
     <p class="muted">Zones with quests ${cov.char ? esc(cov.char.name) : 'someone'} can do, from the quest database.</p>
     ${table(unvisited, [
       { label: 'Zone', value: (z) => z.name, html: (z) => `<a href="#/zone/${enc(z.name)}">${esc(z.name)}</a>` },
-      { label: 'Map', value: (z) => '', html: (z) => (z.mapId ? `<a class="chip" href="#/map/${z.mapId}?show=unfound,rares">map</a>` : '') },
+      { label: 'Map', value: (z) => '', html: (z) => (z.mapId ? `<a class="chip" href="#/map/${z.mapId}">map</a>` : '') },
       { label: 'Quests', value: (z) => z.total, num: true },
       { label: 'Ready now', value: (z) => z.counts.ready ?? 0, num: true },
       { label: 'Later', value: (z) => z.counts.later ?? 0, num: true },

@@ -17,11 +17,11 @@ The addon logs everything and the web app ties it to footage across two computer
 
 ## Locations (done)
 
-Zone maps with layers (quests, creatures, people, vendors, gathering, loot, deaths and close calls, lore, marks/screenshots/level-ups, route), creature-density and time-spent heat, per-quest maps with kills while active and objective progress, per-creature sighting maps with density, a live position marker on recording pages, own map images cropped in the app.
+Zone maps with layers (quests, creatures, people, vendors, gathering, loot, lore), creature-density and time-spent heat shared by the account, and a character's own moments (deaths and close calls, marks, screenshots, level-ups) and route only on that character's view of the map, per-quest maps with kills while active and objective progress, per-creature sighting maps with density, a live position marker on recording pages, own map images cropped in the app.
 
 ## Captured since 0.3.0
 
-NPCs near you, loot windows and drop rates, the full item catalog, vendors, trainers, flight masters, fights, character progression, the 2-second position track, screenshots and optional social logging; with Characters, Bestiary, Items, Vendors, Highlights, Footage finder, Screenshots and global search in the web app.
+NPCs near you, loot windows and drop rates, the full item catalog, vendors, trainers, flight masters, fights, character progression, the 2-second position track and optional social logging; with Characters, Bestiary, Items, Vendors, Highlights, Footage finder and global search in the web app.
 
 ## Done since
 
