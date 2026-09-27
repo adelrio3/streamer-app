@@ -757,7 +757,25 @@ export class Machine {
     return out;
   }
 
+  // OBS's own health (memory, frames it could not render or encode, disk
+  // left): a Source Record encoder that cannot keep up hoards frames in
+  // memory until the Mac gives out, and this shows it coming.
+  async pollObsStats() {
+    if (this.obsStatus?.state !== 'connected') { this.obsStats = null; return; }
+    const st = await this.obs.request('GetStats').catch(() => null);
+    if (!st) return;
+    const prev = this.obsStats;
+    this.obsStats = { memoryMB: st.memoryUsage ?? null, diskMB: st.availableDiskSpace ?? null, fps: st.activeFps ?? null, renderSkipped: st.renderSkippedFrames ?? 0, outputSkipped: st.outputSkippedFrames ?? 0, at: Date.now() };
+    const mem = this.obsStats.memoryMB || 0;
+    if (mem > 12000 && (!prev || prev.memoryMB <= 12000 || Date.now() - (this.obsWarnedAt || 0) > 10 * 60 * 1000)) {
+      this.obsWarnedAt = Date.now();
+      this.notify(`OBS is using ${(mem / 1024).toFixed(1)} GB of memory and climbing: an encoder is not keeping up. Stop recording and restart OBS before it takes the Mac down.`);
+    }
+    if (this.srec?.on && prev && this.obsStats.outputSkipped - prev.outputSkipped > 30) this.notify(`OBS skipped ${this.obsStats.outputSkipped - prev.outputSkipped} frames in the last ten seconds: an encoder is overloaded.`);
+  }
+
   async pollSourceRecord() {
+    await this.pollObsStats().catch(() => {});
     if (this.obsStatus?.state !== 'connected') { if (this.srec) { this.srec = null; this.changed('obs'); } return; }
     const before = this.srec ? `${this.srec.on}|${this.srec.filters.length}` : '';
     await this.sourceRecordFilters().catch(() => {});
