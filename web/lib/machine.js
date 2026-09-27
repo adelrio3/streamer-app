@@ -531,6 +531,7 @@ export class Machine {
   async initRec() {
     this.recRoot = await folders.savedFolder('recordings');
     await this.checkRec();
+    this.changed('wow'); // the folder is read: pages that depend on it redraw
   }
 
   async checkRec() {
@@ -626,7 +627,9 @@ export class Machine {
   async scanRec() {
     if (this.rec.state !== 'ok') return;
     const videos = await folders.listVideos(this.recRoot);
+    const before = [...(this.rec.videos?.keys() || [])].sort().join('\n');
     this.rec.videos = new Map(videos.map((v) => [v.name.toLowerCase(), v]));
+    if (before !== [...this.rec.videos.keys()].sort().join('\n')) this.changed('wow');
     const now = Date.now();
     // A file replaced by another with the same name and a new extension (the
     // shrinker's cam.mp4 for cam.mov) takes over: the old entry goes.

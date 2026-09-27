@@ -2867,8 +2867,9 @@ pages.recordings = async (_, params) => {
       invalidate(); route();
     });
   });
+  const reading = Boolean(m?.config?.records) && !folder && m.rec?.state !== 'none' && m.rec?.state !== 'needs-permission';
   const outstanding = folder ? outstandingPackages() : [];
-  const batchHtml = !folder ? '' : batch
+  const batchHtml = !folder ? (reading ? '<p class="small muted">Reading the recordings folder…</p>' : '') : batch
     ? `<p class="small"><span class="dot live" style="display:inline-block"></span> <b>Batch running</b> · <span id="batchStatus">${esc(batch.status)}</span> <button id="batchStop" class="ghost" ${batch.stop ? 'disabled' : ''}>Stop after this one</button></p>`
     : `<p class="small"><button id="batchRun" class="primary" ${outstanding.length ? '' : 'disabled'}>Process ${outstanding.length ? `${outstanding.length} outstanding session${outstanding.length === 1 ? '' : 's'}` : 'outstanding sessions'} (overnight)</button> <span class="muted">Shrinks the camera files${(settings().sessionPack || {}).shrinkCam ? '' : ' (once the shrinker is set up on This computer)'} and builds each session's overlay video and Premiere sequence, one after another. Press it when you are done for the night and keep this tab open; nothing heavy runs on its own.</span></p>`;
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `${batchHtml}<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
@@ -3831,7 +3832,7 @@ const firstHandChip = (kind, key) => (noteFor(kind, key).length ? ' <span class=
 
 // Which pages show which topics. Everything else redraws only when the
 // recorded data changes, so a kill on the live link never rebuilds a map.
-const PAGE_TOPICS = { '': ['data', 'voice'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
+const PAGE_TOPICS = { '': ['data', 'voice'], recordings: ['data', 'wow'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
 function changed(topic = 'all') {
   if (topic !== 'live' && topic !== 'obs' && topic !== 'clock') invalidate();
   renderStatus();
