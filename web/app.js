@@ -2850,7 +2850,7 @@ pages.recordings = async () => {
   const list = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [] }));
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.')}
     ${table(list, [
-      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).length ? `<br><span class="muted small">with ${r.companions.map((c) => `${c.role === 'cam' ? 'camera' : 'overlay'} sidecar <span title="${esc(c.name)}">${esc(c.name)}</span>`).join(', ')}</span>` : ''}` },
+      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}</span>`).join('')}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },

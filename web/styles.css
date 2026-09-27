@@ -210,6 +210,7 @@ details > summary { cursor: pointer; color: var(--gold-2); }
 .quote { font-family: var(--serif); font-size: 1.08rem; color: var(--text-2); padding: 6px 0 6px 14px; border-left: 2px solid var(--line-2); margin: 4px 0 10px; white-space: pre-wrap; }
 
 .chip { font-family: var(--sans); font-variant-numeric: lining-nums tabular-nums; font-size: .74rem; padding: 1px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; display: inline-block; line-height: 1.5; }
+.chip.sidecar { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 45%, transparent); background: color-mix(in srgb, var(--cyan) 10%, var(--panel-2)); }
 .chip.done { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .chip.active { color: var(--gold-2); border-color: color-mix(in srgb, var(--gold) 45%, transparent); box-shadow: 0 0 12px -4px rgba(var(--gold-rgb), .6); }
 .chip.abandoned, .chip.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
