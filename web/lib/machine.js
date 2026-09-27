@@ -11,6 +11,7 @@ import { measureClock } from './cloud.js';
 import { readAddonLog, mergeSession } from './sessions.js';
 import { clockModel, startFromName, baseName, eventMs, recordingRole } from './timeline.js';
 import { readMovieInfo, isMovieFile } from './mov.js';
+import { stem } from './exports.js';
 import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken, PAD_PREFIX } from './live.js';
 import { VoiceNotes } from './voice.js';
 import { ObsLink } from './obs.js';
@@ -606,6 +607,16 @@ export class Machine {
     const videos = await folders.listVideos(this.recRoot);
     this.rec.videos = new Map(videos.map((v) => [v.name.toLowerCase(), v]));
     const now = Date.now();
+    // A file replaced by another with the same name and a new extension (the
+    // shrinker's cam.mp4 for cam.mov) takes over: the old entry goes.
+    const stems = new Map(videos.map((v) => [stem(v.name).toLowerCase(), v.name]));
+    const replaced = this.state.rows.filter((r) => r.machine === this.name && !this.rec.videos.has(r.name.toLowerCase()) && stems.has(stem(r.name).toLowerCase()) && stems.get(stem(r.name).toLowerCase()).toLowerCase() !== r.name.toLowerCase());
+    if (replaced.length) {
+      const names = replaced.map((r) => r.name);
+      await this.store.deleteRecordings(names).catch(() => {});
+      this.state.rows = this.state.rows.filter((r) => !names.includes(r.name));
+      this.changed('data');
+    }
     for (const v of videos) {
       const row = this.row(v.name);
       const growing = now - v.lastModified < GROWING_FOR;

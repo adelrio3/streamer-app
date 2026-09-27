@@ -3226,8 +3226,10 @@ async function autoPack() {
   if (!m?.config?.records || !sp?.auto || autoPacking || !state.sessions) return;
   const packs = readPacks();
   const now = Date.now() + (m.offset ?? 0);
+  // With the shrinker installed, a ProRes camera file (.mov) is about to be replaced by its .mp4: wait for it, up to three hours.
+  const shrinking = (r) => Boolean(sp.shrinkCam) && now - r.end < 3 * 3600 * 1000 && (r.companions || []).some((c) => c.role === 'cam' && /\.mov$/i.test(c.name));
   const next = derived().recordings
-    .filter((r) => r.role === 'game' && r.machine === m.name && r.duration > 30 && !packs[r.name] && !building.has(r.id) && now - r.end > 60000 && now - r.end < 14 * 24 * 3600 * 1000 && (derived().timelines.get(r.id) || []).length > 0)
+    .filter((r) => r.role === 'game' && r.machine === m.name && r.duration > 30 && !packs[r.name] && !building.has(r.id) && now - r.end > 60000 && now - r.end < 14 * 24 * 3600 * 1000 && (derived().timelines.get(r.id) || []).length > 0 && !shrinking(r))
     .sort((a, b) => b.start - a.start)[0];
   if (!next) return;
   autoPacking = true;
@@ -3476,6 +3478,12 @@ pages.setup = async () => {
         <label><span>Overlay size</span><select name="pack_size"><option value="recording" ${(settings().sessionPack || {}).size !== '1080' ? 'selected' : ''}>${settings().width}×${settings().height} (the recording)</option><option value="1080" ${(settings().sessionPack || {}).size === '1080' ? 'selected' : ''}>1920×1080 (scaled up in Premiere)</option></select></label>
       </div>
       <p class="small">Writing next to the recordings: <b id="recWriteState">checking…</b> <button type="button" id="recWrite" class="ghost">Allow</button> <span class="muted">Chrome asks once per visit; without it the files go to this computer's Downloads folder.</span></p>
+      <h3 style="margin-top:18px">Camera files</h3>
+      <p class="small">A ProRes camera file is the only kind the second encoder rail makes, and it is huge. This app cannot decode ProRes, so a small helper on this Mac does the shrinking: a few minutes after a <code>cam …mov</code> finishes, it turns it into an HEVC .mp4 on the hardware encoder (about 7 GB an hour at 16 Mbps), checks the length, and moves the ProRes to the Trash. The .mp4 keeps the name, so it pairs with the gameplay the same way. One-time set-up: paste this in Terminal (it installs ffmpeg with Homebrew if needed and a launchd job that runs every 3 minutes).</p>
+      <label><span>Recordings folder on this Mac</span><input type="text" name="pack_folder" id="packFolder" value="${esc((settings().sessionPack || {}).folder || m.obs?.recordDirectory || '')}" placeholder="/Users/you/Movies"></label>
+      <pre class="small" id="shrinkCmd" style="white-space:pre-wrap;user-select:all"></pre>
+      <label class="check"><input type="checkbox" name="pack_shrink" ${(settings().sessionPack || {}).shrinkCam ? 'checked' : ''}><span>The shrinker is installed: wait for the shrunk camera file (up to three hours) before building the session package, so the sequence points at the .mp4</span></label>
+      <p class="small muted">Its log is <code>~/Library/Logs/compendium-shrink.log</code>. To remove it: <code>launchctl unload ~/Library/LaunchAgents/com.compendium.shrink.plist && rm ~/Library/LaunchAgents/com.compendium.shrink.plist</code>.</p>
       <h3 style="margin-top:18px">Two captures: gameplay and camera</h3>
       <p class="small">Any video that appears in the recordings folder (or one of its subfolders) and keeps growing is a recording under way, whoever writes it: OBS's own recording, a <b>Source Record</b> filter, or QuickTime Player. Its start comes from the file name (the pattern above) or, failing that, from the file's own movie header, so nothing needs renaming; its end from when the file stops growing. A file in a folder named <code>cam</code> (or named <code>cam …</code>) is the camera; it pairs with every gameplay recording it overlaps in time, so a camera left recording all evening serves each session, trimmed to fit on its own track. Keep the gameplay file H.264 or HEVC (Apple VT, 8-bit) so it plays in this app; the camera can be ProRes, which plays in Premiere only.</p>
       <p class="small muted">Suggested on an Apple silicon Mac: gameplay through Source Record on the game capture with Apple VT HEVC or H.264 at 60 to 80 Mbps into a .mov or .mp4; the camera through Source Record on the camera source with Apple ProRes (422 LT or Proxy) into a <code>cam</code> subfolder. Two encode engines, nothing contending.</p>
@@ -3615,12 +3623,19 @@ function wireSetup() {
     const f = new FormData(ev.target);
     const obsMore = (m.config.obsMore || []).map((c) => ({ ...c, enabled: f.get(`more_${c.key}_enabled`) === 'on', port: Number(f.get(`more_${c.key}_port`)) || c.port, password: String(f.get(`more_${c.key}_password`) ?? '') }));
     m.saveConfig({ pattern: f.get('pattern'), obs: { enabled: f.get('enabled') === 'on', password: f.get('password'), port: Number(f.get('port')) || 4455 }, obsMore });
-    state.settings = { ...state.settings, sessionPack: { ...(state.settings.sessionPack || {}), auto: f.get('pack_auto') === 'on', fps: Number(f.get('pack_fps')) || 30, size: String(f.get('pack_size') || 'recording') } };
+    state.settings = { ...state.settings, sessionPack: { ...(state.settings.sessionPack || {}), auto: f.get('pack_auto') === 'on', fps: Number(f.get('pack_fps')) || 30, size: String(f.get('pack_size') || 'recording'), shrinkCam: f.get('pack_shrink') === 'on', folder: String(f.get('pack_folder') || '').trim() } };
     state.store.saveSettings(state.settings).catch(() => {});
     toast('Saved.');
     setTimeout(route, 1500);
     setTimeout(autoPack, 2000);
   });
+  const shrinkCmd = document.getElementById('shrinkCmd');
+  if (shrinkCmd) {
+    const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}`;
+    const show = () => { const dir = document.getElementById('packFolder')?.value.trim() || '/Users/you/Movies'; shrinkCmd.textContent = `curl -fsSL ${base}shrink/install.sh | COMPENDIUM_SHRINK_URL="${base}shrink/shrink.sh" bash -s -- "${dir.replace(/"/g, '\\"')}" 16M`; };
+    show();
+    document.getElementById('packFolder')?.addEventListener('input', show);
+  }
   const recWriteState = document.getElementById('recWriteState');
   if (recWriteState) {
     const show = async () => { const ok = await m.recWritable(); recWriteState.textContent = ok ? 'allowed' : m.recRoot ? 'not yet allowed' : 'no recordings folder chosen'; const b = document.getElementById('recWrite'); if (b) b.hidden = ok || !m.recRoot; };
