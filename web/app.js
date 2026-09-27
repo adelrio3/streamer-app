@@ -2845,12 +2845,29 @@ function recSummary(r) {
   return { ...r, events: events.length, counts, zones: [...new Set(events.map((e) => e.z).filter(Boolean))] };
 }
 
-pages.recordings = async () => {
+pages.recordings = async (_, params) => {
   const { recChars } = derived();
-  const list = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [] }));
-  return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.')}
+  const m = state.machine;
+  // On the recording computer the folder decides: entries whose files are gone are kept out of sight until removed.
+  const folder = m?.config?.records && m.rec?.state === 'ok' ? m.rec.videos : null;
+  const present = (name) => !folder || folder.has(String(name).toLowerCase());
+  const all = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [], gone: !present(r.name) }));
+  const gone = all.filter((r) => r.gone);
+  const goneNames = [...new Set(derived().allRecordings.filter((r) => !present(r.name)).map((r) => r.name))];
+  const showAll = params?.get('show') === 'all';
+  const list = showAll ? all : all.filter((r) => !r.gone);
+  setTimeout(() => {
+    document.getElementById('recRefresh')?.addEventListener('click', async (ev) => { ev.currentTarget.disabled = true; try { await m.scanRec(); await m.refresh(); } catch (err) { toast(err.message); } invalidate(); route(); });
+    document.getElementById('recForget')?.addEventListener('click', async (ev) => {
+      if (!confirm(`Remove ${goneNames.length} recording entr${goneNames.length === 1 ? 'y' : 'ies'} whose files are no longer in the folder? The events they held stay in their play sessions.`)) return;
+      ev.currentTarget.disabled = true;
+      try { await state.store.deleteRecordings(goneNames); state.rows = state.rows.filter((r) => !goneNames.includes(r.name)); toast(`${goneNames.length} removed.`); } catch (err) { toast(err.message); }
+      invalidate(); route();
+    });
+  });
+  return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.', folder ? `<div class="row"><button id="recRefresh">Refresh from the folder</button>${gone.length ? `<span class="muted small">${gone.length} entr${gone.length === 1 ? 'y' : 'ies'} whose file${gone.length === 1 ? ' is' : 's are'} gone from the folder${showAll ? '' : ' (hidden)'}: <a href="#/recordings${showAll ? '' : '?show=all'}">${showAll ? 'hide' : 'show'}</a> · <button id="recForget" class="ghost">Remove ${gone.length === 1 ? 'it' : 'them'}</button></span>` : ''}</div>` : '')}
     ${table(list, [
-      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}</span>`).join('')}` },
+      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip sidecar" title="${esc(c.name)}">+${c.role === 'cam' ? 'cam' : 'overlay'}</span>`).join('')}${r.gone ? ' <span class="chip">file gone</span>' : ''}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },

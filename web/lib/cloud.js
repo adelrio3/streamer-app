@@ -128,6 +128,14 @@ export class CloudStore {
     }
   }
 
+  // Removes recording entries for good (their files are gone from the recording computer).
+  async deleteRecordings(names) {
+    for (let i = 0; i < names.length; i += 100) {
+      const { error } = await this.client.from('recordings').delete().eq('user_id', this.userId).in('name', names.slice(i, i + 100));
+      if (error) throw new Error(error.message);
+    }
+  }
+
   async saveRecording(row) {
     const now = this.nowIso();
     const full = { ...row, user_id: this.userId, updated_at: now };
