@@ -227,6 +227,24 @@ function dbQuestFacts(db, q, cov) {
 }
 
 // Givers, turn-in, objectives, chain and rewards of a quest, from the database.
+// Your own sightings of an NPC or object on one map, as [x, y] percent
+// pairs, the same spot (to the nearest percent) once, oldest first.
+function ownSpots(n, mapId, max = 6, zoneName = null) {
+  if (!n?.spots?.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (const sp of n.spots) {
+    if (sp.x == null || sp.y == null) continue;
+    if (mapId != null ? sp.m !== mapId : zoneName ? sp.z !== zoneName : true) continue;
+    const key = `${Math.round(sp.x)},${Math.round(sp.y)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([sp.x, sp.y]);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 async function dbQuestBody(db, q, cov, { map = true, text = true } = {}) {
   const link = (id) => { const x = db.quests.get(id); if (!x) return `quest ${id}`; const st = questState(x, cov.ctx); return `<a href="#/quest/q${id}">${esc(x.n)}</a> ${st === 'other' ? reqChip(x, cov) : st === 'excluded' ? '' : stateChip(st)}`; };
   const who = (list) => list.map((g) => (g.kind === 'npc' ? `<a href="#/npc/n${g.id}">${esc(g.name)}</a>${g.sub ? ` <span class="muted small">&lt;${esc(g.sub)}&gt;</span>` : ''}${g.zone ? ` <span class="muted small">in ${esc(db.zoneName(g.zone))}</span>` : ''}` : g.kind === 'object' ? `${esc(g.name)} <span class="muted small">(object${g.zone ? ` in ${esc(db.zoneName(g.zone))}` : ''})</span>` : `${itemLink(g.id, g.name)} <span class="muted small">(item)</span>`)).join('<br>');
@@ -234,6 +252,8 @@ async function dbQuestBody(db, q, cov, { map = true, text = true } = {}) {
   // opened, quests found. The database fills in nothing else.
   const { world, codex: cdx } = derived();
   const met = new Set(); const opened = new Set(); const hunted = new Set();
+  const byId = new Map();
+  for (const n of [...world.npcs, ...world.objects]) for (const id of n.ids || (n.npcId ? [n.npcId] : n.objectId ? [n.objectId] : [])) byId.set(`${n.object ? 'o' : 'n'}${id}`, n);
   for (const n of world.npcs) for (const id of n.ids || (n.npcId ? [n.npcId] : [])) met.add(id);
   for (const n of world.creatures) if (n.kills > 0) for (const id of n.ids || (n.npcId ? [n.npcId] : [])) hunted.add(id);
   for (const n of world.objects) if (n.loots > 0 && n.objectId) opened.add(n.objectId);
@@ -250,12 +270,13 @@ async function dbQuestBody(db, q, cov, { map = true, text = true } = {}) {
   const bcs = (q.bcs || []).filter((id) => found.has(id));
   let mapHtml = '';
   if (map) {
-    const spawns = await spawnTable();
     const zone = q.zone ? db.zones[q.zone] : null;
     const pins = [];
-    for (const g of gv) if (known(g)) for (const [x, y] of (spawns[`${g.kind[0]}${g.id}`]?.[q.zone] || []).slice(0, 6)) pins.push({ x, y, layer: 'unfound', label: `${g.name} gives ${q.n}`, key: `g${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
-    for (const g of en) if (known(g)) for (const [x, y] of (spawns[`${g.kind[0]}${g.id}`]?.[q.zone] || []).slice(0, 6)) pins.push({ x, y, layer: 'person', label: `${g.name} takes ${q.n} back`, key: `e${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
-    for (const o of obs) if (o.kind === 'kill' && (o.ids || [o.id]).some((id) => hunted.has(id))) for (const [x, y] of (spawns[`n${o.id}`]?.[q.zone] || []).slice(0, 24)) pins.push({ x, y, layer: 'creature', label: o.name, key: `k${o.id}`, href: `#/npc/n${o.id}` });
+    // Only where you yourself came across them on this map: never the database's spawn list.
+    const seenAt = (kind, id, max) => ownSpots(byId.get(`${kind === 'object' ? 'o' : 'n'}${id}`), zone?.m, max);
+    for (const g of gv) if (known(g)) for (const [x, y] of seenAt(g.kind, g.id, 6)) pins.push({ x, y, layer: 'unfound', label: `${g.name} gives ${q.n}`, key: `g${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
+    for (const g of en) if (known(g)) for (const [x, y] of seenAt(g.kind, g.id, 6)) pins.push({ x, y, layer: 'person', label: `${g.name} takes ${q.n} back`, key: `e${g.id}`, href: g.kind === 'npc' ? `#/npc/n${g.id}` : '#' });
+    for (const o of obs) if (o.kind === 'kill') for (const id of (o.ids || [o.id]).filter((x) => hunted.has(x))) for (const [x, y] of seenAt('npc', id, 24)) pins.push({ x, y, layer: 'creature', label: o.name, key: `k${o.id}`, href: `#/npc/n${o.id}` });
     if (zone?.m && pins.length) {
       setTimeout(() => wireMap('dbQuestMap', zone.m, pins, { routes: false }));
       mapHtml = `<h3>Where</h3><div class="filters" id="mapLayers"><label><input type="checkbox" value="unfound" checked><span class="cat" style="background:${LAYERS.unfound.color}"></span>Quest giver</label><label><input type="checkbox" value="person" checked><span class="cat" style="background:${LAYERS.person.color}"></span>Turn in</label><label><input type="checkbox" value="creature" checked><span class="cat" style="background:${LAYERS.creature.color}"></span>Targets</label></div><div class="map-wrap"><div class="map" id="dbQuestMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin.</p></div></div>`;
@@ -1611,7 +1632,6 @@ const wikiName = (href, name, done) => `<a href="${href}" class="${done ? '' : '
 pages.locations = async (_, params) => {
   const db = await questDB();
   if (!db) return `${pageHead('World', 'Locations', 'Every place you have been. The quest database is not available, so there is nothing to show yet.')}`;
-  const spawns = await spawnTable();
   const { maps, codex: c, world, sessions } = derived();
   const cov = coverageWho();
   const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
@@ -1628,15 +1648,16 @@ pages.locations = async (_, params) => {
   const stories = storylines(db, cov.ctx);
   const experienced = new Set(c.quests.map((q) => q.qid).filter(Boolean));
   const mapIdFor = (z) => maps.find((m) => m.zone?.toLowerCase() === z.name.toLowerCase())?.id ?? z.mapId ?? null;
-  // Verified pins: where the database places the people you have met, the
-  // creatures you have hunted and the objects you have opened in this zone.
-  // A few spawn points each, every one a link to its page.
+  // Pins: where you yourself met the people, hunted the creatures and opened
+  // the objects of this zone (your own sightings, a few spots each, every one
+  // a link to its page). The database's spawn list is never drawn.
   const pinsFor = (z) => {
     const out = [];
-    const add = (n, layer, pts, max) => { for (const [x, y] of pts.slice(0, max)) out.push({ x, y, layer, label: n.name, key: n.key, href: `#/npc/${enc(n.key)}` }); };
-    for (const n of world.people) if (n.zones.includes(z.name) && peopleStatus(n) !== 'seen') for (const id of n.ids || (n.npcId ? [n.npcId] : [])) add(n, n.quests.size ? 'quest' : 'person', spawns[`n${id}`]?.[z.zoneId] || [], 4);
-    for (const n of world.creatures) if (n.zones.includes(z.name) && n.kills > 0) for (const id of n.ids || (n.npcId ? [n.npcId] : [])) add(n, 'creature', spawns[`n${id}`]?.[z.zoneId] || [], 6);
-    for (const n of world.objects) if (n.zones.includes(z.name) && n.loots > 0 && n.objectId) add(n, 'object', spawns[`o${n.objectId}`]?.[z.zoneId] || [], 6);
+    const mapId = mapIdFor(z);
+    const add = (n, layer, max) => { for (const [x, y] of ownSpots(n, mapId, max, z.name)) out.push({ x, y, layer, label: n.name, key: n.key, href: `#/npc/${enc(n.key)}` }); };
+    for (const n of world.people) if (n.zones.includes(z.name) && peopleStatus(n) !== 'seen') add(n, n.quests.size ? 'quest' : 'person', 4);
+    for (const n of world.creatures) if (n.zones.includes(z.name) && n.kills > 0) add(n, 'creature', 6);
+    for (const n of world.objects) if (n.zones.includes(z.name) && n.loots > 0) add(n, 'object', 6);
     return out;
   };
   const detail = (cont, z) => {
