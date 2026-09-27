@@ -3439,9 +3439,17 @@ async function runBatch() {
         batchSay(`Shrinking ${name}${prog ? `: ${duration(prog.seconds)}${total ? ` of ${duration(total)}` : ''}${prog.speed ? ` · ${prog.speed.toFixed(1)}× real time` : ''}${leftSec != null ? ` · about ${ago(leftSec * 1000)} left` : ''}` : ' (no word from ffmpeg yet)'}${stalled ? ` · no progress for ${ago(Date.now() - lastProgressAt)}` : ''}`, frac, queue);
       } else if (status.startsWith('done')) {
         batchSay(`The shrinker finished ${status.split(' ').slice(1, -1).join(' ')}; waiting for it to pick up the next file (it looks every 3 minutes)…`, camsAtStart ? camsDone / camsAtStart : null, queue);
+      } else if (status.startsWith('error')) {
+        toast(`The camera shrinker stopped: ${status.replace(/^error\s*/, '').replace(/\s+\d+$/, '')}. The remaining packages were left for next time.`);
+        break;
       } else {
+        // Nothing from the shrinker yet: say whether it is even looking at this folder.
+        const seen = Number(((await m.readRecText('.compendium-shrink-seen')) || '').split(' ')[1]) * 1000;
+        const looked = seen ? `it last looked at this folder ${ago(Date.now() - seen)} ago` : 'it has never looked at this folder (installed on This computer › Session package › Camera files, and pointed at this folder?)';
         const silent = Date.now() - lastShrinkAt;
-        batchSay(`Waiting for the camera shrinker to start${flag ? '' : ' (its go-flag is gone)'}: no word for ${ago(silent)}. It checks the folder every 3 minutes; ${flag ? 'this batch gives up after 3 hours of silence' : 'this batch gives up after 20 minutes'}.`, camsAtStart ? camsDone / camsAtStart : null, queue);
+        batchSay(silent < 4 * 60 * 1000 && flag
+          ? `Asked the shrinker to start ${ago(silent)} ago; it checks the folder every 3 minutes, so the first word can take that long. So far ${looked}.`
+          : `Waiting for the camera shrinker${flag ? '' : ' (its go-flag is gone)'}: no word for ${ago(silent)}; ${looked}. This batch gives up after ${flag ? '3 hours' : '20 minutes'} of silence.`, camsAtStart ? camsDone / camsAtStart : null, queue);
       }
       if (!flag && !shrinking) {
         // The helper cleared its flag with camera files still ProRes: it is not installed, or it gave up. Do not wait forever.
@@ -3729,6 +3737,7 @@ pages.setup = async () => {
       <label><span>Recordings folder on this Mac</span><input type="text" name="pack_folder" id="packFolder" value="${esc((settings().sessionPack || {}).folder || m.obs?.recordDirectory || '')}" placeholder="/Users/you/Movies"></label>
       <pre class="small" id="shrinkCmd" style="white-space:pre-wrap;user-select:all"></pre>
       <label class="check"><input type="checkbox" name="pack_shrink" ${(settings().sessionPack || {}).shrinkCam ? 'checked' : ''}><span>The shrinker is installed: the batch starts it and waits for each shrunk camera file before building that session's package, so the sequence points at the .mp4</span></label>
+      <p class="small" id="shrinkState">Shrinker: checking the folder…</p>
       <p class="small muted">Its log is <code>~/Library/Logs/compendium-shrink.log</code>. To remove it: <code>launchctl unload ~/Library/LaunchAgents/com.compendium.shrink.plist && rm ~/Library/LaunchAgents/com.compendium.shrink.plist</code>.</p>
       <h3 style="margin-top:18px">Two captures: gameplay and camera</h3>
       <p class="small">Any video that appears in the recordings folder (or one of its subfolders) and keeps growing is a recording under way, whoever writes it: OBS's own recording, a <b>Source Record</b> filter, or QuickTime Player. Its start comes from the file name (the pattern above) or, failing that, from the file's own movie header, so nothing needs renaming; its end from when the file stops growing. A file in a folder named <code>cam</code> (or named <code>cam …</code>) is the camera; it pairs with every gameplay recording it overlaps in time, so a camera left recording all evening serves each session, trimmed to fit on its own track. Keep the gameplay file H.264 or HEVC (Apple VT, 8-bit) so it plays in this app; the camera can be ProRes, which plays in Premiere only.</p>
@@ -3875,6 +3884,21 @@ function wireSetup() {
     setTimeout(route, 1500);
     setTimeout(autoPack, 2000);
   });
+  const shrinkState = document.getElementById('shrinkState');
+  if (shrinkState) {
+    // What the helper left in the folder: when it last looked, and its last word.
+    (async () => {
+      const seen = Number(((await m.readRecText('.compendium-shrink-seen')) || '').split(' ')[1]) * 1000;
+      const status = ((await m.readRecText(SHRINK_STATUS)) || '').trim();
+      const flag = await m.readRecText(SHRINK_FLAG);
+      const when = (t) => (t ? `${ago(Date.now() - t)} ago` : '');
+      const statusAt = Number(status.split(' ').at(-1)) * 1000;
+      const word = status ? `last word "${status.replace(/\s+\d+$/, '')}"${statusAt ? ` ${when(statusAt)}` : ''}` : 'no status written yet';
+      shrinkState.textContent = m.recRoot
+        ? `Shrinker: ${seen ? `last looked at this folder ${when(seen)}` : 'has never looked at this folder (a version from before today does not leave this mark: reinstall with the command above, then wait 3 minutes and reload)'} · ${word}${flag ? ' · go-flag present (a batch is asking it to run)' : ''}.`
+        : 'Shrinker: choose the recordings folder above first.';
+    })().catch(() => { shrinkState.textContent = 'Shrinker: could not read the folder.'; });
+  }
   const shrinkCmd = document.getElementById('shrinkCmd');
   if (shrinkCmd) {
     const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}`;
