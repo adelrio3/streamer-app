@@ -2316,7 +2316,7 @@ pages.lore = async (kind, params) => {
   const db = await questDB();
   const c = await codex();
   const { world, characters } = derived();
-  if (!db) return `${pageHead('Chronicle', 'Lore', 'The quest database is not available, so no tale can be told yet.')}${tabs}`;
+  if (!db) return `${pageHead('Lore', 'Tales', 'The quest database is not available, so no tale can be told yet.')}${tabs}`;
   const all = tales({ db, codex: c, world, characters });
   const told = all.filter((t) => t.complete);
   const living = all.filter((t) => !t.complete);
@@ -2335,18 +2335,26 @@ pages.lore = async (kind, params) => {
       try { await state.store.saveSettings(state.settings); toast(`The tales now say ${ev.target.value === 'female' ? 'she' : 'he'}.`); } catch (err) { toast(err.message); }
     });
   });
+  const chaptersLived = all.reduce((n, t) => n + t.done, 0);
   return `<div class="lore-hero">
-      <div class="lore-chest">❡</div>
-      <p class="kicker">Chronicle</p>
+      <div class="lore-chest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5A5.5 5.5 0 0 1 8.5 5h7a5.5 5.5 0 0 1 5.5 5.5V11H3z"/><path d="M3 12.5h18V19a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19z"/><path d="M10.5 9.5h3v6.5h-3z" fill="var(--bg)"/><path d="M11.5 11h1v2h-1z"/></svg></div>
       <h1>Lore</h1>
-      <p class="lore-lead">Every tale that has been lived to its end, kept here like treasure. ${told.length ? `${told.length} told` : 'None told yet'}${living.length ? ` · ${living.length} still being lived` : ''}.</p>
+      <p class="lore-lead">The stories of this world as they were actually lived, retold. Every storyline followed to its end becomes a tale for the shelf; the ones still under way wait beside them.</p>
+      <div class="lore-stats">
+        <div><b>${told.length}</b><small>tales told</small></div>
+        <div><b>${living.length}</b><small>being lived</small></div>
+        <div><b>${chaptersLived.toLocaleString()}</b><small>chapters lived</small></div>
+      </div>
+      <p class="lore-voice small">The adventurer in every tale is unnamed and told of as <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select>. A character's own account is the Journal on its page.</p>
     </div>
     ${tabs}
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
     ${living.length ? `<h2 class="lore-h">Still being lived</h2><div class="shelf">${living.map(cover).join('')}</div>` : ''}
-    ${!all.length ? '<p class="muted">The shelf is empty. Finish a storyline and its tale appears here.</p>' : ''}
-    <p class="muted small lore-pretend">The tales follow an unnamed adventurer, told of as <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select>. A character's own account is the Journal on its page.</p>
-    <p class="muted small lore-pretend">Hear a tale as if it were already done: <select id="pretendSel"><option value="">choose a storyline…</option>${pick.map((st) => `<option value="${st.id}">${esc(st.name)} (${esc(st.startZone ?? '')})</option>`).join('')}</select> <span class="muted">or any single quest by id: <a href="#/lore/tale?id=q4402&pretend=1">Galgar's Cactus Apple Surprise</a></span></p>`;
+    ${!all.length ? '<p class="muted" style="text-align:center">The shelf is empty. Finish a storyline and its tale appears here.</p>' : ''}
+    <div class="lore-foot">
+      <div class="panel"><h3>Read ahead</h3><p class="muted small">Hear a storyline as if it were already done, from the database alone.</p><select id="pretendSel"><option value="">choose a storyline…</option>${pick.map((st) => `<option value="${st.id}">${esc(st.name)} (${esc(st.startZone ?? '')})</option>`).join('')}</select></div>
+      <div class="panel"><h3>A single quest</h3><p class="muted small">Any quest can be told on its own, for example <a href="#/lore/tale?id=q4402&pretend=1">Galgar's Cactus Apple Surprise</a>.</p></div>
+    </div>`;
 };
 
 // The account's own voice for the tales: the unnamed adventurer is he or she.
@@ -2412,7 +2420,7 @@ pages.texts = async (_, params, tabs = tabsHtml([['tales', 'Tales'], ['texts', '
     document.getElementById('loreQ')?.addEventListener('change', go);
   });
   const KIND = { text: 'Book / plaque', gossip: 'Gossip', speech: 'Said aloud', quest: 'Quest text' };
-  return `${pageHead('Chronicle', 'Lore', 'The world in its own words: books and plaques, what people said when you spoke to them, and what was shouted across the zone.')}
+  return `${pageHead('Lore', 'Texts', 'The world in its own words: books and plaques, what people said when you spoke to them, and what was shouted across the zone.')}
     ${tabs}
     <div class="row spread">
       ${tabsHtml([['all', 'Everything', entries.length], ['gossip', 'Conversations', count('gossip')], ['speech', 'Overheard', count('speech')], ['text', 'Books & plaques', count('text')]], show, '#/lore?show=texts&kind=')}

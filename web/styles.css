@@ -36,6 +36,7 @@
   --cat-progress: #8fc15a; --cat-world: #c9a27a; --cat-economy: #e0b95a; --cat-character: #7fb7c9; --cat-social: #d78bb5; --cat-voice: #f0a5d0;
   --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --num: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; /* every counter and percentage */
   --side-w: 236px;
   --radius: 10px;
   --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 10px 30px -14px rgba(0, 0, 0, .8);
@@ -63,6 +64,12 @@ code, kbd { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; fon
 b, strong { font-weight: 600; }
 ul { padding-left: 1.2em; }
 li { margin-bottom: .25em; }
+
+/* Figures everywhere: lining and tabular, never the serif's squat ones. */
+.card .num, .cov b, .hero-pct .big, .pring > span, .rpg-lvl, .rpg-pct, .count, #nav a .pct, .tab .n, .tabs .n, .chip .n, td.num, .rpg-stat b, .wiki-kv b, .ring-num, .recent-item small, .kind small { font-variant-numeric: lining-nums tabular-nums; }
+.tab .n, .tabs .n { font-family: var(--num); font-weight: 600; }
+td.num, th.num { font-family: var(--num); }
+.ico svg { width: 1em; height: 1em; fill: currentColor; vertical-align: -.12em; filter: drop-shadow(0 0 6px rgba(var(--cyan-rgb), .35)); }
 
 /* Shell: sidebar + main ----------------------------------------------------- */
 
@@ -152,7 +159,7 @@ button.ghost:hover, .btn.ghost:hover { color: var(--text); background: var(--pan
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; margin: 14px 0 22px; }
 .card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); color: inherit; transition: border-color .12s, transform .12s; }
 a.card:hover { text-decoration: none; border-color: var(--line-2); transform: translateY(-1px); }
-.card .num { font-size: 2rem; font-family: var(--serif); font-weight: 600; color: var(--gold-2); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.card .num { font-size: 1.8rem; font-family: var(--num); font-weight: 700; letter-spacing: -.02em; color: var(--gold-2); line-height: 1.05; font-variant-numeric: tabular-nums; }
 .card .lbl { color: var(--muted); font-size: .84rem; margin-top: 2px; }
 .card.wide { grid-column: span 2; }
 
@@ -318,7 +325,7 @@ ol.steps li { margin-bottom: 6px; }
 .cov { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
 .cov .bar { flex: 1; height: 10px; }
 .cov .bar > div { background: linear-gradient(90deg, var(--gold), var(--gold-2)); box-shadow: 0 0 12px rgba(var(--gold2-rgb), .45); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
-.cov b { font-family: var(--serif); font-size: 1.15rem; color: var(--gold-2); min-width: 3.2em; text-align: right; }
+.cov b { font-family: var(--num); font-weight: 700; font-size: 1rem; color: var(--gold-2); min-width: 3.2em; text-align: right; }
 select.inline { display: inline-block; width: auto; margin: 0 4px; padding: 2px 8px; font-size: .9rem; }
 .chip.st-ready { color: var(--gold-2); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
 .chip.st-active { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 40%, transparent); }
@@ -534,7 +541,7 @@ a:focus-visible, button:focus-visible, .pin:focus-visible { outline: 2px solid v
 .feed-live .feed { max-height: 300px; overflow-y: auto; }
 .feed-live h3 .dot { margin-right: 6px; }
 .hero-pct { display: flex; gap: 22px; align-items: center; margin: 6px 0 22px; padding: 18px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-.hero-pct .big { font-family: var(--serif); font-weight: 600; font-size: 4rem; line-height: 1; color: var(--gold-2); background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; min-width: 3.2em; }
+.hero-pct .big { font-family: var(--num); font-weight: 800; font-size: 3.4rem; letter-spacing: -.03em; line-height: 1; color: var(--gold-2); background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; min-width: 3.2em; }
 .hero-pct .big span { font-size: .45em; }
 .hero-pct > div:last-child { flex: 1; min-width: 0; }
 .hero-pct .lead { font-size: 1.05rem; margin-bottom: 8px; }
@@ -559,7 +566,7 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 15%, var(--panel
 .rpg-foot .cov { margin: 6px 0; }
 .pring { --p: 0; --s: 44px; position: relative; flex: none; width: var(--s); height: var(--s); border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--gold) calc(var(--p) * 1%), var(--panel-3) 0); box-shadow: 0 0 14px rgba(var(--gold-rgb), calc(var(--p) / 260)); }
 .pring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--panel); }
-.pring > span { position: relative; font-family: var(--serif); font-weight: 600; font-size: calc(var(--s) * .32); color: var(--gold-2); line-height: 1; font-variant-numeric: tabular-nums; }
+.pring > span { position: relative; font-family: var(--num); font-weight: 700; font-size: calc(var(--s) * .29); letter-spacing: -.02em; color: var(--gold-2); line-height: 1; font-variant-numeric: tabular-nums; }
 .pring > span i { font-style: normal; font-size: .6em; opacity: .8; }
 .rpg-list { padding: 6px; max-height: 70vh; overflow: auto; }
 .rpg-head { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
@@ -568,14 +575,14 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 15%, var(--panel
 .rpg-row:hover b, .rpg-item:hover b { text-decoration: none; }
 .rpg-foot a { color: var(--gold-2); }
 .rpg-row.active { background: rgba(var(--gold-rgb), .1); border-color: rgba(var(--gold-rgb), .4); }
-.rpg-lvl { font-family: var(--serif); font-size: .95rem; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.rpg-lvl { font-family: var(--num); font-size: .85rem; font-weight: 600; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
 .rpg-name { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rpg-name b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rpg-bars { display: flex; flex-direction: column; gap: 3px; }
 .rpg-bars .bar, .rpg-stat .bar { display: block; height: 5px; min-width: 0; background: var(--panel-3); border-radius: 3px; overflow: hidden; }
 .rpg-bars .bar > span, .rpg-stat .bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
 .rpg-bars .bar.disc > span { background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); }
-.rpg-pct { font-family: var(--serif); font-size: 1.25rem; color: var(--gold-2); text-align: right; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+.rpg-pct { font-family: var(--num); font-weight: 700; font-size: 1.05rem; color: var(--gold-2); text-align: right; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
 .rpg-pct > span { white-space: nowrap; }
 .rpg-pct i { font-style: normal; font-size: .6em; opacity: .8; }
 .rpg-pct em { font-style: normal; font-family: var(--sans); font-size: .7rem; margin-top: 4px; color: var(--gold-2); opacity: .9; }
@@ -585,7 +592,7 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 15%, var(--panel
 .rpg-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rpg-stat { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; }
 a.rpg-stat:hover { border-color: var(--line-2); }
-.rpg-stat b { font-family: var(--serif); font-size: 1.35rem; font-weight: 600; }
+.rpg-stat b { font-family: var(--num); font-size: 1.2rem; font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
 @media (max-width: 1100px) { .rpg { grid-template-columns: 220px 1fr; } .rpg-detail { grid-column: 1 / -1; position: static; } }
 @media (max-width: 720px) { .rpg { grid-template-columns: 1fr; } .rpg-menu, .rpg-list { position: static; max-height: none; } }
 main.enter .rpg-item, main.enter .rpg-row { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 20ms); }
@@ -605,7 +612,7 @@ main.enter .chapter { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards
 a.dim, .dim a, span.dim { color: var(--faint); }
 a.dim:hover { color: var(--muted); }
 .dim-item a.q0, .dim-item a.q1, .dim-item a.q2, .dim-item a.q3, .dim-item a.q4, .dim-item a.q5, .dim-item a.q6 { color: var(--faint); text-decoration: underline dotted var(--line-2); text-underline-offset: 3px; }
-.count { color: var(--gold-2); font-family: var(--serif); font-size: .95em; opacity: .9; }
+.count { color: var(--gold-2); font-family: var(--num); font-size: .8em; font-weight: 600; opacity: .9; }
 .rpg-row.dim b { color: var(--faint); font-weight: 500; }
 .rpg-row.dim .rpg-pct { color: var(--faint); }
 .chapter.dim { padding: 8px 14px; color: var(--faint); border-left-color: var(--line); }
@@ -614,7 +621,7 @@ a.dim:hover { color: var(--muted); }
 .wiki-sec h3 { margin: 0 0 4px; font-size: 1rem; }
 .wiki-names { margin: 0; line-height: 1.7; }
 #nav a { display: flex; align-items: center; }
-#nav a .pct { margin-left: auto; padding-left: 10px; font-family: var(--serif); font-size: .92rem; font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 10px rgba(var(--gold-rgb), .35); }
+#nav a .pct { margin-left: auto; padding-left: 10px; font-family: var(--num); font-size: .8rem; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 10px rgba(var(--gold-rgb), .35); }
 #nav a .pct:empty { display: none; }
 #nav a .pct.shine { animation: pctshine 1.4s ease-out; }
 @keyframes pctshine { 0% { filter: brightness(1); transform: scale(1); } 25% { filter: brightness(1.8); transform: scale(1.18); text-shadow: 0 0 18px rgba(var(--gold2-rgb), .9); } 100% { filter: brightness(1); transform: scale(1); } }
@@ -658,7 +665,7 @@ main.enter .kind { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; a
 .wiki-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
 .wiki-kv div { padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .wiki-kv small { display: block; color: var(--muted); font-size: .75rem; }
-.wiki-kv b { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; }
+.wiki-kv b { font-family: var(--num); font-size: 1rem; font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
 /* Data notes: first-hand text that differs from the database */
 .chip.firsthand { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 45%, transparent); }
 
@@ -688,7 +695,16 @@ main.enter .entry { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; 
 /* Lore: the treasure chest */
 .lore-hero { text-align: center; padding: 26px 16px 10px; background: radial-gradient(ellipse at 50% 0%, rgba(var(--gold-rgb), .22), transparent 60%); border-radius: var(--radius); margin-bottom: 8px; }
 .lore-hero h1 { margin: 2px 0 6px; font-size: 2.6rem; background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.lore-chest { font-size: 2.2rem; color: var(--gold); text-shadow: 0 0 22px rgba(var(--gold-rgb), .6); animation: chestglow 3.5s ease-in-out infinite; }
+.lore-chest { display: inline-block; width: 64px; height: 64px; color: var(--gold); filter: drop-shadow(0 0 18px rgba(var(--gold-rgb), .65)); animation: chestglow 3.5s ease-in-out infinite; }
+.lore-chest svg { width: 100%; height: 100%; fill: currentColor; }
+.lore-stats { display: flex; justify-content: center; gap: 28px; margin: 14px 0 4px; flex-wrap: wrap; }
+.lore-stats div { display: flex; flex-direction: column; align-items: center; min-width: 90px; }
+.lore-stats b { font-family: var(--num); font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; color: var(--gold-2); font-variant-numeric: lining-nums tabular-nums; line-height: 1.1; }
+.lore-stats small { color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-size: .72rem; }
+.lore-voice { margin-top: 10px; color: var(--text-2); }
+.lore-voice select { margin: 0 4px; }
+.lore-foot select { max-width: 100%; }
+.lore-foot { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 @keyframes chestglow { 0%, 100% { text-shadow: 0 0 14px rgba(var(--gold-rgb), .4); } 50% { text-shadow: 0 0 32px rgba(var(--gold2-rgb), .9); } }
 .lore-lead { color: var(--text-2); max-width: 60ch; margin: 0 auto; font-family: var(--serif); font-size: 1.1rem; }
 .lore-h { text-align: center; font-family: var(--serif); font-weight: 600; letter-spacing: .04em; margin: 22px 0 12px; }
