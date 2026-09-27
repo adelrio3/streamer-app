@@ -403,6 +403,7 @@ setInterval(() => { if (lastSnap && show.has('kills')) renderKills(lastSnap, ser
 // Events ---------------------------------------------------------------------
 
 let lastSeq = replay ? 0 : null;
+let lastSince = null; // the session's start: when it changes the sequence starts over
 let lastSnap = null;
 let prevStreakLevel = 0;
 let questsDoneSeen = null;
@@ -473,6 +474,8 @@ function handle(snap) {
   applyRace(snap.character?.race);
   const now = snap.at || Date.now();
   if (lastSeq === null) lastSeq = snap.seq || 0;
+  else if (snap.since && lastSince && snap.since !== lastSince) lastSeq = 0; // a new session: its events are all new
+  lastSince = snap.since ?? lastSince;
   const fresh = (snap.events || []).filter((e) => e.seq > lastSeq).sort((a, b) => a.seq - b.seq);
   for (const e of fresh) onEvent(e);
   if (fresh.length) lastSeq = fresh.at(-1).seq;

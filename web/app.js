@@ -3485,7 +3485,10 @@ function wireSetup() {
     try {
       m.stop();
       await state.store.deleteAll({ keepMaps: true });
-      const keep = { maps: state.settings.maps || {}, fps: state.settings.fps, width: state.settings.width, height: state.settings.height, cueSeconds: state.settings.cueSeconds };
+      // Data goes; this account's set-up stays: maps, the recording size, and the
+      // live overlay's token (the OBS sources carry it), layout, counters and pad.
+      const s0 = state.settings;
+      const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack };
       state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
       await state.store.saveSettings(state.settings);
       for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
@@ -3493,6 +3496,7 @@ function wireSetup() {
       invalidate();
       toast('Everything deleted. Type /comp clear confirm in game to empty the addon too.');
       m.restart();
+      await m.forgetLive();
       location.hash = '#/';
       route();
     } catch (err) { toast(err.message); wipe.textContent = 'Delete everything and start over'; wipe.disabled = false; }

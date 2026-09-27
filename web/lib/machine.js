@@ -288,6 +288,15 @@ export class Machine {
     return Boolean(this.live.manualSince && Date.now() - this.live.manualSince < 4 * 3600 * 1000);
   }
 
+  // After "delete everything": the stream session starts afresh and no
+  // recording is followed until a new one starts.
+  async forgetLive() {
+    this.live.follow = null;
+    this.live.manualSince = 0;
+    try { localStorage.removeItem(LIVE_FOLLOW_KEY); } catch { /* storage off */ }
+    if (this.liveEnabled()) await this.resetLive();
+  }
+
   async resetLive(sinceLocal = Date.now(), { manual = false } = {}) {
     const since = sinceLocal;
     if (manual) this.live.manualSince = Date.now();
