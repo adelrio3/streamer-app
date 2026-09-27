@@ -3901,11 +3901,18 @@ const firstHandChip = (kind, key) => (noteFor(kind, key).length ? ' <span class=
 
 // Which pages show which topics. Everything else redraws only when the
 // recorded data changes, so a kill on the live link never rebuilds a map.
-const PAGE_TOPICS = { '': ['data', 'voice'], characters: ['data', 'live'], recordings: ['data', 'wow'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
+const PAGE_TOPICS = { '': ['data', 'voice'], characters: ['data'], recordings: ['data', 'wow'], live: ['data', 'live', 'wow'], drops: ['data', 'live'], setup: ['data', 'live', 'wow', 'obs', 'voice', 'clock'], narration: ['data', 'voice'], sessions: ['data', 'wow'] };
 function changed(topic = 'all') {
   if (topic !== 'live' && topic !== 'obs' && topic !== 'clock') invalidate();
   renderStatus();
   if (topic === 'data' || topic === 'all') setTimeout(autoPack, 1500);
+  // Live events come every few seconds while playing: the Characters page only touches its "playing now" card in place.
+  if (topic === 'live' && location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] === 'characters') {
+    const el = document.querySelector('.cards .live-char');
+    const html = state.cache ? liveCharacterCard(derived().characters) : '';
+    if (el && html) { if (el.outerHTML !== html) el.outerHTML = html; } else if (el && !html) el.remove(); else if (!el && html) document.querySelector('.cards')?.insertAdjacentHTML('afterbegin', html);
+    return;
+  }
   // Redraw the current page with new data, except where it would interrupt:
   // the video player, or a form being typed in.
   clearTimeout(redrawTimer);
