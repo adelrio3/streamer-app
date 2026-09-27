@@ -3698,7 +3698,7 @@ function wireSetup() {
       const keep = { maps: s0.maps || {}, fps: s0.fps, width: s0.width, height: s0.height, cueSeconds: s0.cueSeconds, liveToken: s0.liveToken, overlay: s0.overlay, liveCounters: s0.liveCounters, livePadKB: s0.livePadKB, overlayPack: s0.overlayPack, sessionPack: s0.sessionPack };
       state.settings = { ...keep, resetAt: Math.floor((Date.now() + (m.offset ?? 0)) / 1000) };
       await state.store.saveSettings(state.settings);
-      for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.')) localStorage.removeItem(k);
+      for (const k of Object.keys(localStorage)) if (k.startsWith('chronicler.track.') || k === PACKS_KEY || k === 'chronicler.notes.seen') localStorage.removeItem(k);
       Object.assign(state, { sessions: [], rows: [], clock: [], items: [], tracks: new Map(), shotUrls: new Map() });
       invalidate();
       toast('Everything deleted. Type /comp clear confirm in game to empty the addon too.');
