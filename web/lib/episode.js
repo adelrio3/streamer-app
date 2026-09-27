@@ -39,13 +39,13 @@ export function assembleEpisode({ mapIds, sessions, tracks, recordings, toMs, ma
   return { clips, markers: placed, duration: cursor };
 }
 
-export function toEpisodeXML(name, episode, recordings, { fps = 60 } = {}) {
+export function toEpisodeXML(name, episode, recordings, { fps = 60, width = 1920, height = 1080 } = {}) {
   const byRec = new Map(recordings.map((r) => [r.id, r]));
   const clips = episode.clips.map((c) => {
     const r = byRec.get(c.rec) || { name: c.recName, path: c.recName, duration: c.out };
     return { file: { id: `file-${c.rec}`, name: r.name, path: r.path || r.name, duration: r.duration }, in: c.in, out: Math.min(c.out, r.duration || c.out) };
   });
-  return toSequenceXML({ name: `Episode - ${name}`, fps, clips, markers: episode.markers });
+  return toSequenceXML({ name: `Episode - ${name}`, fps, width, height, sourceWidth: width, sourceHeight: height, clips, markers: episode.markers });
 }
 
 // YouTube-style chapters for the episode's markers.

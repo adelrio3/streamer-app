@@ -1920,7 +1920,7 @@ pages.shorts = async () => {
   const byRec = new Map(recordings.map((r) => [r.id, r]));
   setTimeout(() => {
     document.getElementById('shortsCsv')?.addEventListener('click', () => download('shorts.csv', 'text/csv', shortsCSV(shorts, byRec)));
-    for (const b of document.querySelectorAll('[data-short]')) b.addEventListener('click', () => { const sh = shorts[Number(b.dataset.short)]; const r = byRec.get(sh.rec); if (r) download(`short-${sh.labels[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toShortXML(r, sh)); });
+    for (const b of document.querySelectorAll('[data-short]')) b.addEventListener('click', () => { const sh = shorts[Number(b.dataset.short)]; const r = byRec.get(sh.rec); if (r) download(`short-${sh.labels[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toShortXML(r, sh, { fps: settings().fps, sourceWidth: settings().width, sourceHeight: settings().height })); });
   });
   return `${pageHead('Footage', 'Shorts', 'Moments worth a vertical short, cut from the highlights with room before and after: deaths, close calls, rares, great loot, level-ups and your marks. Each one exports as a 9:16 Premiere sequence showing the centre of the frame.', `<div class="row"><button class="ghost" id="shortsCsv" ${shorts.length ? '' : 'disabled'}>All shorts (CSV)</button></div>`)}
     ${table(shorts.map((sh, i) => ({ ...sh, i })), [
@@ -1952,7 +1952,7 @@ pages.episodes = async (_, params) => {
   const byRec = new Map(recordings.map((r) => [r.id, r]));
   setTimeout(() => {
     document.getElementById('epZone')?.addEventListener('change', (ev) => { location.hash = `#/episodes?zone=${enc(ev.target.value)}`; });
-    document.getElementById('epXml')?.addEventListener('click', () => download(`episode-${zone.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toEpisodeXML(zone, ep, recordings)));
+    document.getElementById('epXml')?.addEventListener('click', () => download(`episode-${zone.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xml`, 'application/xml', toEpisodeXML(zone, ep, recordings, { fps: settings().fps, width: settings().width, height: settings().height })));
     document.getElementById('epChapters')?.addEventListener('click', () => download(`episode-${zone.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-chapters.txt`, 'text/plain', episodeChapters(ep)));
   });
   return `${pageHead('Footage', 'Episodes', 'A zone episode assembled from every recorded stretch you spent there, in the order you played it, with a marker at each quest turned in. Import the sequence into Premiere and cut from there.', `<div class="row"><label class="row" style="margin:0"><span>Zone</span><select id="epZone">${zones.map((z) => `<option ${z === zone ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select></label><button id="epXml" ${ep.clips.length ? '' : 'disabled'}>Premiere sequence</button><button class="ghost" id="epChapters" ${ep.clips.length ? '' : 'disabled'}>Chapters</button></div>`)}
@@ -3381,8 +3381,8 @@ pages.setup = async () => {
     <form id="videoForm" class="panel"><h3>Video settings (shared by all your computers)</h3>
       <div class="grid2">
         <label><span>Recording frame rate</span><input type="number" step="0.001" name="fps" value="${s.fps}"></label>
-        <label><span>Width</span><input type="number" name="width" value="${s.width}"></label>
-        <label><span>Height</span><input type="number" name="height" value="${s.height}"></label>
+        <label><span>Width <small class="muted">(3840 for 4K)</small></span><input type="number" name="width" value="${s.width}"></label>
+        <label><span>Height <small class="muted">(2160 for 4K)</small></span><input type="number" name="height" value="${s.height}"></label>
         <label><span>Caption length, seconds</span><input type="number" step="0.5" name="cueSeconds" value="${s.cueSeconds}"></label>
       </div>
       <button type="submit">Save</button></form>

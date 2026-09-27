@@ -55,7 +55,16 @@ export function planOverlays(timeline, {
 
 // Draws one still on a canvas of the sequence size. ctx: a 2D context.
 // spec: from planOverlays. icon: an Image or null. corner: tl/tr/bl/br.
-export function drawStill(ctx, spec, { width, height, corner = 'br', icon = null, font = 'Inter, Arial, sans-serif', serif = '"Cormorant Garamond", Georgia, serif', margin = 48 } = {}) {
+// The cards are designed at 1080p; a 4K (or any other) frame draws the same
+// card scaled, so it keeps its proportions and its margins.
+export function drawStill(ctx, spec, opts = {}) {
+  const k = (opts.height || 1080) / 1080;
+  ctx.save();
+  ctx.scale(k, k);
+  try { drawStill1080(ctx, spec, { ...opts, width: (opts.width || 1920) / k, height: (opts.height || 1080) / k }); } finally { ctx.restore(); }
+}
+
+function drawStill1080(ctx, spec, { width, height, corner = 'br', icon = null, font = 'Inter, Arial, sans-serif', serif = '"Cormorant Garamond", Georgia, serif', margin = 48 } = {}) {
   ctx.clearRect(0, 0, width, height);
   const round = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
   const place = (w, h) => ({ x: corner.endsWith('l') ? margin : width - margin - w, y: corner.startsWith('t') ? margin : height - margin - h });
@@ -174,7 +183,7 @@ export function toOverlayXML(recording, clips, { fps = 60, width = 1920, height 
 export function packReadme(recording, folder, count) {
   return `Compendium overlay pack for ${recording.name}
 
-${count} PNG stills in overlays/ (transparent, ${'1920×1080'}) and ${stem(recording.name)}.overlays.xml.
+${count} PNG stills in overlays/ (transparent, the recording's own size) and ${stem(recording.name)}.overlays.xml.
 
 1. Unzip. Put the overlays folder at:
    ${folder || '(the folder you entered in Compendium)'}
