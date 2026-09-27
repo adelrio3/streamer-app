@@ -218,8 +218,10 @@ export class LiveState {
         const key = e.qid ? `q${e.qid}` : e.title ? `t${e.title}` : null;
         if (e.action === 'progress') {
           const p = parseProgress(e.text);
-          // Progress lines do not say which quest; match by an objective seen before, else the newest active quest.
-          let q = [...this.quests.values()].find((x) => x.state === 'active' && p && x.objectives[p.label]);
+          // The addon says which quest (1.0.5); older lines are matched by an objective seen before, else the newest active quest.
+          let q = e.qid ? this.quests.get(`q${e.qid}`) : null;
+          if (!q && e.qid) { q = { key: `q${e.qid}`, qid: e.qid, title: null, objectives: {}, state: 'active', at: e.at }; this.quests.set(q.key, q); }
+          if (!q) q = [...this.quests.values()].find((x) => x.state === 'active' && p && x.objectives[p.label]);
           if (!q) q = [...this.quests.values()].filter((x) => x.state === 'active').sort((a, b) => b.at - a.at)[0];
           if (!q) { q = { key: `t?${this.quests.size}`, qid: null, title: null, objectives: {}, state: 'active', at: e.at }; this.quests.set(q.key, q); }
           if (p) q.objectives[p.label] = { n: p.n, m: p.m, at: e.at };

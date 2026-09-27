@@ -237,6 +237,8 @@ function GetProgressText() return state.quest.progress end
 function GetRewardText() return state.quest.reward end
 state.questLog = {} -- { { id, title } }: what GetQuestLogTitle(i) lists
 function GetNumQuestLogEntries() return #state.questLog, #state.questLog end
+function GetNumQuestLeaderBoards(i) local q = state.questLog[i]; return q and q.objectives and #q.objectives or 0 end
+function GetQuestLogLeaderBoard(j, i) local q = state.questLog[i]; return q and q.objectives and q.objectives[j] end
 function GetQuestLogTitle(i)
 	if type(i) == "number" and state.questLog[i] then local q = state.questLog[i]; return q.title, 1, 0, false, false, false, 0, q.id end
 	return state.quest.title
@@ -397,6 +399,7 @@ fire("COMBAT_LOG_EVENT_UNFILTERED")
 state.combat = { 0, "UNIT_DIED", false, "", nil, 0, 0, "Creature-0-4372-0-17-6-00003", "Kobold Vermin", 0x40 }
 fire("COMBAT_LOG_EVENT_UNFILTERED")
 
+state.questLog = { { id = 5, title = "Beating Them Back!" }, { id = 7, title = "Kobold Camp Cleanup", objectives = { "Kobold Vermin slain: 2/10" } } }
 fire("UI_INFO_MESSAGE", 288, "Kobold Vermin slain: 2/10")
 fire("UI_INFO_MESSAGE", 1, "Not enough rage")
 fire("CHAT_MSG_LOOT", "You receive loot: |cff9d9d9d|Hitem:1372::::::::1:::::::|h[Ragged Leather Vest]|h|r.")
@@ -609,7 +612,7 @@ for _, m in ipairs(chat.sent) do all[#all + 1] = m.msg end
 all = table.concat(all, "\n")
 assert(all:find("~~L~2589~Linen Cloth~1~2~", 1, true) or all:find("~L~2589~Linen Cloth~1~2~", 1, true), "loot line with count: " .. all)
 assert(all:find("Q~accept~7~Kobold Camp Cleanup", 1, true), "quest accepted line")
-assert(all:find("Q~progress~-~Kobold Vermin slain: 2/10", 1, true), "quest progress line")
+assert(all:find("Q~progress~7~Kobold Vermin slain: 2/10", 1, true), "quest progress line names its quest")
 assert(all:find("Q~turnin~7~", 1, true), "quest turn-in line")
 assert(all:find("K~6~Kobold Vermin", 1, true), "kill line")
 assert(all:find("~D~Hogger~448", 1, true) or all:find("~D~Hogger", 1, true), "death line: " .. all)

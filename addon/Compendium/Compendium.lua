@@ -450,9 +450,31 @@ function handlers.QUEST_TURNED_IN(qid, xp, money)
 	record("quest_turnin", { qid = qid, title = questTitles[qid], xp = xp, money = money })
 end
 
+-- Which quest in the log carries this objective text (the game's message
+-- "Kobold Vermin slain: 2/10" is the log's own wording), so progress is
+-- never pinned on the wrong quest.
+local function questOfObjective(text)
+	if not (GetQuestLogTitle and GetQuestLogLeaderBoard) then return nil end
+	local n = (C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetNumQuestLogEntries()) or (GetNumQuestLogEntries and GetNumQuestLogEntries()) or 0
+	for i = 1, n do
+		local _, _, _, isHeader, _, _, _, qid = GetQuestLogTitle(i)
+		if not isHeader and qid then
+			local m = (GetNumQuestLeaderBoards and GetNumQuestLeaderBoards(i)) or 0
+			for j = 1, m do
+				if GetQuestLogLeaderBoard(j, i) == text then return qid end
+			end
+		end
+	end
+	return nil
+end
+
 local function objectiveMessage(msg)
 	if type(msg) == "string" and msg:find("%d+/%d+") then
-		record("objective", { text = msg })
+		local qid = questOfObjective(msg)
+		if qid then record("objective", { text = msg, qid = qid }) return end
+		-- The log may update a moment after the message: look again, then give up on the id.
+		local later = function() record("objective", { text = msg, qid = questOfObjective(msg) }) end
+		if C_Timer and C_Timer.After then C_Timer.After(0.3, later) else later() end
 	end
 end
 

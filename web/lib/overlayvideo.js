@@ -99,7 +99,7 @@ export function overlayEvents(recording, timeline = [], { firsts = null, charact
       case 'quest_complete': push(at, { kind: 'quest', action: 'complete', qid: e.qid ?? null, title: e.title ?? null }); break;
       case 'quest_turnin': push(at, { kind: 'quest', action: 'turnin', qid: e.qid ?? null, title: e.title ?? null, xp: e.xp ?? null, money: e.money ?? null }); break;
       case 'quest_abandon': push(at, { kind: 'quest', action: 'abandon', qid: e.qid ?? null, title: e.title ?? null }); break;
-      case 'objective': if (e.text) push(at, { kind: 'quest', action: 'progress', text: e.text }); break;
+      case 'objective': if (e.text) push(at, { kind: 'quest', action: 'progress', qid: e.qid ?? null, text: e.text }); break;
       case 'level': push(at, { kind: 'level', level: e.level }); break;
       case 'death': push(at, { kind: 'death', killer: e.killer ?? null, killerId: e.killerId ?? null }); break;
       case 'zone': push(at, { kind: 'zone', zone: e.z ?? null, sub: e.sz ?? null }); break;

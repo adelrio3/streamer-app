@@ -200,3 +200,16 @@ test('the quest log line retires quests the tracker still holds, and quiet accep
   assert.ok(s.seq > seq, 'the overlay hears about it');
   assert.ok(!s.snapshot(5000).quests.some((q) => q.state === 'active'));
 });
+
+test('progress with a quest id lands on that quest, never on the newest one', () => {
+  const s = new LiveState(0);
+  s.apply({ at: 1000, kind: 'quest', action: 'accept', qid: 5, title: 'Beating Them Back!' });
+  s.apply({ at: 2000, kind: 'quest', action: 'accept', qid: 7, title: 'Kobold Camp Cleanup' });
+  s.apply({ at: 3000, kind: 'quest', action: 'progress', qid: 5, text: 'Kobold Vermin slain: 2/10' });
+  s.apply({ at: 4000, kind: 'quest', action: 'progress', qid: 7, text: 'Wolves slain: 1/8' });
+  assert.deepEqual(Object.keys(s.quests.get('q5').objectives), ['Kobold Vermin slain']);
+  assert.deepEqual(Object.keys(s.quests.get('q7').objectives), ['Wolves slain']);
+  s.apply({ at: 5000, kind: 'quest', action: 'progress', qid: 9, text: 'Boars slain: 1/4' }); // a quest the overlay never heard accepted
+  assert.equal(s.quests.get('q9').state, 'active');
+  assert.equal(decodeLine('Q~progress~7~Kobold Vermin slain: 3/10').qid, 7);
+});
