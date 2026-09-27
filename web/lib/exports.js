@@ -122,21 +122,44 @@ export function toFCPXML(recording, events, { fps = 60, width = 1920, height = 1
     + '<audio><channelcount>2</channelcount></audio></media></file>';
   const clip = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${name}</name><duration>${duration}</duration>${rate}`
     + `<start>0</start><end>${duration}</end><in>0</in><out>${duration}</out>${mediaFile}${extra}</clipitem>`;
+  // Source Record companions (camera, overlay) as their own tracks, placed by
+  // their start offset: a file that began later starts later on the sequence,
+  // one that began earlier is trimmed at its head.
+  const companions = (recording.companions || []).map((c, i) => {
+    const fid = `file-c${i + 1}`;
+    const dur = frames(c.duration);
+    const off = frames(c.offset || 0);
+    const start = Math.max(0, off); const inF = Math.max(0, -off);
+    const end = start + (dur - inF);
+    const cname = xml(c.name);
+    const f = `<file id="${fid}"><name>${cname}</name><pathurl>${xml(fileURL(c.path || c.name))}</pathurl>${rate}<duration>${dur}</duration>`
+      + `<media><video><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></video>`
+      + '<audio><channelcount>2</channelcount></audio></media></file>';
+    const item = (id, mediaFile, extra = '') => `<clipitem id="${id}"><name>${cname}</name><duration>${dur}</duration>${rate}<start>${start}</start><end>${end}</end><in>${inF}</in><out>${dur}</out>${mediaFile}${extra}</clipitem>`;
+    return {
+      role: c.role, end,
+      video: `<track>${item(`clipitem-c${i + 1}v`, f)}</track>`,
+      audio: c.role === 'cam' ? `<track>${item(`clipitem-c${i + 1}a`, `<file id="${fid}"/>`, '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>')}</track>` : '',
+    };
+  });
+  const seqDuration = Math.max(duration, ...companions.map((c) => c.end));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence id="sequence-1">
     <name>${xml(`Compendium - ${stem(recording.name)}`)}</name>
-    <duration>${duration}</duration>
+    <duration>${seqDuration}</duration>
     ${rate}
     <timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode>
     <media>
       <video>
         <format><samplecharacteristics>${rate}<width>${width}</width><height>${height}</height></samplecharacteristics></format>
         <track>${clip('clipitem-1', file)}</track>
+        ${companions.map((c) => c.video).join('\n        ')}
       </video>
       <audio>
         <track>${clip('clipitem-2', '<file id="file-1"/>', '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>')}</track>
+        ${companions.map((c) => c.audio).filter(Boolean).join('\n        ')}
       </audio>
     </media>
       ${markers}

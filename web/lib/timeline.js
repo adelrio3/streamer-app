@@ -105,6 +105,17 @@ export function recordingId(name) {
 //   sync-inferred  the correction measured by the nearest synced recording
 //   obs            OBS reported the start while the app was open on the Mac
 //   filename       the time in the file name (app was closed while recording)
+// What a file is, from its name: the main recording ("game"), or a Source
+// Record companion the recording computer wrote beside it, named
+// "cam <timestamp>" or "overlay <timestamp>".
+export function recordingRole(name) {
+  const m = /^(cam|camera|face|overlay|ui)[\s_-]/i.exec(String(name || ''));
+  if (!m) return 'game';
+  return /overlay|ui/i.test(m[1]) ? 'overlay' : 'cam';
+}
+
+const COMPANION_WINDOW = 5000; // ms between a recording's start and its companions'
+
 export function resolveRecordings(rows = []) {
   const out = [];
   for (const row of rows) {
@@ -119,6 +130,7 @@ export function resolveRecordings(rows = []) {
       id: recordingId(row.name), name: row.name, path: row.path ?? null, machine: row.machine ?? null,
       start, end: start + duration * 1000, duration, rawStart, rawSource: row.source ?? 'filename',
       source: synced ? 'sync' : row.source ?? 'filename', sync: row.sync ?? null,
+      role: recordingRole(row.name), companions: [], companionOf: null,
     });
   }
   // The correction a sync flash measured (capture delay plus any clock error)
@@ -138,6 +150,21 @@ export function resolveRecordings(rows = []) {
     r.end += shift;
     r.source = 'sync-inferred';
     r.syncedFrom = best.name;
+  }
+  // Companions take the main recording's timing (its sync included) plus
+  // their own start offset, and never stand on their own.
+  for (const r of out) {
+    if (r.role !== 'game') continue;
+    for (const c of out) {
+      if (c.role === 'game' || c.companionOf || (c.machine ?? null) !== (r.machine ?? null) || Math.abs(c.rawStart - r.rawStart) > COMPANION_WINDOW) continue;
+      const offset = (c.rawStart - r.rawStart) / 1000;
+      c.companionOf = r.id;
+      c.start = r.start + offset * 1000;
+      c.end = c.start + c.duration * 1000;
+      c.source = r.source;
+      r.companions.push({ id: c.id, name: c.name, path: c.path, role: c.role, duration: c.duration, offset });
+    }
+    r.companions.sort((a, b) => (a.role === 'cam' ? 0 : 1) - (b.role === 'cam' ? 0 : 1));
   }
   return out.sort((a, b) => a.start - b.start);
 }

@@ -58,7 +58,8 @@ const enc = encodeURIComponent;
 function derived() {
   if (!state.cache) {
     const clock = clockModel(state.clock);
-    const recordings = resolveRecordings(state.rows);
+    const allRecordings = resolveRecordings(state.rows);
+    const recordings = allRecordings.filter((r) => r.role === 'game'); // companions ride along on their recording
     // Marks you deleted stay in the addon's log; they are hidden here.
     const gone = new Set(state.settings.deletedMarks || []);
     const goneSessions = new Set(state.settings.deletedSessions || []);
@@ -73,7 +74,7 @@ function derived() {
     const characters = buildCharacters(sessions, moment, timelines, recordings);
     const recChars = recordingCharacters(sessions, timelines);
     const maps = buildMaps(sessions, world, codex, moment);
-    state.cache = { sessions, clock, recordings, timelines, where, codex, moment, world, characters, recChars, maps, index: null };
+    state.cache = { sessions, clock, recordings, allRecordings, timelines, where, codex, moment, world, characters, recChars, maps, index: null };
   }
   return state.cache;
 }
@@ -2330,10 +2331,6 @@ pages.lore = async (kind, params) => {
   const pick = [...storylines(db, {}).slice(0, 400)].sort((a, b) => a.name.localeCompare(b.name));
   setTimeout(() => {
     document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
-    document.getElementById('taleVoice')?.addEventListener('change', async (ev) => {
-      state.settings = { ...state.settings, taleVoice: ev.target.value === 'female' ? 'female' : 'male' };
-      try { await state.store.saveSettings(state.settings); toast(`The tales now say ${ev.target.value === 'female' ? 'she' : 'he'}.`); } catch (err) { toast(err.message); }
-    });
   });
   const chaptersLived = all.reduce((n, t) => n + t.done, 0);
   return `<div class="lore-hero">
@@ -2345,7 +2342,7 @@ pages.lore = async (kind, params) => {
         <div><b>${living.length}</b><small>being lived</small></div>
         <div><b>${chaptersLived.toLocaleString()}</b><small>chapters lived</small></div>
       </div>
-      <p class="lore-voice small">The adventurer in every tale is unnamed and told of as <select id="taleVoice"><option value="male" ${taleVoice() === 'male' ? 'selected' : ''}>him</option><option value="female" ${taleVoice() === 'female' ? 'selected' : ''}>her</option></select>. A character's own account is the Journal on its page.</p>
+      <p class="lore-voice small">The adventurer in every tale is unnamed. A character's own account is the Journal on its page.</p>
     </div>
     ${tabs}
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
@@ -2918,7 +2915,7 @@ pages.recordings = async () => {
   const list = derived().recordings.map((r) => ({ ...recSummary(r), chars: recChars.get(r.id) || [] }));
   return `${pageHead('Footage', 'Recordings', 'Reported by the app on your recording computer. Videos stay on that computer; only their times are shared.')}
     ${table(list, [
-      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>` },
+      { label: 'Recording', value: (r) => r.start, html: (r) => `<a href="#/recording/${r.id}">${esc(r.name)}</a>${(r.companions || []).map((c) => ` <span class="chip" title="${esc(c.name)}">${c.role === 'cam' ? 'camera' : 'overlay'}</span>`).join('')}` },
       { label: 'Length', value: (r) => r.duration, html: (r) => duration(r.duration), num: true },
       { label: 'Events', value: (r) => r.events, num: true },
       { label: 'Quests', value: (r) => r.counts.quest ?? 0, num: true },
@@ -2945,6 +2942,7 @@ pages.recording = async (id, params) => {
       <div>
         <video id="video" controls preload="metadata"></video>
         <p class="muted small" id="videoNote"></p>
+        ${(r.companions || []).length ? `<p class="small muted">Recorded alongside: ${r.companions.map((c) => `<span class="chip">${c.role === 'cam' ? 'camera' : 'overlay'}</span> ${esc(c.name)}${Math.abs(c.offset) >= 0.05 ? ` <span class="muted">(${c.offset > 0 ? '+' : ''}${c.offset.toFixed(2)} s)</span>` : ''}`).join(' · ')}. The Premiere export lays them on their own tracks, lined up.</p>` : ''}
         ${syncPanel(r)}
         <div class="panel">
           <h3>Export for editing</h3>
@@ -3375,7 +3373,7 @@ pages.setup = async () => {
       <div class="grid2">
         <label><span>Server password</span><input type="password" name="password" value="${esc(cfg.obs.password)}" autocomplete="off"></label>
         <label><span>Server port</span><input type="number" name="port" value="${cfg.obs.port}"></label>
-        <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"></label>
+        <label><span>OBS file name format (Settings › Advanced › Recording)</span><input type="text" name="pattern" value="${esc(cfg.pattern)}"><small class="muted">Source Record files in the same folder named <code>cam …</code> or <code>overlay …</code> with the same timestamp pair up with the main recording.</small></label>
       </div>
       <p class="small">Status: <b>${esc(obs.state)}</b>${obs.recording ? ' · recording now' : ''}${obs.error ? ` · <span style="color:var(--red)">${esc(obs.error)}</span>` : ''}</p>
       <button class="primary" type="submit">Save</button></form>
