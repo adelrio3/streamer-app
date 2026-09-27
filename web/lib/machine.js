@@ -696,9 +696,9 @@ export class Machine {
         await this.putRow({ ...row, path });
       }
     }
-    const before = (this.rec.old || []).join('\n');
+    const oldBefore = (this.rec.old || []).join('\n');
     this.rec.old = old;
-    if (old.join('\n') !== before) this.changed('wow');
+    if (old.join('\n') !== oldBefore) this.changed('wow');
   }
 
   startObs() {
