@@ -1262,7 +1262,10 @@ function charCard(c) {
 function liveCharacterCard(characters) {
   const c = state.live?.state?.character;
   if (!c?.name) return '';
-  const fresh = state.live.updated_at && Date.now() - Date.parse(state.live.updated_at) < 6 * 3600 * 1000;
+  // Playing now means the addon spoke recently: its heartbeat keeps lastEventAt moving; after a logout it stops.
+  const snap = state.live.state;
+  const at = snap.at || Date.parse(state.live.updated_at || 0) || 0;
+  const fresh = snap.lastEventAt && at - snap.lastEventAt < 5 * 60 * 1000 && Date.now() - Date.parse(state.live.updated_at || 0) < 15 * 60 * 1000;
   if (!fresh || characters.some((x) => x.name === c.name && (x.realm ?? '') === (c.realm ?? ''))) return '';
   const cls = c.cls ? c.cls[0] + c.cls.slice(1).toLowerCase() : '';
   const race = c.race === 'NightElf' ? 'Night Elf' : c.race === 'Scourge' ? 'Undead' : c.race ?? '';
