@@ -693,20 +693,40 @@ main.enter .chapter-story { animation: rise .5s cubic-bezier(.2, .8, .2, 1) back
 main.enter .entry { animation: rise .45s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
 
 /* Lore: the treasure chest */
-.lore-hero { text-align: center; padding: 26px 16px 10px; background: radial-gradient(ellipse at 50% 0%, rgba(var(--gold-rgb), .22), transparent 60%); border-radius: var(--radius); margin-bottom: 8px; }
-.lore-hero h1 { margin: 2px 0 6px; font-size: 2.6rem; background: linear-gradient(180deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.lore-chest { display: inline-block; width: 64px; height: 64px; color: var(--gold); filter: drop-shadow(0 0 18px rgba(var(--gold-rgb), .65)); animation: chestglow 3.5s ease-in-out infinite; }
-.lore-chest svg { width: 100%; height: 100%; fill: currentColor; }
-.lore-stats { display: flex; justify-content: center; gap: 28px; margin: 14px 0 4px; flex-wrap: wrap; }
-.lore-stats div { display: flex; flex-direction: column; align-items: center; min-width: 90px; }
-.lore-stats b { font-family: var(--num); font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; color: var(--gold-2); font-variant-numeric: lining-nums tabular-nums; line-height: 1.1; }
-.lore-stats small { color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-size: .72rem; }
-.lore-voice { margin-top: 10px; color: var(--text-2); }
-.lore-voice select { margin: 0 4px; }
-.lore-foot select { max-width: 100%; }
-.lore-foot { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-@keyframes chestglow { 0%, 100% { text-shadow: 0 0 14px rgba(var(--gold-rgb), .4); } 50% { text-shadow: 0 0 32px rgba(var(--gold2-rgb), .9); } }
-.lore-lead { color: var(--text-2); max-width: 60ch; margin: 0 auto; font-family: var(--serif); font-size: 1.1rem; }
+.lore-hero { position: relative; overflow: hidden; text-align: center; padding: 34px 16px 22px; margin-bottom: 10px; border-radius: 14px; isolation: isolate;
+  background: radial-gradient(ellipse 70% 90% at 50% 100%, rgba(255, 196, 92, .16), transparent 60%), radial-gradient(ellipse 50% 60% at 50% 0%, rgba(var(--gold-rgb), .18), transparent 65%), linear-gradient(180deg, #131826, #0c0f16);
+  border: 1px solid rgba(255, 210, 120, .18); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .03), inset 0 -40px 80px -50px rgba(255, 196, 92, .35), 0 24px 60px -30px rgba(255, 196, 92, .35); }
+/* The glow that spills out of an open chest, and a slow drift of light across the whole hero. */
+.lore-light { position: absolute; left: 50%; bottom: 18%; width: 520px; height: 260px; transform: translateX(-50%); pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 214, 122, .55), rgba(255, 176, 74, .18) 40%, transparent 70%); filter: blur(18px); animation: chestlight 4s ease-in-out infinite; }
+.lore-hero::after { content: ""; position: absolute; inset: -40%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: screen;
+  background: conic-gradient(from 0deg at 50% 50%, transparent 0 22%, rgba(var(--ally-rgb), .18) 26%, rgba(255, 222, 150, .22) 32%, rgba(var(--horde-rgb), .16) 38%, transparent 44%, transparent 60%, rgba(180, 220, 255, .14) 66%, transparent 72%);
+  animation: opal 18s linear infinite; }
+/* Sparks that rise out of the chest. */
+.lore-sparks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.spark { position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); border-radius: 50%; background: radial-gradient(circle, #fff7d6, rgba(255, 214, 122, .9) 45%, transparent 70%);
+  box-shadow: 0 0 8px rgba(255, 214, 122, .9), 0 0 18px rgba(var(--ally-rgb), .35); opacity: 0; animation: spark 5.5s ease-in-out infinite; animation-delay: var(--d); }
+.lore-chest { position: relative; z-index: 2; display: inline-block; width: 92px; height: 92px; margin-bottom: 4px;
+  filter: drop-shadow(0 0 18px rgba(255, 196, 92, .75)) drop-shadow(0 8px 14px rgba(0, 0, 0, .5)); animation: chestbob 4s ease-in-out infinite; }
+.lore-chest svg { width: 100%; height: 100%; display: block; }
+.lore-title { position: relative; z-index: 2; margin: 0 0 10px; font-size: 3.4rem; letter-spacing: .08em; font-weight: 700;
+  background: linear-gradient(90deg, #8fbaff 0%, #fff4d0 25%, #f2c364 45%, #fff4d0 60%, #ff8f88 80%, #8fbaff 100%); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .6)) drop-shadow(0 0 22px rgba(255, 214, 122, .35)); animation: opaltext 9s linear infinite; }
+.lore-stats { position: relative; z-index: 2; display: flex; justify-content: center; gap: 12px; margin: 4px 0 0; flex-wrap: wrap; }
+.lore-stats div { display: flex; flex-direction: column; align-items: center; min-width: 132px; padding: 12px 18px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02)); border: 1px solid rgba(255, 214, 122, .28); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 10px 26px -18px rgba(255, 196, 92, .6); position: relative; overflow: hidden; }
+.lore-stats div::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .18) 50%, transparent 65%); transform: translateX(-120%); animation: coinsheen 6s ease-in-out infinite; }
+.lore-stats div:nth-child(2)::after { animation-delay: 2s; } .lore-stats div:nth-child(3)::after { animation-delay: 4s; }
+.lore-stats b { font-family: var(--num); font-size: 2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums;
+  background: linear-gradient(180deg, #fff4d0, #f2c364 60%, #c08a2e); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 10px rgba(255, 214, 122, .35)); }
+.lore-stats small { color: rgba(255, 236, 200, .7); letter-spacing: .14em; text-transform: uppercase; font-size: .68rem; margin-top: 2px; }
+@keyframes chestlight { 0%, 100% { opacity: .7; transform: translateX(-50%) scaleX(1); } 50% { opacity: 1; transform: translateX(-50%) scaleX(1.12); } }
+@keyframes chestbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes coinsheen { 0%, 70%, 100% { transform: translateX(-120%); } 35% { transform: translateX(120%); } }
+@keyframes opal { to { transform: rotate(360deg); } }
+@keyframes opaltext { to { background-position: 300% 0; } }
+@keyframes spark { 0% { opacity: 0; transform: translateY(24px) scale(.6); } 20% { opacity: 1; } 60% { opacity: .9; } 100% { opacity: 0; transform: translateY(-90px) scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .lore-hero::after, .spark, .lore-chest, .lore-title, .lore-light, .lore-stats div::after { animation: none !important; } .lore-title { background-position: 50% 0; } }
 .lore-h { text-align: center; font-family: var(--serif); font-weight: 600; letter-spacing: .04em; margin: 22px 0 12px; }
 .lore-h::before, .lore-h::after { content: " ✦ "; color: var(--gold); opacity: .7; }
 .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }

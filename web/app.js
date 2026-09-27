@@ -2333,16 +2333,17 @@ pages.lore = async (kind, params) => {
     document.getElementById('pretendSel')?.addEventListener('change', (ev) => { if (ev.target.value) location.hash = `#/lore/tale?id=${enc(ev.target.value)}&pretend=1`; });
   });
   const chaptersLived = all.reduce((n, t) => n + t.done, 0);
-  return `<div class="lore-hero">
-      <div class="lore-chest"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5A5.5 5.5 0 0 1 8.5 5h7a5.5 5.5 0 0 1 5.5 5.5V11H3z"/><path d="M3 12.5h18V19a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19z"/><path d="M10.5 9.5h3v6.5h-3z" fill="var(--bg)"/><path d="M11.5 11h1v2h-1z"/></svg></div>
-      <h1>Lore</h1>
-      <p class="lore-lead">The stories of this world as they were actually lived, retold. Every storyline followed to its end becomes a tale for the shelf; the ones still under way wait beside them.</p>
+  const sparks = Array.from({ length: 18 }, (_, i) => `<i class="spark" style="--x:${(i * 53) % 100}%;--y:${(i * 37) % 100}%;--d:${(i % 7) * 0.9}s;--s:${3 + (i % 4)}px"></i>`).join('');
+  return `<div class="lore-hero treasure">
+      <div class="lore-light"></div>
+      <div class="lore-sparks">${sparks}</div>
+      <div class="lore-chest"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="chestGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1c2"/><stop offset=".3" stop-color="#f2c364"/><stop offset=".55" stop-color="#b8862f"/><stop offset=".75" stop-color="#f7d787"/><stop offset="1" stop-color="#8f5f1a"/></linearGradient></defs><path fill="url(#chestGold)" d="M3 10.5A5.5 5.5 0 0 1 8.5 5h7a5.5 5.5 0 0 1 5.5 5.5V11H3z"/><path fill="url(#chestGold)" d="M3 12.5h18V19a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19z"/><path d="M10.5 9.5h3v6.5h-3z" fill="var(--bg)"/><path fill="#fff1c2" d="M11.5 11h1v2h-1z"/></svg></div>
+      <h1 class="lore-title">Lore</h1>
       <div class="lore-stats">
         <div><b>${told.length}</b><small>tales told</small></div>
         <div><b>${living.length}</b><small>being lived</small></div>
         <div><b>${chaptersLived.toLocaleString()}</b><small>chapters lived</small></div>
       </div>
-      <p class="lore-voice small">The adventurer in every tale is unnamed. A character's own account is the Journal on its page.</p>
     </div>
     ${tabs}
     ${told.length ? `<h2 class="lore-h">Tales told</h2><div class="shelf">${told.map(cover).join('')}</div>` : ''}
