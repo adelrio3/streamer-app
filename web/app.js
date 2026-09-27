@@ -1472,7 +1472,7 @@ async function characterCompletion(c) {
     <h2 id="loose">Loose ends ${looseAll ? `<span class="chip active">${looseAll}</span>` : '<span class="chip done">all clear</span>'}</h2>
     <p class="muted small">Built only from what ${esc(c.name)} came across, so it never nags about quests not found yet.</p>
     ${perZone.filter((z) => z.loose.total).map((z) => `<details class="panel loose-zone" id="loose-${slug(z.name)}"><summary><b>${esc(z.name)}</b> <span class="chip active">${z.loose.total}</span></summary>${looseEndsBody(z.loose)}</details>`).join('')}
-    ${exploredMaps()}`;
+    ${exploredMaps(c.key)}`;
 }
 
 async function deleteCharacter(c) {
@@ -1763,13 +1763,14 @@ pages.locations = async (_, params) => {
 };
 
 // The maps you have set foot on (your journal, not the world).
-function exploredMaps() {
+function exploredMaps(who = null) {
   const { maps, codex } = derived();
+  const mapHref = (m) => `#/map/${m.id}${who ? `?who=${enc(who)}` : ''}`;
   const known = (z) => new Set([...(z?.subzones || []), ...(z?.discovered || [])]);
   const discovery = (name) => { const z = codex.zones.find((x) => x.name === name); return z ? { discovered: z.discovered?.length || 0, known: known(z).size } : null; };
   return `<h2>Maps you have explored</h2>
     ${table(maps, [
-      { label: 'Map', value: (m) => m.zone ?? `Map ${m.id}`, html: (m) => `<a href="#/map/${m.id}">${esc(m.zone ?? `Map ${m.id}`)}</a> <span class="muted small">${m.id}</span>` },
+      { label: 'Map', value: (m) => m.zone ?? `Map ${m.id}`, html: (m) => `<a href="${mapHref(m)}">${esc(m.zone ?? `Map ${m.id}`)}</a> <span class="muted small">${m.id}</span>` },
       { label: 'Discovered', value: (m) => { const d = discovery(m.zone); return d ? pctOf(d.discovered, d.known) : 0; }, html: (m) => { const d = discovery(m.zone); return d ? covBar(d.discovered, d.known) : ''; }, num: true },
       { label: 'Areas', value: (m) => m.subzones.join(', ') },
       { label: 'Pins', value: (m) => m.markers.length, num: true },
@@ -1949,9 +1950,14 @@ pages.map = async (id, params) => {
   for (const k of (params.get('hide') || '').split(',').filter(Boolean)) shown.delete(k);
   const hidden = new Set(Object.keys(LAYERS).filter((k) => !shown.has(k)));
   const dbPins = await dbMapPins(db, areaId);
-  const markers = [...m.markers, ...dbPins];
-  const counts = { ...m.counts };
-  for (const p of dbPins) counts[p.layer] = (counts[p.layer] || 0) + 1;
+  // Personal pins (deaths, close calls, level-ups, marks, screenshots) belong
+  // to one character: shown only when the map is opened from that character's
+  // page (?who=<key>), and then only that character's.
+  const who = params.get('who') || null;
+  const markers = [...m.markers.filter((mk) => (mk.personal ? who && mk.who === who : true)), ...dbPins];
+  const counts = {};
+  for (const p of markers) counts[p.layer] = (counts[p.layer] || 0) + 1;
+  const whoChar = who ? derived().characters.find((c) => c.key === who) : null;
   const timePoints = routesFor(m.id, derived().sessions, state.tracks).flatMap((r) => r.points.map(([x, y]) => ({ x, y })));
   const heat = { density: heatCells(m.markers.filter((mk) => mk.layer === 'creature'), 4), time: heatCells(timePoints, 3) };
   const services = derived().world.people;
@@ -1983,8 +1989,8 @@ pages.map = async (id, params) => {
     });
   });
   const layers = Object.entries(LAYERS).filter(([k, l]) => k === 'route' || l.heat ? true : counts[k]);
-  return `${crumb('#/locations', 'Locations')}
-    ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), esc(m.subzones.join(' · ')), `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
+  return `${whoChar ? crumb(`#/character/${enc(whoChar.key)}?tab=completion`, whoChar.name) : crumb('#/locations', 'Locations')}
+    ${pageHead('Map', esc(m.zone ?? `Map ${m.id}`), `${esc(m.subzones.join(' · '))}${whoChar ? ` · ${esc(whoChar.name)}'s own moments (deaths, close calls, level-ups, marks, screenshots) are on this map too` : ''}`, `<div class="row">${m.zone ? `<a class="btn ghost" href="#/zone/${enc(m.zone)}">Zone page</a>` : ''}<label class="btn ghost" style="margin:0"><input type="file" id="mapUpload" accept="image/*" hidden><span>Use my own map image</span></label><button class="ghost" id="geojson" title="Every pin and route as GeoJSON">Download GeoJSON</button><span class="muted small">Take a screenshot of the in-game map (M), crop it to the map itself, and choose it here. Until then the map comes from Wowhead.</span></div>`)}
     <div class="filters" id="mapLayers">${layers.map(([k, l]) => `<label><input type="checkbox" value="${k}" ${hidden.has(k) ? '' : 'checked'}><span class="cat" style="background:${l.color}"></span>${l.name}${counts[k] ? ` <span class="muted">${counts[k]}</span>` : ''}</label>`).join('')}<span class="row" style="margin-left:auto"><button class="ghost small" id="layersDefault" title="Quests and your route">Default</button><button class="ghost small" id="layersAll">All</button><button class="ghost small" id="layersNone">None</button></span></div>
     <div class="map-wrap"><div class="map" id="zoneMap"></div><div class="map-info panel" id="mapInfo"><p class="muted">Click a pin for its moments, or anywhere else on the map for the nearest repair, innkeeper, trainer and flight master.${dbPins.length ? ` Dashed pins are quest givers you have not met; diamonds are rare spawns, both from the quest database.` : ''}</p></div></div>
     ${replayPanel(m)}`;

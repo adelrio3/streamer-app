@@ -3,6 +3,7 @@
 // reports them.
 
 import { parsePoint } from './footage.js';
+import { charKey } from './journey.js';
 
 export const LAYERS = {
   quest: { name: 'Quests', color: '#f2cc6b' },
@@ -48,18 +49,21 @@ export function buildMaps(sessions, world, codex, moment) {
       if (!m.first || e.t < m.first.t) m.first = moment(s, e);
       if (!m.last || e.t > m.last.t) m.last = moment(s, e);
       if (e.x == null) continue;
-      const base = { x: e.x, y: e.y, zone: e.z ?? null, sub: e.sz ?? null, ...moment(s, e) };
+      // Deaths, close calls, level-ups, marks and screenshots are one character's
+      // own moments (`personal`), shown only on that character's map; encounters,
+      // loot, quests and lore are the account's data collection.
+      const base = { x: e.x, y: e.y, zone: e.z ?? null, sub: e.sz ?? null, who: charKey(s.char), ...moment(s, e) };
       switch (e.e) {
         case 'quest_detail': add(e.m, { ...base, layer: 'quest', label: `Quest: ${e.title ?? ''}`, sub2: 'offered', href: `#/quest/${encodeURIComponent(e.qid ? `q${e.qid}` : `t${e.title}`)}`, key: `q${e.qid ?? e.title}` }); break;
         case 'quest_turnin': add(e.m, { ...base, layer: 'quest', label: `Turned in: ${e.title ?? ''}`, href: `#/quest/${encodeURIComponent(e.qid ? `q${e.qid}` : `t${e.title}`)}`, key: `q${e.qid ?? e.title}` }); break;
-        case 'death': add(e.m, { ...base, layer: 'death', label: e.killer ? `Died to ${e.killer}` : 'Died', href: '#/highlights?kind=death' }); break;
-        case 'fight': if (e.close) add(e.m, { ...base, layer: 'death', label: `Close call: ${(e.enemies || []).map((x) => x.name).filter(Boolean).slice(0, 3).join(', ')} (${e.minHp}% health)`, href: '#/highlights?kind=close' }); break;
-        case 'level': add(e.m, { ...base, layer: 'mark', label: `Reached level ${e.level}`, href: '#/characters' }); break;
+        case 'death': add(e.m, { ...base, personal: true, layer: 'death', label: e.killer ? `Died to ${e.killer}` : 'Died', href: '#/highlights?kind=death' }); break;
+        case 'fight': if (e.close) add(e.m, { ...base, personal: true, layer: 'death', label: `Close call: ${(e.enemies || []).map((x) => x.name).filter(Boolean).slice(0, 3).join(', ')} (${e.minHp}% health)`, href: '#/highlights?kind=close' }); break;
+        case 'level': add(e.m, { ...base, personal: true, layer: 'mark', label: `Reached level ${e.level}`, href: '#/characters' }); break;
         case 'book': add(e.m, { ...base, layer: 'lore', label: `Read: ${e.title ?? 'text'}`, href: '#/lore?show=text', key: `b${e.title}` }); break;
         case 'speech': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.speaker ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=speech', key: `sp${e.npcId ?? e.speaker}|${e.text.slice(0, 40)}` }); break;
         case 'gossip': if (e.text) add(e.m, { ...base, layer: 'lore', label: `${e.npc ?? 'NPC'}: ${e.text.slice(0, 80)}`, href: e.npcId ? `#/npc/n${e.npcId}` : '#/lore?show=gossip', key: `g${e.npcId ?? e.npc}` }); break;
-        case 'mark': add(e.m, { ...base, layer: 'mark', label: `${e.kind ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`, href: '#/marks' }); break;
-        case 'screenshot': add(e.m, { ...base, layer: 'mark', label: `Screenshot (${e.reason ?? 'manual'})` }); break;
+        case 'mark': add(e.m, { ...base, personal: true, layer: 'mark', label: `${e.kind ?? 'Mark'}${e.note ? `: ${e.note}` : ''}`, href: '#/marks' }); break;
+        case 'screenshot': add(e.m, { ...base, personal: true, layer: 'mark', label: `Screenshot (${e.reason ?? 'manual'})` }); break;
         case 'loot_window': {
           const what = (e.items || []).map((i) => i.name).filter(Boolean).slice(0, 4).join(', ');
           if (what) add(e.m, { ...base, layer: 'loot', label: `Loot: ${what}`, href: '#/items' });
