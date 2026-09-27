@@ -40,8 +40,9 @@ function mdatHeader(size) {
 
 export class Mp4Writer {
   // sink: { write(bytes) (append), patch(offset, bytes), close() }.
-  constructor(sink, { width, height, timescale = 90000, movieTimescale = 1000 } = {}) {
+  constructor(sink, { width, height, timescale = 90000, movieTimescale = 1000, createdAt = Date.now() } = {}) {
     this.sink = sink;
+    this.createdAt = createdAt; // ms since 1970; the file says when it was made
     this.width = width;
     this.height = height;
     this.timescale = timescale;
@@ -96,14 +97,15 @@ export class Mp4Writer {
     const s = this.samples;
     const dur = this.duration;
     const movieDur = Math.round((dur / this.timescale) * this.movieTimescale);
-    const wide = dur > MAX32 || movieDur > MAX32;
+    const made = Math.max(0, Math.floor(this.createdAt / 1000) + 2082844800); // seconds since 1904, as QuickTime counts
+    const wide = dur > MAX32 || movieDur > MAX32 || made > MAX32;
     const time = wide ? be64 : be32;
     const v = wide ? 1 : 0;
-    const mvhd = full('mvhd', v, 0, time(0), time(0), be32(this.movieTimescale), time(movieDur),
+    const mvhd = full('mvhd', v, 0, time(made), time(made), be32(this.movieTimescale), time(movieDur),
       be32(0x00010000), be16(0x0100), zeros(10), be32(0x10000), be32(0), be32(0), be32(0), be32(0x10000), be32(0), be32(0), be32(0), be32(0x40000000), zeros(24), be32(2));
-    const tkhd = full('tkhd', v, 3, time(0), time(0), be32(1), be32(0), time(movieDur), zeros(8), be16(0), be16(0), be16(0), be16(0),
+    const tkhd = full('tkhd', v, 3, time(made), time(made), be32(1), be32(0), time(movieDur), zeros(8), be16(0), be16(0), be16(0), be16(0),
       be32(0x10000), be32(0), be32(0), be32(0), be32(0x10000), be32(0), be32(0), be32(0), be32(0x40000000), be32(this.width << 16), be32(this.height << 16));
-    const mdhd = full('mdhd', v, 0, time(0), time(0), be32(this.timescale), time(dur), be16(0x55c4), be16(0));
+    const mdhd = full('mdhd', v, 0, time(made), time(made), be32(this.timescale), time(dur), be16(0x55c4), be16(0));
     const hdlr = full('hdlr', 0, 0, be32(0), str('vide'), zeros(12), str('VideoHandler'), zeros(1));
     const vmhd = full('vmhd', 0, 1, zeros(8));
     const dinf = box('dinf', full('dref', 0, 0, be32(1), full('url ', 0, 1)));

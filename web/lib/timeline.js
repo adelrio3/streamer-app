@@ -105,16 +105,23 @@ export function recordingId(name) {
 //   sync-inferred  the correction measured by the nearest synced recording
 //   obs            OBS reported the start while the app was open on the Mac
 //   filename       the time in the file name (app was closed while recording)
-// What a file is, from its name: the main recording ("game"), or a Source
-// Record companion the recording computer wrote beside it, named
-// "cam <timestamp>" or "overlay <timestamp>".
-export function recordingRole(name) {
-  const m = /^(cam|camera|face|overlay|ui)[\s_-]/i.exec(String(name || ''));
-  if (!m) return 'game';
-  return /overlay|ui/i.test(m[1]) ? 'overlay' : 'cam';
+// What a file is: the main recording ("game"), the camera ("cam": a file
+// named "cam …", "camera …" or "face …", or one in a folder so named), or
+// the overlay ("overlay …", "ui …", or the session package's
+// "<stem>.overlay.mp4").
+export function recordingRole(name, path = null) {
+  const n = String(name || '');
+  if (/\.overlay\.mp4$/i.test(n)) return 'overlay';
+  const m = /^(cam|camera|face|overlay|ui)[\s_-]/i.exec(n);
+  if (m) return /overlay|ui/i.test(m[1]) ? 'overlay' : 'cam';
+  const parts = String(path || '').split(/[\\/]/).filter(Boolean);
+  const folder = parts.length >= 2 ? parts[parts.length - 2] : '';
+  if (/^(cam|camera|face)$/i.test(folder)) return 'cam';
+  if (/^(overlay|ui)$/i.test(folder)) return 'overlay';
+  return 'game';
 }
 
-const COMPANION_WINDOW = 5000; // ms between a recording's start and its companions'
+const COMPANION_SLACK = 5000; // ms a companion may start after a recording and still cover its start
 
 export function resolveRecordings(rows = []) {
   const out = [];
@@ -130,7 +137,7 @@ export function resolveRecordings(rows = []) {
       id: recordingId(row.name), name: row.name, path: row.path ?? null, machine: row.machine ?? null,
       start, end: start + duration * 1000, duration, rawStart, rawSource: row.source ?? 'filename',
       source: synced ? 'sync' : row.source ?? 'filename', sync: row.sync ?? null,
-      role: recordingRole(row.name), companions: [], companionOf: null,
+      role: recordingRole(row.name, row.path), companions: [], companionOf: null,
     });
   }
   // The correction a sync flash measured (capture delay plus any clock error)
@@ -151,20 +158,29 @@ export function resolveRecordings(rows = []) {
     r.source = 'sync-inferred';
     r.syncedFrom = best.name;
   }
-  // Companions take the main recording's timing (its sync included) plus
-  // their own start offset, and never stand on their own.
+  // A companion is any camera or overlay file from the same computer whose
+  // time overlaps a game recording's (a camera left recording all evening
+  // serves every game recording of the evening). It takes the recording's
+  // timing (its sync included) plus its own start offset: negative when it
+  // began earlier (trimmed at its head on the sequence), and never stands
+  // on its own.
   for (const r of out) {
     if (r.role !== 'game') continue;
     for (const c of out) {
-      if (c.role === 'game' || c.companionOf || (c.machine ?? null) !== (r.machine ?? null) || Math.abs(c.rawStart - r.rawStart) > COMPANION_WINDOW) continue;
+      if (c.role === 'game' || (c.machine ?? null) !== (r.machine ?? null)) continue;
+      const cEnd = c.rawStart + c.duration * 1000;
+      const rEnd = r.rawStart + r.duration * 1000;
+      if (c.rawStart > r.rawStart + COMPANION_SLACK || cEnd < r.rawStart + Math.min(r.duration * 1000, 30000)) continue;
       const offset = (c.rawStart - r.rawStart) / 1000;
-      c.companionOf = r.id;
-      c.start = r.start + offset * 1000;
-      c.end = c.start + c.duration * 1000;
-      c.source = r.source;
-      r.companions.push({ id: c.id, name: c.name, path: c.path, role: c.role, duration: c.duration, offset });
+      if (!c.companionOf) {
+        c.companionOf = r.id;
+        c.start = r.start + offset * 1000;
+        c.end = c.start + c.duration * 1000;
+        c.source = r.source;
+      }
+      r.companions.push({ id: c.id, name: c.name, path: c.path, role: c.role, duration: c.duration, offset, covers: Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart) > 0 ? Math.min(1, (Math.min(cEnd, rEnd) - Math.max(c.rawStart, r.rawStart)) / (r.duration * 1000)) : 0 });
     }
-    r.companions.sort((a, b) => (a.role === 'cam' ? 0 : 1) - (b.role === 'cam' ? 0 : 1));
+    r.companions.sort((a, b) => (a.role === 'cam' ? 0 : 1) - (b.role === 'cam' ? 0 : 1) || a.offset - b.offset);
   }
   return out.sort((a, b) => a.start - b.start);
 }

@@ -157,13 +157,16 @@ export async function folderOfVideo(dir, name, depth = 0) {
   return null;
 }
 
-export async function listVideos(dir, depth = 0) {
+// Video files in the recordings folder and one level of subfolders; `dir`
+// is the subfolder's name ('' at the top), which also says what a file is
+// (a `cam` folder holds the camera).
+export async function listVideos(dir, depth = 0, sub = '') {
   const out = [];
   for await (const entry of entries(dir)) {
-    if (entry.kind === 'directory' && depth < 1) out.push(...await listVideos(entry, depth + 1));
+    if (entry.kind === 'directory' && depth < 1) out.push(...await listVideos(entry, depth + 1, entry.name));
     else if (entry.kind === 'file' && !isHiddenFile(entry.name) && VIDEO_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(ext))) {
       const file = await entry.getFile();
-      out.push({ name: entry.name, handle: entry, size: file.size, lastModified: file.lastModified });
+      out.push({ name: entry.name, dir: sub, handle: entry, file, size: file.size, lastModified: file.lastModified });
     }
   }
   return out;

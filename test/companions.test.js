@@ -49,3 +49,31 @@ test('toFCPXML: a rendered overlay companion gets a video-only track at its own 
   assert.ok(xml.includes('<width>1920</width><height>1080</height>'));
   assert.ok(xml.includes('<width>3840</width><height>2160</height>'));
 });
+
+test('a camera in a cam folder, or left recording all evening, serves every game recording it covers', () => {
+  assert.equal(recordingRole('2026-09-27 20-00-00.mov', '/Users/me/Movies/cam/2026-09-27 20-00-00.mov'), 'cam');
+  assert.equal(recordingRole('My Movie.mov', 'cam/My Movie.mov'), 'cam');
+  assert.equal(recordingRole('2026-09-27 20-00-00.mov', '/Users/me/Movies/2026-09-27 20-00-00.mov'), 'game');
+  assert.equal(recordingRole('2026-09-27 20-00-00.overlay.mp4'), 'overlay');
+  const t0 = 1_790_000_000_000;
+  const rows = [
+    { name: 'My Movie.mov', path: '/Users/me/Movies/cam/My Movie.mov', machine: 'Mac', start_ms: t0 - 600_000, duration: 7200, source: 'file' },
+    { name: '2026-09-27 20-00-00.mov', path: '/Users/me/Movies/2026-09-27 20-00-00.mov', machine: 'Mac', start_ms: t0, duration: 1800, source: 'file' },
+    { name: '2026-09-27 21-00-00.mov', path: '/Users/me/Movies/2026-09-27 21-00-00.mov', machine: 'Mac', start_ms: t0 + 3_600_000, duration: 1800, source: 'file' },
+    { name: '2026-09-27 23-00-00.mov', path: '/Users/me/Movies/2026-09-27 23-00-00.mov', machine: 'Mac', start_ms: t0 + 10_800_000, duration: 600, source: 'file' },
+    { name: '2026-09-27 20-00-00.overlay.mp4', path: '/Users/me/Movies/2026-09-27 20-00-00.overlay.mp4', machine: 'Mac', start_ms: t0, duration: 1800, source: 'file' },
+  ];
+  const all = resolveRecordings(rows);
+  const games = all.filter((r) => r.role === 'game');
+  assert.equal(games.length, 3);
+  const [g1, g2, g3] = games;
+  assert.deepEqual(g1.companions.map((c) => c.role), ['cam', 'overlay']);
+  assert.equal(g1.companions[0].offset, -600, 'the camera began ten minutes earlier: trimmed at its head');
+  assert.equal(g1.companions[1].offset, 0);
+  assert.deepEqual(g2.companions.map((c) => [c.role, c.offset]), [['cam', -4200]], 'the same camera file serves the next session too');
+  assert.equal(g3.companions.length, 0, 'the camera had stopped by then');
+  const cam = all.find((r) => r.role === 'cam');
+  assert.equal(cam.companionOf, g1.id);
+  const xml = toFCPXML(g1, [], { fps: 60 });
+  assert.ok(xml.includes('<in>36000</in>'), 'the camera clip starts 600 s in');
+});

@@ -9,7 +9,8 @@
 
 import { measureClock } from './cloud.js';
 import { readAddonLog, mergeSession } from './sessions.js';
-import { clockModel, startFromName, baseName, eventMs } from './timeline.js';
+import { clockModel, startFromName, baseName, eventMs, recordingRole } from './timeline.js';
+import { readMovieInfo, isMovieFile } from './mov.js';
 import { LiveState, eventsFromChatLog, counterValues, pastLoot, randomToken, PAD_PREFIX } from './live.js';
 import { VoiceNotes } from './voice.js';
 import { ObsLink } from './obs.js';
@@ -18,7 +19,8 @@ import * as folders from './folders.js';
 const CONFIG_KEY = 'chronicler.machine';
 const CLOCK_EVERY = 10 * 60 * 1000;
 const WOW_EVERY = 5000;
-const REC_EVERY = 30000;
+const REC_EVERY = 20000;
+const GROWING_FOR = 45000; // ms since a video's last write within which it counts as still being recorded
 const REFRESH_EVERY = 60000;
 const LIVE_EVERY = 1000;
 const LIVE_PUSH_GAP = 1500; // between pushes while nothing is being recorded...
@@ -585,35 +587,57 @@ export class Machine {
     return saved;
   }
 
-  fullPath(name) {
-    const dir = this.obs?.recordDirectory;
-    return dir ? `${dir.replace(/[\\/]+$/, '')}/${name}` : null;
+  fullPath(name, sub = '') {
+    const dir = this.obs?.recordDirectory || this.config.recordDirectory;
+    if (!dir) return sub ? `${sub}/${name}` : null;
+    return `${dir.replace(/[\\/]+$/, '')}/${sub ? `${sub}/` : ''}${name}`;
   }
 
-  // Files made while the app was closed get their times from the file name
-  // (start) and last-modified date (end).
+  // The recordings folder is the source of truth: a file that appears and
+  // keeps growing is a recording under way (a stream session starts, whether
+  // OBS itself, a Source Record filter or QuickTime is writing it); one that
+  // has stopped growing has ended. Its start comes from its name (OBS's
+  // pattern) or, failing that, from the file's own movie header (creation
+  // time and length: QuickTime/MP4 files say both, ProRes included); its end
+  // from the last-modified date. Files that carry no time at all are left
+  // alone.
   async scanRec() {
     if (this.rec.state !== 'ok') return;
     const videos = await folders.listVideos(this.recRoot);
     this.rec.videos = new Map(videos.map((v) => [v.name.toLowerCase(), v]));
-    const recordingNow = this.obs?.recording;
+    const now = Date.now();
     for (const v of videos) {
       const row = this.row(v.name);
-      if (recordingNow && Date.now() - v.lastModified < 15000) continue;
+      const growing = now - v.lastModified < GROWING_FOR;
+      const path = this.fullPath(v.name, v.dir);
       if (!row) {
-        const local = startFromName(v.name, this.config.pattern);
-        if (local == null || v.lastModified <= local) continue;
+        let local = startFromName(v.name, this.config.pattern);
+        let duration = null;
+        if (local == null && isMovieFile(v.name)) {
+          const info = await readMovieInfo(v.file).catch(() => null);
+          if (info?.created) { local = info.created; duration = info.duration; }
+        }
+        if (local == null || v.lastModified < local) continue;
         const start = this.toServer(local);
         // Recordings from before "delete everything" stay deleted.
         if (start < (this.state.settings.resetAt || 0) * 1000) continue;
-        const end = this.toServer(v.lastModified);
-        await this.putRow({ name: v.name, path: this.fullPath(v.name), machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: 'filename', sync: null });
-      } else if (!row.duration && row.start_ms && v.lastModified) {
-        // OBS said it started, but the app closed before it stopped.
-        const end = this.toServer(v.lastModified);
-        if (end > row.start_ms) await this.putRow({ ...row, end_ms: Math.round(end), duration: (end - row.start_ms) / 1000 });
-      } else if (!row.path && this.fullPath(v.name)) {
-        await this.putRow({ ...row, path: this.fullPath(v.name) });
+        if (growing) {
+          // Under way: no end yet. Only a game recording is a stream session, and only a fresh one.
+          if (now - v.lastModified > 60000 || recordingRole(v.name, path) !== 'game') continue;
+          await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: null, duration: null, source: 'file', sync: null });
+          this.notify(`Recording under way: ${v.name}`);
+          continue;
+        }
+        const end = duration ? start + duration * 1000 : this.toServer(v.lastModified);
+        if (end <= start) continue;
+        await this.putRow({ name: v.name, path, machine: this.name, start_ms: Math.round(start), end_ms: Math.round(end), duration: (end - start) / 1000, source: duration ? 'file' : 'filename', sync: null });
+      } else if (!row.duration && row.start_ms && v.lastModified && !growing) {
+        // It was under way (OBS said so, or the file was growing); now it has stopped.
+        let end = this.toServer(v.lastModified);
+        if (isMovieFile(v.name)) { const info = await readMovieInfo(v.file).catch(() => null); if (info?.duration) end = row.start_ms + info.duration * 1000; }
+        if (end > row.start_ms) { await this.putRow({ ...row, path: row.path || path, end_ms: Math.round(end), duration: (end - row.start_ms) / 1000 }); if (row.source === 'file') this.notify(`Recording saved: ${v.name}`); }
+      } else if (!row.path && path) {
+        await this.putRow({ ...row, path });
       }
     }
   }
@@ -715,7 +739,7 @@ export class Machine {
   // (which owns the live row) does this.
   async followRecordings() {
     if (!this.liveEnabled()) return;
-    const rows = this.state.rows.filter((r) => r.source === 'obs' && Number.isFinite(r.start_ms) && !/^(cam|camera|face|overlay|ui)[\s_-]/i.test(r.name));
+    const rows = this.state.rows.filter((r) => (r.source === 'obs' || r.source === 'file') && Number.isFinite(r.start_ms) && recordingRole(r.name, r.path) === 'game');
     const newest = rows.sort((a, b) => b.start_ms - a.start_ms)[0];
     if (!newest) return;
     let f = this.live.follow;
