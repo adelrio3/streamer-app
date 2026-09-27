@@ -416,7 +416,6 @@ fire("QUEST_TURNED_IN", 7, 170, 50)
 fire("QUEST_FINISHED")
 runTimers()
 state.level = 2
-SlashCmdList.COMPENDIUM("shots on") -- off by default since 1.0.1
 fire("PLAYER_LEVEL_UP", 2)
 runTimers()
 fire("CHAT_MSG_SYSTEM", "You have learned a new spell: |cff71d5ff|Hspell:635|h[Holy Light]|h|r.")
@@ -441,7 +440,7 @@ state.units.nameplate1 = { name = "Defias Thug", guid = "Creature-0-4372-0-17-38
 fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
 state.units.mouseover = { name = "Mother Fang", guid = "Creature-0-4372-0-17-471-00011", level = 10, rank = "rareelite", ctype = "Beast", family = "Spider", react = 2, hp = 600 }
 fire("UPDATE_MOUSEOVER_UNIT")
-runTimers() -- the rare's screenshot
+runTimers()
 state.combat = { 0, "SPELL_DAMAGE", false, "Creature-0-4372-0-17-257-00012", "Kobold Worker", 0x40, 0, "Creature-0-4372-0-17-299-00013", "Young Wolf", 0x20, 0, 0, "Bite", 1, 3 }
 fire("COMBAT_LOG_EVENT_UNFILTERED")
 
@@ -589,7 +588,7 @@ assert(CompendiumDB.errors[1].msg:find("boom", 1, true) and CompendiumDB.errors[
 assert(CompendiumDB.errors[1].zone == "Elwynn Forest" and CompendiumDB.errors[1].version, "where and which version")
 assert(#CompendiumDB.sessions[1].events == skillsBefore + 2, "the skill lines were still logged by the other listener")
 fire("PLAYER_LOGOUT")
-assert(shots == 4, "screenshots: rare, level, discovery, death; got " .. shots)
+assert(shots == 0, "the addon never takes screenshots itself; got " .. shots)
 
 -- The live link wrote everything to the chat log as local system messages.
 assert(chat.logging, "the live link turns the chat log on")

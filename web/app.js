@@ -3596,7 +3596,7 @@ pages.setup = async () => {
     </form>
     ${cfg.plays && !cfg.fresh ? `<div class="panel"><h3>World of Warcraft</h3>${wowBody}</div>
       <div class="panel"><h3>In game</h3><p class="small">Key bindings: Options › Keybindings › AddOns › Compendium. Bind <b>Sync flash</b> and the marks you want. Press Sync right after starting a recording.</p>
-        <p class="small">Optional commands: <code>/comp scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/comp scanner off</code> puts them back). <code>/comp shots on</code> turns on automatic screenshots at rares, level-ups, discoveries and deaths (off by default: each one freezes the game for a moment). <code>/comp social on</code> also logs group, duels and chat. <code>/comp</code> lists everything.</p></div>` : ''}
+        <p class="small">Optional commands: <code>/comp scanner on</code> logs every NPC within about 40 yards using invisible nameplates (it changes your nameplate settings; <code>/comp scanner off</code> puts them back). <code>/comp social on</code> also logs group, duels and chat. <code>/comp</code> lists everything.</p></div>` : ''}
     ${cfg.plays && !cfg.fresh ? `<form id="voiceForm" class="panel"><h3>Voice notes</h3>
       <p class="small">Transcribes what you say into the microphone while you play (Chrome's own speech recognition, so it needs the internet and your OK for the microphone). Notes land on the timelines, on the <a href="#/narration">Narration</a> page and in each recording's captions.</p>
       <label class="check"><input type="checkbox" name="voice" ${cfg.voice ? 'checked' : ''}><span>Transcribe my voice while this tab is open</span></label>

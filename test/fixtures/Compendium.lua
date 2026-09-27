@@ -5,10 +5,10 @@ CompendiumDB = {
 			["build"] = 11507,
 			["ctx"] = "CHAT_MSG_SKILL",
 			["first"] = 1790000077,
-			["key"] = "test/addon/harness.lua:583: boom",
+			["key"] = "test/addon/harness.lua:582: boom",
 			["last"] = 1790000077,
 			["level"] = 10,
-			["msg"] = "test/addon/harness.lua:583: boom",
+			["msg"] = "test/addon/harness.lua:582: boom",
 			["n"] = 2,
 			["session"] = "Mankrik-Aldric-1790000000",
 			["sub"] = "Goldshire",
@@ -645,17 +645,6 @@ CompendiumDB = {
 					["z"] = "Elwynn Forest",
 				}, -- [29]
 				{
-					["e"] = "screenshot",
-					["lvl"] = 2,
-					["m"] = 1429,
-					["reason"] = "level",
-					["sz"] = "Northshire Valley",
-					["t"] = 1790000012.1,
-					["x"] = 48,
-					["y"] = 42,
-					["z"] = "Elwynn Forest",
-				}, -- [30]
-				{
 					["desc"] = "Heals a friendly target.",
 					["e"] = "learn",
 					["lvl"] = 2,
@@ -667,7 +656,7 @@ CompendiumDB = {
 					["x"] = 48,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [31]
+				}, -- [30]
 				{
 					["e"] = "skill",
 					["lvl"] = 2,
@@ -678,7 +667,7 @@ CompendiumDB = {
 					["x"] = 48,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [32]
+				}, -- [31]
 				{
 					["amount"] = 45,
 					["e"] = "xp",
@@ -690,7 +679,7 @@ CompendiumDB = {
 					["x"] = 48,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [33]
+				}, -- [32]
 				{
 					["amount"] = 25,
 					["e"] = "rep",
@@ -703,7 +692,7 @@ CompendiumDB = {
 					["x"] = 48,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [34]
+				}, -- [33]
 				{
 					["ctype"] = "Humanoid",
 					["e"] = "npc",
@@ -722,7 +711,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [35]
+				}, -- [34]
 				{
 					["ctype"] = "Beast",
 					["e"] = "npc",
@@ -748,18 +737,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [36]
-				{
-					["e"] = "screenshot",
-					["lvl"] = 2,
-					["m"] = 1429,
-					["reason"] = "rare",
-					["sz"] = "Northshire Valley",
-					["t"] = 1790000020.1,
-					["x"] = 46,
-					["y"] = 42,
-					["z"] = "Elwynn Forest",
-				}, -- [37]
+				}, -- [35]
 				{
 					["e"] = "npc",
 					["lvl"] = 2,
@@ -774,7 +752,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [38]
+				}, -- [36]
 				{
 					["e"] = "npc",
 					["lvl"] = 2,
@@ -789,7 +767,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [39]
+				}, -- [37]
 				{
 					["blow"] = true,
 					["e"] = "kill",
@@ -803,7 +781,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [40]
+				}, -- [38]
 				{
 					["close"] = true,
 					["done"] = 90,
@@ -836,7 +814,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [41]
+				}, -- [39]
 				{
 					["e"] = "loot_window",
 					["items"] = {
@@ -867,7 +845,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [42]
+				}, -- [40]
 				{
 					["e"] = "object",
 					["lvl"] = 2,
@@ -879,7 +857,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [43]
+				}, -- [41]
 				{
 					["e"] = "loot_window",
 					["items"] = {
@@ -903,7 +881,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [44]
+				}, -- [42]
 				{
 					["e"] = "loot_window",
 					["items"] = {
@@ -926,7 +904,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [45]
+				}, -- [43]
 				{
 					["e"] = "object",
 					["lvl"] = 2,
@@ -938,7 +916,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [46]
+				}, -- [44]
 				{
 					["e"] = "loot_window",
 					["items"] = {
@@ -962,7 +940,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [47]
+				}, -- [45]
 				{
 					["e"] = "npc",
 					["faction"] = "Alliance",
@@ -987,7 +965,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [48]
+				}, -- [46]
 				{
 					["e"] = "vendor",
 					["items"] = {
@@ -1025,7 +1003,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [49]
+				}, -- [47]
 				{
 					["ctx"] = "merchant",
 					["delta"] = -25,
@@ -1038,7 +1016,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [50]
+				}, -- [48]
 				{
 					["e"] = "loot",
 					["id"] = 2512,
@@ -1053,7 +1031,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [51]
+				}, -- [49]
 				{
 					["e"] = "trainer",
 					["greeting"] = "The Light calls to you.",
@@ -1083,7 +1061,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [52]
+				}, -- [50]
 				{
 					["e"] = "taxi_map",
 					["lvl"] = 2,
@@ -1112,7 +1090,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [53]
+				}, -- [51]
 				{
 					["cost"] = 50,
 					["e"] = "flight",
@@ -1124,7 +1102,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [54]
+				}, -- [52]
 				{
 					["e"] = "flight_end",
 					["lvl"] = 2,
@@ -1134,7 +1112,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [55]
+				}, -- [53]
 				{
 					["e"] = "bind",
 					["lvl"] = 2,
@@ -1145,7 +1123,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [56]
+				}, -- [54]
 				{
 					["e"] = "equip",
 					["id"] = 2488,
@@ -1159,7 +1137,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [57]
+				}, -- [55]
 				{
 					["e"] = "talents",
 					["lvl"] = 10,
@@ -1185,7 +1163,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [58]
+				}, -- [56]
 				{
 					["ch"] = "say",
 					["e"] = "chat",
@@ -1198,7 +1176,7 @@ CompendiumDB = {
 					["x"] = 46,
 					["y"] = 42,
 					["z"] = "Elwynn Forest",
-				}, -- [59]
+				}, -- [57]
 				{
 					["e"] = "zone",
 					["lvl"] = 10,
@@ -1208,7 +1186,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [60]
+				}, -- [58]
 				{
 					["area"] = "Goldshire",
 					["e"] = "explore",
@@ -1219,18 +1197,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [61]
-				{
-					["e"] = "screenshot",
-					["lvl"] = 10,
-					["m"] = 1429,
-					["reason"] = "discovery",
-					["sz"] = "Goldshire",
-					["t"] = 1790000077.1,
-					["x"] = 42,
-					["y"] = 65,
-					["z"] = "Elwynn Forest",
-				}, -- [62]
+				}, -- [59]
 				{
 					["e"] = "sync",
 					["lvl"] = 10,
@@ -1240,7 +1207,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [63]
+				}, -- [60]
 				{
 					["e"] = "mark",
 					["kind"] = "lore",
@@ -1251,7 +1218,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [64]
+				}, -- [61]
 				{
 					["e"] = "mark",
 					["kind"] = "shot",
@@ -1263,7 +1230,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [65]
+				}, -- [62]
 				{
 					["e"] = "mark",
 					["kind"] = "mark",
@@ -1275,7 +1242,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [66]
+				}, -- [63]
 				{
 					["e"] = "quest_abandon",
 					["lvl"] = 10,
@@ -1286,7 +1253,7 @@ CompendiumDB = {
 					["x"] = 42,
 					["y"] = 65,
 					["z"] = "Elwynn Forest",
-				}, -- [67]
+				}, -- [64]
 				{
 					["e"] = "npc",
 					["lvl"] = 10,
@@ -1299,7 +1266,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [68]
+				}, -- [65]
 				{
 					["by"] = "Melee",
 					["e"] = "death",
@@ -1310,16 +1277,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [69]
-				{
-					["e"] = "screenshot",
-					["lvl"] = 10,
-					["m"] = 1429,
-					["reason"] = "death",
-					["sz"] = "Goldshire",
-					["t"] = 1790000077.1,
-					["z"] = "Elwynn Forest",
-				}, -- [70]
+				}, -- [66]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
@@ -1328,7 +1286,7 @@ CompendiumDB = {
 					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 3.",
 					["z"] = "Elwynn Forest",
-				}, -- [71]
+				}, -- [67]
 				{
 					["e"] = "skill",
 					["lvl"] = 10,
@@ -1337,7 +1295,7 @@ CompendiumDB = {
 					["t"] = 1790000077.1,
 					["text"] = "Your skill in Fishing has increased to 4.",
 					["z"] = "Elwynn Forest",
-				}, -- [72]
+				}, -- [68]
 				{
 					["e"] = "bags",
 					["items"] = {
@@ -1352,7 +1310,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [73]
+				}, -- [69]
 				{
 					["e"] = "reputation",
 					["factions"] = {
@@ -1369,7 +1327,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [74]
+				}, -- [70]
 				{
 					["e"] = "skills",
 					["lvl"] = 10,
@@ -1384,7 +1342,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [75]
+				}, -- [71]
 				{
 					["e"] = "session_end",
 					["lvl"] = 10,
@@ -1392,7 +1350,7 @@ CompendiumDB = {
 					["sz"] = "Goldshire",
 					["t"] = 1790000077.1,
 					["z"] = "Elwynn Forest",
-				}, -- [76]
+				}, -- [72]
 			},
 			["id"] = "Mankrik-Aldric-1790000000",
 			["schema"] = 2,
@@ -1410,7 +1368,6 @@ CompendiumDB = {
 	},
 	["settings"] = {
 		["scanner"] = false,
-		["screenshots"] = true,
 		["silent"] = false,
 		["social"] = true,
 		["track"] = true,

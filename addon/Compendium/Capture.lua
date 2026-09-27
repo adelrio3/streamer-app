@@ -23,7 +23,7 @@ local function session() return ns.session() end
 local function idFromLink(link) return link and tonumber(link:match("|Hitem:(%d+)")) end
 local function nameFromLink(link) return link and link:match("%[(.-)%]") end
 
-local DEFAULTS = { screenshots = false, social = false, track = true, scanner = false }
+local DEFAULTS = { social = false, track = true, scanner = false }
 
 on("ADDON_LOADED", function(name)
 	if name ~= ADDON_NAME then return end
@@ -221,19 +221,6 @@ local rares = {}  -- npc IDs already announced this session
 
 local RANK = { elite = true, rare = true, rareelite = true, worldboss = true }
 
--- Off unless /comp shots on: the game freezes for a moment on every capture.
--- Even then, one per reason per minute at most.
-local lastShot = {}
-local function screenshot(reason)
-	if not settings().screenshots or not Screenshot then return end
-	local t = GetTime and GetTime() or 0
-	if lastShot[reason] and t - lastShot[reason] < 60 then return end
-	lastShot[reason] = t
-	ns.pendingShot = reason
-	-- C_Timer.After only takes a Lua function, not the game's own Screenshot.
-	if C_Timer and C_Timer.After then C_Timer.After(0.3, function() Screenshot() end) else Screenshot() end
-end
-
 local REACTION_FLAGS = { [0x10] = 5, [0x20] = 4, [0x40] = 2 } -- friendly, neutral, hostile
 
 local notCreature = {} -- players, pets, objects: skip quickly
@@ -288,7 +275,6 @@ local function noteUnit(unit, source)
 	if (rank == "rare" or rank == "rareelite" or rank == "worldboss") and ev.npcId and not rares[ev.npcId] then
 		rares[ev.npcId] = true
 		ev.rare = true
-		screenshot("rare")
 	end
 	return ev
 end
@@ -579,7 +565,6 @@ on("PLAYER_REGEN_ENABLED", function()
 end)
 
 ns.deathInfo = function()
-	screenshot("death")
 	if lastHit and GetTime() - lastHit.at < 15 then
 		return { killer = lastHit.name, killerId = lastHit.npcId, by = lastHit.spell }
 	end
@@ -765,7 +750,6 @@ on("PLAYER_LEVEL_UP", function()
 	-- Stats and talents settle a moment after the level-up itself.
 	local later = function() statsSnapshot() talentSnapshot() end
 	if C_Timer and C_Timer.After then C_Timer.After(2, later) else later() end
-	screenshot("level")
 end)
 
 on("TIME_PLAYED_MSG", function(total, level)
@@ -804,22 +788,11 @@ table.insert(ns.sessionEndHooks, function()
 	skillsSnapshot()
 end)
 
--- Screenshots -----------------------------------------------------------------
-
+-- Your own screenshots (the game's key) are noted, never taken for you: the
+-- game freezes for a moment on every capture.
 on("SCREENSHOT_SUCCEEDED", function()
-	record("screenshot", { reason = ns.pendingShot or "manual" })
-	ns.pendingShot = nil
+	record("screenshot", { reason = "manual" })
 end)
-local discovered = { ns.toPattern(ERR_ZONE_EXPLORED_XP), ns.toPattern(ERR_ZONE_EXPLORED) }
-local function discovery(a, b)
-	local msg = type(b) == "string" and b or a
-	if type(msg) ~= "string" then return end
-	for _, p in ipairs(discovered) do
-		if msg:match(p) then screenshot("discovery") return end
-	end
-end
-on("UI_INFO_MESSAGE", discovery)
-on("CHAT_MSG_SYSTEM", discovery)
 
 -- Social (off unless /comp social on) -------------------------------------
 
@@ -868,7 +841,6 @@ local function toggle(key, label, after)
 	end
 end
 
-ns.commands.shots = toggle("screenshots", "automatic screenshots")
 ns.commands.social = toggle("social", "group, duel and chat logging")
 ns.commands.track = toggle("track", "position tracking")
 ns.commands.scanner = toggle("scanner", "invisible nameplate scanner", applyScanner)
@@ -878,7 +850,6 @@ ns.commands.items = function()
 	print(string.format("|cff5a9bffCompendium|r %d items in the catalog, %d waiting for item info.", n, #pending))
 end
 for _, line in ipairs({
-	"/comp shots [on|off] - automatic screenshots at rares, level-ups, discoveries and deaths (off by default; each freezes the game for a moment)",
 	"/comp scanner [on|off] - log every NPC in range using invisible nameplates",
 	"/comp social [on|off] - log group, duels and chat",
 	"/comp track [on|off] - position tracking for the footage finder",

@@ -136,8 +136,8 @@ test('addon logs a full play session', { skip: !lua && 'no Lua interpreter insta
   assert.equal(of('xp')[0].amount, 45);
   assert.equal(s.char.guild, 'Compendiums');
 
-  // Screenshots, social.
-  assert.deepEqual(of('screenshot').map((e) => e.reason).sort(), ['death', 'discovery', 'level', 'rare']);
+  // No automatic screenshots, ever.
+  assert.deepEqual(of('screenshot'), []);
   assert.deepEqual(of('chat').map((c) => c.text), ['anyone for Hogger?'], 'only after /comp social on');
 
   // Track: compact points, standing still skipped, flags for mounted + UI hidden.
