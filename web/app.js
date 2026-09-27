@@ -524,7 +524,6 @@ async function toggleSourceRecord(btn) {
   const m = state.machine;
   if (!m?.srec) return;
   const on = !m.srec.on;
-  if (!on && !confirm('Stop recording? Both Source Record files close and the session is complete.')) return;
   if (btn) btn.disabled = true;
   try { await m.setSourceRecord(on); } catch (err) { toast(err.message); }
   renderStatus();
