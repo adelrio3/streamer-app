@@ -566,6 +566,17 @@ export class Machine {
     return (await folders.permission(this.recRoot, 'readwrite')) === 'granted';
   }
 
+  // Asks Chrome for write access when it is not granted yet: works from a
+  // click (the batch button, Allow), which is where it is called.
+  async ensureRecWrite() {
+    if (!this.recRoot) return false;
+    if (await this.recWritable()) return true;
+    try { await folders.requestPermission(this.recRoot, 'readwrite'); } catch { /* not from a click, or refused */ }
+    const ok = await this.recWritable();
+    if (ok) this.changed('wow');
+    return ok;
+  }
+
   async grantRecWrite() {
     if (!this.recRoot) return false;
     await folders.requestPermission(this.recRoot, 'readwrite');

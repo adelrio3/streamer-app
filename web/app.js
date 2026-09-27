@@ -3316,11 +3316,14 @@ async function runBatch() {
   const m = state.machine;
   if (!m?.config?.records || batch) return;
   const sp = settings().sessionPack || {};
+  // Chrome asks about writing to the recordings folder here, on the click, once per visit.
+  const writable = await m.ensureRecWrite();
+  if (!writable) toast('Chrome did not grant writing to the recordings folder: the shrinker cannot be started and the files will download instead. Try Allow on This computer › Session package.');
   batch = { stop: false, status: 'Starting…', done: 0, total: outstandingPackages().length };
   route();
   try {
-    if (sp.shrinkCam) {
-      if (!(await m.writeRecText(SHRINK_FLAG, `go ${new Date().toISOString()}\n`))) toast('The recordings folder is not writable, so the camera shrinker cannot be started: allow writing on This computer.');
+    if (sp.shrinkCam && writable) {
+      await m.writeRecText(SHRINK_FLAG, `go ${new Date().toISOString()}\n`);
     }
     let lastShrink = null; let lastShrinkAt = Date.now();
     while (!batch.stop) {
@@ -3786,7 +3789,7 @@ function wireSetup() {
   if (recWriteState) {
     const show = async () => { const ok = await m.recWritable(); recWriteState.textContent = ok ? 'allowed' : m.recRoot ? 'not yet allowed' : 'no recordings folder chosen'; const b = document.getElementById('recWrite'); if (b) b.hidden = ok || !m.recRoot; };
     show();
-    document.getElementById('recWrite')?.addEventListener('click', async () => { await m.grantRecWrite(); show(); });
+    document.getElementById('recWrite')?.addEventListener('click', async () => { await m.ensureRecWrite(); show(); });
   }
   document.getElementById('videoForm')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
