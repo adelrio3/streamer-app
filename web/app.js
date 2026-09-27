@@ -1275,32 +1275,26 @@ function liveCharacterCard(characters) {
 }
 
 // What the characters the account has, as a set of race, class and
-// profession combinations, can never reach in Classic.
+// profession combinations, can never reach in Classic: counts only, and the
+// race, class or profession that would open them. Never a quest's name.
 async function coverageGaps(characters) {
   const roster = mergeRoster(characters, []);
   const db = await questDB();
   if (!db || !roster.some((c) => c.race && c.cls)) return '';
   const cov = rosterCoverage(db, roster);
-  const zoneName = (q) => db.zones[q.zone]?.n ?? '';
-  const qlink = (q) => `<a href="#/quest/q${q.id}">${esc(q.n)}</a> <span class="muted small">${esc(zoneName(q))}${q.l ? ` · level ${q.l}` : ''}</span>`;
-  const REASONS = { race: 'No character of the right race', class: 'No character of the right class', profession: 'No character with the profession', 'race & class': 'Neither the race nor the class', 'race & profession': 'Neither the race nor the profession', 'class & profession': 'Neither the class nor the profession', combination: 'The right race and class, but never on the same character' };
-  const reasonBlocks = [...cov.byReason.entries()].sort((a, b) => b[1].length - a[1].length).map(([reason, list]) => {
+  const REASONS = { race: 'need a race you do not play', class: 'need a class you do not play', profession: 'need a profession nobody has', 'race & class': 'need a race and a class you do not play', 'race & profession': 'need a race and a profession you do not have', 'class & profession': 'need a class and a profession you do not have', combination: 'need a race and class you play, but not on the same character' };
+  const rows = [...cov.byReason.entries()].sort((a, b) => b[1].length - a[1].length).map(([reason, list]) => {
     const byNeed = new Map();
-    for (const e of list) { if (!byNeed.has(e.need)) byNeed.set(e.need, []); byNeed.get(e.need).push(e.q); }
-    return `<details class="pack"><summary><b>${list.length}</b> ${esc(REASONS[reason] || reason)}</summary>
-      ${[...byNeed.entries()].sort((a, b) => b[1].length - a[1].length).map(([need, qs]) => `<div class="wiki-sec"><h3>${esc(need || 'requirement')} <span class="muted">${qs.length}</span></h3><ul class="small">${qs.sort((a, b) => (a.l || 0) - (b.l || 0)).map((q) => `<li>${qlink(q)}</li>`).join('')}</ul></div>`).join('')}
-    </details>`;
+    for (const e of list) byNeed.set(e.need, (byNeed.get(e.need) || 0) + 1);
+    const needs = [...byNeed.entries()].sort((a, b) => b[1] - a[1]).map(([need, n]) => `<li>${esc(need || 'a requirement')} <span class="num">${n}</span></li>`).join('');
+    return `<details class="pack"><summary><span class="num">${list.length}</span> ${esc(REASONS[reason] || reason)}</summary><p class="small muted">Roll one of these and they open:</p><ul class="small">${needs}</ul></details>`;
   }).join('');
-  const choices = cov.choices.map((g) => {
-    const names = new Map();
-    for (const q of g.quests) names.set(q.n, (names.get(q.n) || 0) + 1);
-    return `<li><b>${g.coverable} of ${g.quests.length}</b>: ${[...names.entries()].map(([n, k]) => `${esc(n)}${k > 1 ? ` <span class="muted">×${k}</span>` : ''}`).join(' · ')} <span class="muted small">— ${esc(g.characters.join(', ') || 'nobody')}</span></li>`;
-  }).join('');
+  const choices = cov.choices.length ? `<p class="small">${cov.choices.length} group${cov.choices.length === 1 ? '' : 's'} of quests shut each other out on one character (a profession specialization, one branch of a chain): ${cov.choices.reduce((n, g) => n + (g.quests.length - g.coverable), 0)} more would open with a second character of the same profession or class.</p>` : '';
   const pct = Math.round((cov.reachable / cov.total) * 1000) / 10;
-  return `<div class="panel"><h3>What these characters can reach</h3>
-      <p><span class="num">${cov.reachable.toLocaleString()}</span> of ${cov.total.toLocaleString()} Classic quests (<span class="num">${pct}%</span>) can be taken by at least one of these ${cov.characters} character${cov.characters === 1 ? '' : 's'}. <b>${cov.unreachable.length}</b> can never be, as things stand: the race, class and profession combinations decide (professions from the skills the addon has seen; secondary skills excepted).</p>
-      ${reasonBlocks || '<p class="muted small">Nothing out of reach.</p>'}
-      ${choices ? `<h3 style="margin-top:14px">Choices these characters force</h3><p class="small muted">Groups of quests that shut each other out on one character (a profession specialization, one branch of a chain): only as many can be done as there are different characters to take them.</p><ul class="small">${choices}</ul>` : ''}
+  return `<div class="panel"><h3>Reach</h3>
+      <p><span class="num">${cov.reachable.toLocaleString()}</span> of ${cov.total.toLocaleString()} Classic quests (<span class="num">${pct}%</span>) can be taken by at least one of ${cov.characters === 1 ? 'this character' : `these ${cov.characters} characters`}. <span class="num">${cov.unreachable.length}</span> cannot, as things stand: the race, class and profession combinations decide (professions from the skills the addon has seen).</p>
+      ${rows}
+      ${choices}
     </div>`;
 }
 
