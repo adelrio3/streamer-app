@@ -3207,7 +3207,8 @@ async function wirePlayer(r, start) {
     if (now !== lastNow) {
       lastNow?.classList.remove('now');
       now?.classList.add('now');
-      now?.scrollIntoView({ block: 'nearest' });
+      // Keep the current row in view within the list only: scrolling the page would drag the video away.
+      if (now) { const a = now.getBoundingClientRect(); const c = tl.getBoundingClientRect(); if (a.top < c.top) tl.scrollTop += a.top - c.top; else if (a.bottom > c.bottom) tl.scrollTop += a.bottom - c.bottom; }
       lastNow = now;
     }
   });
