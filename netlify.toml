@@ -3,9 +3,6 @@
   publish = "web"
   command = "node tools/build-web.js"
 
-[functions]
-  directory = "netlify/functions"
-
 # The app itself is revalidated on every load (it changes with every push);
 # the quest database changes only with an import, so it may be kept a day.
 [[headers]]

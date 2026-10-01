@@ -616,6 +616,6 @@ function runDemo() {
   if (demo) { runDemo(); return; }
   if (!token) { status('add ?token=… from Compendium › Live overlay'); return; }
   const cfg = await config();
-  if (!cfg) { status('no Supabase connection (open the app on this computer once)'); return; }
+  if (!cfg) { status('the live link is retired with the Supabase database; use ?demo=1 to lay the overlay out'); return; }
   poll(cfg);
 })();

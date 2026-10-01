@@ -532,6 +532,16 @@ export class Machine {
     return manifest.version;
   }
 
+  // Takes the addon and its saved data out of a flavor folder (see folders.removeAddon).
+  async removeAddon(install) {
+    await folders.requestPermission(this.wowRoot, 'readwrite');
+    const gone = await folders.removeAddon(install.dir);
+    install.addonVersion = null;
+    this.wow.files = (this.wow.files || []).filter((f) => f.flavor !== install.flavor);
+    this.changed('wow');
+    return gone;
+  }
+
   // Recording Mac -----------------------------------------------------------
 
   async initRec() {

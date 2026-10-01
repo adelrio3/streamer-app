@@ -137,6 +137,34 @@ export async function installAddon(flavorDir, files) {
   }
 }
 
+// Removes the addon and everything it ever wrote from one flavor folder:
+// Interface\AddOns\Compendium (and the old Chronicler), every account's
+// SavedVariables\Compendium.lua (+ .bak, and Chronicler.lua), and
+// Logs\WoWChatLog.txt, which holds the addon's live lines. WoW must be
+// closed, or the game writes the saved data back at logout. Returns the
+// paths removed.
+export async function removeAddon(flavorDir) {
+  const gone = [];
+  const addons = await child(await child(flavorDir, 'Interface') ?? flavorDir, 'AddOns');
+  for (const name of ['Compendium', 'Chronicler']) {
+    if (addons && await child(addons, name)) { await addons.removeEntry(name, { recursive: true }); gone.push(`Interface\\AddOns\\${name}`); }
+  }
+  const accounts = await child(await child(flavorDir, 'WTF') ?? flavorDir, 'Account');
+  if (accounts) {
+    for await (const acc of entries(accounts)) {
+      if (acc.kind !== 'directory') continue;
+      const sv = await child(acc, 'SavedVariables');
+      if (!sv) continue;
+      for (const name of ['Compendium.lua', 'Compendium.lua.bak', 'Chronicler.lua', 'Chronicler.lua.bak']) {
+        if (await child(sv, name, 'file')) { await sv.removeEntry(name); gone.push(`WTF\\Account\\${acc.name}\\SavedVariables\\${name}`); }
+      }
+    }
+  }
+  const logs = await child(flavorDir, 'Logs');
+  if (logs && await child(logs, 'WoWChatLog.txt', 'file')) { await logs.removeEntry('WoWChatLog.txt'); gone.push('Logs\\WoWChatLog.txt'); }
+  return gone;
+}
+
 // macOS writes "._name" companion files next to every file on drives that are
 // not Mac-formatted; they are not videos.
 export function isHiddenFile(name) {

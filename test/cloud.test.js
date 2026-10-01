@@ -1,10 +1,9 @@
-// CloudStore against a small fake of the supabase-js query builder, and the
-// Netlify config function.
+// CloudStore against a small fake of the supabase-js query builder (kept for
+// the test harness; the app itself runs on web/lib/localstore.js).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CloudStore, measureClock } from '../web/lib/cloud.js';
-import { projectUrl } from '../netlify/functions/config.mjs';
 
 export function fakeClient() {
   const tables = { sessions: [], recordings: [], clock_samples: [], settings: [], items: [], tracks: [], screenshots: [], voice: [], live: [] };
@@ -75,12 +74,6 @@ test('clock measurement keeps the fastest round trip', async () => {
   assert.equal(m.offset, 1000);
 });
 
-test('config function turns any Supabase URL form into the project URL', () => {
-  assert.equal(projectUrl('https://abcd.supabase.co/'), 'https://abcd.supabase.co');
-  assert.equal(projectUrl('postgresql://postgres:pw@db.abcd.supabase.co:5432/postgres'), 'https://abcd.supabase.co');
-  assert.equal(projectUrl('postgresql://postgres.abcd:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres'), 'https://abcd.supabase.co');
-  assert.equal(projectUrl(undefined), null);
-});
 
 test('item catalog and tracks', async () => {
   const client = fakeClient();

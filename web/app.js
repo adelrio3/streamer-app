@@ -1,7 +1,8 @@
-// Compendium web app (the in-game addon keeps its name, Compendium). Plain modules, no build step. Data lives in Supabase;
+// Compendium web app (the in-game addon keeps its name, Compendium). Plain modules, no build step. Data stays in this browser (web/lib/localstore.js; the Supabase database is retired);
 // each computer does its part in the background (see lib/machine.js).
 
 import { CloudStore } from './lib/cloud.js';
+import { LocalStore } from './lib/localstore.js';
 import { Machine } from './lib/machine.js';
 import { buildCodex } from './lib/codex.js';
 import { describe, category } from './lib/describe.js';
@@ -3678,7 +3679,7 @@ pages.setup = async () => {
       ${wow.lastIngest ? `Last upload ${esc(new Date(wow.lastIngest.at).toLocaleTimeString())}.` : ''}</p>
       <table><tbody>${wow.installs.map((inst, i) => `<tr><td><b>${esc(inst.flavor)}</b></td>
         <td>${inst.addonVersion ? `Addon ${esc(inst.addonVersion)} installed` : '<span class="muted">Addon not installed</span>'}</td>
-        <td>${manifest ? `<button data-install="${i}" class="${inst.addonVersion === manifest.version ? '' : 'primary'}">${inst.addonVersion ? (inst.addonVersion === manifest.version ? 'Reinstall' : `Update to ${esc(manifest.version)}`) : `Install addon ${esc(manifest.version)}`}</button>` : ''}</td>
+        <td>${manifest ? `<button data-install="${i}" class="${inst.addonVersion === manifest.version ? '' : 'primary'}">${inst.addonVersion ? (inst.addonVersion === manifest.version ? 'Reinstall' : `Update to ${esc(manifest.version)}`) : `Install addon ${esc(manifest.version)}`}</button>` : ''} ${inst.addonVersion || wow.files.some((f) => f.flavor === inst.flavor) ? `<button data-remove="${i}" class="ghost" title="Removes the addon folder, its saved data for every account, and the chat log">Remove addon</button>` : ''}</td>
         <td class="muted small">${wow.files.filter((f) => f.flavor === inst.flavor).map((f) => `log found for ${esc(f.account)}`).join(', ') || 'no addon log yet'}</td></tr>`).join('')}</tbody></table>
       <p class="muted small">After installing or updating, type <code>/reload</code> in game (or restart WoW). <button data-act="pickWow">Choose a different folder</button></p>`,
   }[wow.state] ?? '';
@@ -3763,7 +3764,7 @@ pages.setup = async () => {
       </div>
       <button type="submit">Save</button></form>
     ${addonErrorsPanel()}
-    <div class="panel"><h3>Account</h3><p class="small">Logged in as <b>${esc(state.user.email)}</b>. Clock: ${m.offset == null ? 'measuring…' : `${(m.offset / 1000).toFixed(3)}s from the server (±${Math.round((m.rtt ?? 0) / 2)} ms)`}.</p><button data-act="logout">Log out</button></div>
+    <div class="panel"><h3>Storage</h3><p class="small">The Supabase database is retired. What this computer reads stays in this browser tab; nothing is uploaded, and the other computer does not see it.</p></div>
     <div class="panel danger"><h3>Start over</h3>
       <p class="small">Deletes every session, recording, item, route, clock sample and deleted-mark record from your account, on both computers. Your own map images are kept. Sessions and recordings from before now will not come back even if the addon still has them; afterwards, type <code>/comp clear confirm</code> in game to empty the addon's log too.</p>
       <div class="row"><input type="text" id="wipeWord" placeholder="type DELETE" autocomplete="off"><button class="danger-btn" id="wipe" disabled>Delete everything and start over</button></div>
@@ -3822,7 +3823,6 @@ function wireSetup() {
   });
   const act = {
     pickWow: () => m.pickWow(), grantWow: () => m.grantWow(), pickRec: () => m.pickRec(), grantRec: () => m.grantRec(),
-    logout: async () => { await state.client.auth.signOut(); location.hash = '#/'; location.reload(); },
   };
   for (const b of document.querySelectorAll('[data-act]')) {
     b.addEventListener('click', async (ev) => {
@@ -3837,6 +3837,18 @@ function wireSetup() {
       try {
         const v = await m.installAddon(m.wow.installs[Number(b.dataset.install)]);
         toast(`Addon ${v} installed. Type /reload in game.`);
+      } catch (err) { toast(err.message); }
+      route();
+    });
+  }
+  for (const b of document.querySelectorAll('[data-remove]')) {
+    b.addEventListener('click', async () => {
+      const inst = m.wow.installs[Number(b.dataset.remove)];
+      if (!window.confirm(`Remove the addon from ${inst.flavor} and leave no trace?\n\nThis deletes Interface\\AddOns\\Compendium, every account's SavedVariables\\Compendium.lua (the addon's log of your play), and Logs\\WoWChatLog.txt.\n\nClose World of Warcraft first: the game writes the saved data back when you log out.`)) return;
+      b.disabled = true;
+      try {
+        const gone = await m.removeAddon(inst);
+        toast(gone.length ? `Removed: ${gone.join(', ')}` : 'Nothing of the addon was found in that folder.');
       } catch (err) { toast(err.message); }
       route();
     });
@@ -3922,68 +3934,6 @@ function wireSetup() {
     state.settings = { ...state.settings, ...next };
     await state.store.saveSettings(state.settings);
     toast('Saved.');
-  });
-}
-
-// Signing in ------------------------------------------------------------------
-
-// Where emailed links come back to. Supabase allows the project's Site URL
-// exactly as typed, so the bare address, with no trailing slash, is safest.
-function siteAddress() {
-  return location.pathname === '/' ? location.origin : location.origin + location.pathname.replace(/\/$/, '');
-}
-
-function renderLogin(message = '') {
-  document.getElementById('nav').hidden = true;
-  main.innerHTML = `<div class="login"><div class="panel glow">
-    <div class="brand" style="font-size:2rem;margin-bottom:6px"><span class="brand-mark"></span><span class="brand-text">Compendium</span></div>
-    <p class="muted">Log in with the same account on your gaming PC and your recording computer. Use the same email address as your Supabase account: Supabase's built-in mailer only sends to addresses on your Supabase team. Emailed links only come back to this site once its address is the project's Site URL (Supabase › Authentication › URL Configuration).</p>
-    ${message ? `<div class="notice">${message}</div>` : ''}
-    <form id="login">
-      <label><span>Email</span><input type="email" name="email" required autocomplete="username" style="width:100%"></label>
-      <label><span>Password</span><input type="password" name="password" minlength="6" autocomplete="current-password" style="width:100%"></label>
-      <div class="row"><button class="primary" type="submit" name="mode" value="in">Log in</button><button type="submit" name="mode" value="up">Create account</button></div>
-      <p class="muted small" style="margin:14px 0 6px">Or skip the password:</p>
-      <div class="row"><button type="submit" name="mode" value="magic" formnovalidate>Email me a sign-in link</button></div>
-    </form></div></div>`;
-  document.getElementById('login').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const f = new FormData(ev.target);
-    const creds = { email: String(f.get('email') || '').trim(), password: f.get('password') };
-    const auth = state.client.auth;
-    const mode = ev.submitter?.value;
-    if (mode === 'magic') {
-      if (!creds.email) return renderLogin('Enter your email first.');
-      const { error: err } = await auth.signInWithOtp({ email: creds.email, options: { emailRedirectTo: siteAddress() } });
-      if (err) return renderLogin(esc(err.message));
-      return renderLogin(`A sign-in link is on its way to <b>${esc(creds.email)}</b> (from Supabase Auth; check spam too). Open it on this computer and you are in. It works once and expires after an hour.`);
-    }
-    if (!creds.password) return renderLogin('Enter your password, or ask for a sign-in link.');
-    const { data, error } = mode === 'up'
-      ? await auth.signUp({ ...creds, options: { emailRedirectTo: siteAddress() } })
-      : await auth.signInWithPassword(creds);
-    if (error) return renderLogin(esc(error.message));
-    if (!data.session) return renderLogin('Account created. Supabase sent you a confirmation email (from Supabase Auth, check spam too): click <b>Confirm your mail</b> in it. If the page it opens does not load, that is fine: your account is confirmed anyway. Then come back here and log in.');
-    startApp(data.session.user);
-  });
-}
-
-function renderConnect(message = '') {
-  document.getElementById('nav').hidden = true;
-  main.innerHTML = `<div class="panel" style="max-width:560px;margin:40px auto">
-    <h1>Connect to Supabase</h1>
-    <p class="muted">This site isn't linked to your Supabase project yet. The Netlify setup normally does this for you; you can also paste the two values here (Supabase › Project Settings › API).</p>
-    ${message ? `<div class="notice error">${esc(message)}</div>` : ''}
-    <form id="connect">
-      <label><span>Project URL</span><input type="text" name="url" placeholder="https://xxxx.supabase.co" style="width:100%"></label>
-      <label><span>anon public key</span><input type="text" name="anonKey" style="width:100%"></label>
-      <button class="primary" type="submit">Connect</button>
-    </form></div>`;
-  document.getElementById('connect').addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    const f = new FormData(ev.target);
-    localStorage.setItem('chronicler.supabase', JSON.stringify({ url: String(f.get('url')).trim(), anonKey: String(f.get('anonKey')).trim() }));
-    location.reload();
   });
 }
 
@@ -4152,30 +4102,13 @@ async function route({ keepScroll = false } = {}) {
   setTimeout(() => window.$WowheadPower?.refreshLinks?.(), 50);
 }
 
-async function loadConfig() {
-  try {
-    const res = await fetch('config.json', { cache: 'no-store' });
-    if (res.ok) {
-      const cfg = await res.json();
-      if (cfg.url && cfg.anonKey) return cfg;
-    }
-  } catch { /* not on Netlify */ }
-  try {
-    return JSON.parse(localStorage.getItem('chronicler.supabase') || 'null');
-  } catch {
-    return null;
-  }
-}
-
-async function makeClient(cfg) {
-  if (window.__chroniclerTestClient) return window.__chroniclerTestClient;
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-  return createClient(cfg.url, cfg.anonKey);
-}
-
-async function startApp(user) {
-  state.user = user;
-  state.store = new CloudStore(state.client, user.id);
+async function startApp() {
+  // The Supabase database is retired: the app runs on a store kept in this
+  // browser (web/lib/localstore.js). The test harness may still hand in a
+  // fake client, which drives the old CloudStore.
+  const test = window.__chroniclerTestClient;
+  state.user = { id: 'local', email: 'this computer' };
+  state.store = test ? new CloudStore(test, 'u1') : new LocalStore();
   main.innerHTML = '<div class="loading"><span class="brand-mark spin"></span><span class="muted">Opening your chronicle…</span></div>';
   const all = await state.store.loadAll();
   Object.assign(state, {
@@ -4190,20 +4123,10 @@ async function startApp(user) {
 }
 
 async function boot() {
-  const cfg = await loadConfig();
-  if (!cfg && !window.__chroniclerTestClient) return renderConnect();
   try {
-    state.client = await makeClient(cfg);
-    // Back from a sign-in or confirmation link: its tokens (or its error) sit in the address.
-    const linkError = /^#error=/.test(location.hash) ? new URLSearchParams(location.hash.slice(1)) : null;
-    const { data } = await state.client.auth.getSession();
-    if (/^#(access_token|error)=/.test(location.hash)) history.replaceState(null, '', `${location.pathname}#/`);
-    if (!data.session) {
-      return renderLogin(linkError ? `The link did not work: <b>${esc(linkError.get('error_description') || linkError.get('error') || 'unknown error')}</b>. Links work once and expire after an hour, and some mail apps open them themselves for a preview, which uses them up. Ask for a new one and open it in this browser, or log in with your password.` : '');
-    }
-    await startApp(data.session.user);
+    await startApp();
   } catch (err) {
-    renderConnect(`Could not reach Supabase: ${err.message}`);
+    main.innerHTML = `<div class="panel" style="max-width:560px;margin:40px auto"><h1>Could not start</h1><div class="notice error">${esc(err.message)}</div></div>`;
   }
 }
 
